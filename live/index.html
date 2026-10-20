@@ -939,7 +939,7 @@
           chatList.innerHTML = '';
           chatEmpty.hidden = false;
         }
-        if (Array.isArray(datos.mensajes)) ingestar(datos.mensajes, false);
+        if (Array.isArray(datos.mensajes)) ingestar(datos.mensajes, lastId === 0);
         actualizarOnline();
         ocultarErrorChat();
       }

@@ -393,7 +393,7 @@ table.hist td.num{font-variant-numeric:tabular-nums;color:var(--text)}
   background:rgba(3,5,9,.74);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 #victoria.on{display:flex;animation:aparece .3s ease}
 @keyframes aparece{from{opacity:0}to{opacity:1}}
-.vic{width:min(540px,100%);max-height:92vh;overflow:auto;border-radius:24px;border:1px solid var(--line-2);
+.vic{position:relative;z-index:2;width:min(540px,100%);max-height:92vh;overflow:auto;border-radius:24px;border:1px solid var(--line-2);
   background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015)),var(--surface-2);
   padding:26px 28px 22px;box-shadow:0 30px 90px rgba(0,0,0,.6);text-align:center;animation:sube2 .35s cubic-bezier(.2,.8,.2,1)}
 @keyframes sube2{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
@@ -453,6 +453,92 @@ body.locked .sp{visibility:hidden}
   table.hist td.acc{max-width:180px}
   .movil-off{display:none}
   .units b{font-size:30px}
+}
+</style>
+<style id="show-v2">
+/* ============================================================
+   Capa de espectáculo (v2): titular, tensión, moral, narrador,
+   splash de ronda, números de daño y sacudida de cámara.
+   Todo es aditivo: si el motor no manda estos datos, no se ve.
+   ============================================================ */
+#centro{position:relative}
+#showfx{position:absolute;inset:0;pointer-events:none;z-index:25;overflow:hidden}
+
+#titular{position:absolute;left:50%;top:10px;transform:translate(-50%,-170%);opacity:0;
+  max-width:min(660px,92%);display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;
+  padding:9px 16px 10px;border-radius:14px;color:var(--text);text-align:center;
+  background:linear-gradient(135deg,rgba(255,93,93,.20),rgba(77,141,255,.20)),rgba(6,9,15,.84);
+  border:1px solid var(--line-2);box-shadow:var(--shadow);backdrop-filter:blur(12px);
+  transition:transform .55s cubic-bezier(.2,1.45,.4,1),opacity .35s}
+#titular.on{transform:translate(-50%,0);opacity:1}
+#titular .tx{font:800 clamp(12px,1.35vw,17px)/1.22 var(--font);letter-spacing:-.01em;text-wrap:balance}
+#titular .kick{font:800 9px/1 var(--font);letter-spacing:.16em;text-transform:uppercase;color:#fff;
+  background:linear-gradient(90deg,var(--rojo),var(--azul));padding:5px 8px;border-radius:6px;white-space:nowrap}
+
+#splash{position:absolute;inset:0;display:grid;place-items:center;opacity:0;
+  font:900 clamp(46px,13vw,150px)/1 var(--font);letter-spacing:-.05em;color:#fff;
+  text-shadow:0 12px 70px rgba(0,0,0,.85),0 0 90px rgba(77,141,255,.35)}
+#splash.on{animation:splashIn 1.7s cubic-bezier(.2,.9,.3,1) forwards}
+@keyframes splashIn{
+  0%{opacity:0;transform:scale(.62)} 16%{opacity:.97;transform:scale(1)}
+  68%{opacity:.92;transform:scale(1.02)} 100%{opacity:0;transform:scale(1.16)}}
+
+#narrador{position:absolute;left:50%;bottom:54px;transform:translateX(-50%);max-width:min(640px,86%);
+  font:600 clamp(11px,1.1vw,14px)/1.35 var(--font);color:#fff;text-align:center;opacity:0;
+  text-shadow:0 2px 16px rgba(0,0,0,.95);transition:opacity .45s}
+#narrador.on{opacity:1}
+
+#tension{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);width:min(560px,74%);
+  background:rgba(6,9,15,.66);border:1px solid var(--line);border-radius:999px;
+  padding:5px 12px 7px;backdrop-filter:blur(10px)}
+#tension .lab{display:flex;justify-content:space-between;font:700 9px/1 var(--font);
+  letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+#tension .bar{height:5px;border-radius:999px;background:rgba(255,255,255,.11);overflow:hidden}
+#tension .bar i{display:block;height:100%;width:0;border-radius:999px;
+  background:linear-gradient(90deg,#35d07f,#ffd24d 52%,#ff5d5d);transition:width .7s cubic-bezier(.2,1,.3,1)}
+
+.moral{margin:7px 0 2px}
+.moral .lab{display:flex;justify-content:space-between;font:700 8.5px/1 var(--font);
+  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.moral .bar{height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden}
+.moral .bar i{display:block;height:100%;width:60%;border-radius:999px;
+  transition:width .8s cubic-bezier(.2,1,.3,1)}
+#rojo .moral .bar i{background:linear-gradient(90deg,var(--rojo-2),var(--rojo))}
+#azul .moral .bar i{background:linear-gradient(90deg,var(--azul-2),var(--azul))}
+.moral.baja .lab .v{color:var(--rojo)}
+
+.dmg{position:absolute;font:900 clamp(16px,2.3vw,34px)/1 var(--font);color:#fff;
+  text-shadow:0 3px 20px rgba(0,0,0,.9);white-space:nowrap;
+  animation:dmgUp 1.2s cubic-bezier(.15,.9,.3,1) forwards}
+.dmg.r{color:#ff9a9a}.dmg.a{color:#9cc2ff}
+@keyframes dmgUp{
+  0%{opacity:0;transform:translateY(12px) scale(.66)}
+  18%{opacity:1;transform:translateY(0) scale(1.14)}
+  100%{opacity:0;transform:translateY(-70px) scale(1)}}
+
+@keyframes sacudida{
+  0%,100%{transform:translate(0,0)} 12%{transform:translate(-7px,4px)}
+  28%{transform:translate(6px,-5px)} 44%{transform:translate(-5px,-3px)}
+  62%{transform:translate(5px,4px)} 80%{transform:translate(-3px,2px)}}
+body.sacude #centro{animation:sacudida .5s cubic-bezier(.36,.07,.19,.97)}
+
+#c-live .reloj{opacity:.72;font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
+
+.vtitular{margin:14px auto 6px;max-width:640px;font:700 13px/1.4 var(--font);
+  color:var(--text);text-align:center;opacity:.92}
+.vnarrador{max-width:640px;margin:0 auto 6px;font:600 11.5px/1.45 var(--font);
+  color:var(--muted);text-align:center;font-style:italic}
+.vmoral{font:600 11px/1.4 var(--font);color:var(--muted);text-align:center;margin-bottom:8px}
+
+@media (max-width:1000px){
+  #titular{top:6px;font-size:12.5px;padding:8px 12px;max-width:94%}
+  #tension{bottom:8px;width:88%}
+  #narrador{bottom:42px;font-size:11px;max-width:92%}
+  #splash{font-size:22vw}
+}
+@media (prefers-reduced-motion:reduce){
+  #splash.on{animation-duration:.4s}
+  body.sacude #centro{animation:none}
 }
 </style>
 </head>
@@ -842,7 +928,8 @@ function renderFeed(items, st) {
       $('#graf').innerHTML = '';
     }
   }
-  const valido = e => String(e.tipo) === 'chat';
+  // el drama son las réplicas y los emojis sueltos; el gameplay va a la pista
+  const valido = e => String(e.tipo) === 'chat' || String(e.tipo) === 'emoji';
   const deRojo = items.filter(e => { const a = String(e.agente || '').toLowerCase(); return valido(e) && (a === 'rojo' || a === 'sistema'); });
   const deAzul = items.filter(e => { const a = String(e.agente || '').toLowerCase(); return valido(e) && (a === 'azul' || a === 'sistema'); });
   pintarFeed(deRojo, '#feed-rojo');
@@ -864,7 +951,7 @@ function renderFeed(items, st) {
   }
   // emojis sueltos del chat: invaden el visor un momento
   const nuevosEmoji = items.filter(e => Number(e.seq) > ultimoEmojiSeq &&
-    String(e.tipo) === 'chat' && (String(e.tono) === 'emoji' ||
+    (String(e.tipo) === 'chat' || String(e.tipo) === 'emoji') && (String(e.tono) === 'emoji' ||
       /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u.test(String(e.texto || ''))));
   if (nuevosEmoji.length) {
     ultimoEmojiSeq = Math.max(...nuevosEmoji.map(e => Number(e.seq) || 0));
@@ -1130,6 +1217,213 @@ window.addEventListener('keydown', e => {
 });
 bucleVideo();
 ciclo();
+</script>
+<script>
+/* ============================================================
+   Capa de espectáculo (v2). No reescribe el visor: lo envuelve.
+   renderState y renderFeed se sustituyen por versiones que primero
+   llaman a las originales y después pintan el HUD del show.
+   ============================================================ */
+(function () {
+  'use strict';
+  if (window.__showV2) return;
+  window.__showV2 = true;
+  const $ = s => document.querySelector(s);
+  const centro = $('#centro');
+  if (!centro) return;
+  const mapa = centro.querySelector('.mapa') || centro;
+
+  /* ---------- DOM ---------- */
+  const fx = document.createElement('div'); fx.id = 'showfx'; mapa.appendChild(fx);
+
+  const titular = document.createElement('div'); titular.id = 'titular';
+  titular.innerHTML = '<span class="kick">En directo</span><span class="tx">—</span>';
+  fx.appendChild(titular);
+
+  const splash = document.createElement('div'); splash.id = 'splash'; fx.appendChild(splash);
+
+  const narrador = document.createElement('div'); narrador.id = 'narrador'; fx.appendChild(narrador);
+
+  const tension = document.createElement('div'); tension.id = 'tension';
+  tension.innerHTML = '<div class="lab"><span>Tensión del combate</span><span class="v">0 %</span></div>' +
+    '<div class="bar"><i></i></div>';
+  fx.appendChild(tension);
+
+  // barra de moral dentro de cada panel (se mete donde estaba la de reparto)
+  ['rojo', 'azul'].forEach(lado => {
+    const panel = document.getElementById(lado);
+    if (!panel || panel.querySelector('.moral')) return;
+    const d = document.createElement('div'); d.className = 'moral';
+    d.innerHTML = '<div class="lab"><span>Moral</span><span class="v">—</span></div><div class="bar"><i></i></div>';
+    const ref = panel.querySelector('.share') || panel.querySelector('.meta');
+    if (ref && ref.parentNode) ref.parentNode.insertBefore(d, ref.nextSibling);
+    else panel.appendChild(d);
+  });
+
+  // reloj del directo dentro del chip EN DIRECTO
+  const live = $('#c-live');
+  const reloj = document.createElement('span'); reloj.className = 'reloj'; reloj.textContent = '';
+  if (live) live.appendChild(reloj);
+
+  /* ---------- estado local ---------- */
+  const moral = { rojo: null, azul: null };
+  let ultTitular = '', ultRonda = null, ultResultadoSeq = 0, arrancado = false;
+
+  /* ---------- pintores ---------- */
+  function pintarMoral() {
+    ['rojo', 'azul'].forEach(lado => {
+      const el = document.querySelector('#' + lado + ' .moral');
+      const v = moral[lado];
+      if (!el || v === null || !isFinite(v)) return;
+      el.querySelector('.bar i').style.width = Math.max(3, Math.min(100, v)) + '%';
+      el.querySelector('.v').textContent = Math.round(v) + ' %';
+      el.classList.toggle('baja', v < 35);
+    });
+  }
+
+  function flashTitular(txt, ronda) {
+    if (!txt || txt === ultTitular) return;
+    ultTitular = txt;
+    titular.querySelector('.tx').textContent = txt;
+    titular.querySelector('.kick').textContent = ronda ? 'Ronda ' + ronda : 'En directo';
+    titular.classList.remove('on');
+    void titular.offsetWidth;
+    titular.classList.add('on');
+    clearTimeout(flashTitular._t);
+    flashTitular._t = setTimeout(() => titular.classList.remove('on'), 9000);
+  }
+
+  function splashRonda(n) {
+    if (ultRonda === null) { ultRonda = n; return; }   // la primera carga no hace splash
+    if (n === ultRonda) return;
+    ultRonda = n;
+    if (!n || n <= 0) return;
+    splash.textContent = 'RONDA ' + n;
+    splash.classList.remove('on');
+    void splash.offsetWidth;
+    splash.classList.add('on');
+  }
+
+  function decirNarrador(txt) {
+    if (!txt) return;
+    narrador.textContent = txt;
+    narrador.classList.add('on');
+    clearTimeout(decirNarrador._t);
+    decirNarrador._t = setTimeout(() => narrador.classList.remove('on'), 7000);
+  }
+
+  function sacudir() {
+    document.body.classList.remove('sacude');
+    void document.body.offsetWidth;
+    document.body.classList.add('sacude');
+    setTimeout(() => document.body.classList.remove('sacude'), 540);
+  }
+
+  /** número de daño flotante sobre el mapa; lado = bando que lo recibe */
+  function numeroDaño(n, lado, intensidad) {
+    if (!n || n <= 0) return;
+    const d = document.createElement('div');
+    d.className = 'dmg ' + (lado === 'rojo' ? 'r' : 'a');
+    d.textContent = '−' + new Intl.NumberFormat('es-ES').format(n);
+    const w = centro.clientWidth, h = centro.clientHeight;
+    const grande = intensidad >= 0.6;
+    d.style.left = Math.round(w * (0.18 + Math.random() * 0.6)) + 'px';
+    d.style.top = Math.round(h * (0.18 + Math.random() * 0.5)) + 'px';
+    d.style.fontSize = grande ? '' : '0.78em';
+    fx.appendChild(d);
+    setTimeout(() => d.remove(), 1300);
+  }
+
+  function pintarReloj(st) {
+    if (!reloj) return;
+    const ini = Number(st && st.inicio_ms) || 0;
+    if (!ini) { reloj.textContent = ''; return; }
+    if (st.terminada) {
+      const dur = Number(st.resumen && st.resumen.duracion_s) || 0;
+      reloj.textContent = dur ? ' · ' + mmss(dur) : '';
+      return;
+    }
+    const ahora = Number(st.ahora_ms) || Date.now();
+    const seg = Math.max(0, Math.round((ahora - ini) / 1000));
+    reloj.textContent = ' · ' + mmss(seg);
+  }
+  function mmss(s) {
+    const m = Math.floor(s / 60), r = Math.round(s % 60);
+    return m + ':' + String(r).padStart(2, '0');
+  }
+
+  /* ---------- envoltorio de renderState ---------- */
+  const _renderState = window.renderState;
+  if (typeof _renderState === 'function') {
+    window.renderState = function (st) {
+      try { _renderState(st); } catch (e) { console.error('[show] renderState', e); }
+      try {
+        if (!st) return;
+        const d = st.drama || {};
+        if (d.moral) { moral.rojo = Number(d.moral.rojo); moral.azul = Number(d.moral.azul); pintarMoral(); }
+        if (isFinite(Number(d.tension))) {
+          const t = Math.max(0, Math.min(100, Number(d.tension)));
+          tension.querySelector('.bar i').style.width = t + '%';
+          tension.querySelector('.v').textContent = Math.round(t) + ' %';
+        }
+        if (d.titular) flashTitular(String(d.titular), Number(st.ronda) || 0);
+        if (d.narrador) decirNarrador(String(d.narrador));
+        splashRonda(Number(st.ronda) || 0);
+        pintarReloj(st);
+        arrancado = true;
+      } catch (e) { console.error('[show] hud', e); }
+    };
+  }
+
+  /* ---------- envoltorio de renderFeed: daño + sacudida ---------- */
+  const _renderFeed = window.renderFeed;
+  if (typeof _renderFeed === 'function') {
+    window.renderFeed = function (items, st) {
+      try { _renderFeed(items, st); } catch (e) { console.error('[show] renderFeed', e); }
+      try {
+        const arr = Array.isArray(items) ? items : [];
+        const nuevos = arr.filter(e => String(e.tipo) === 'resultado' &&
+          (Number(e.seq) || 0) > ultResultadoSeq);
+        if (!nuevos.length) return;
+        ultResultadoSeq = Math.max(ultResultadoSeq, ...nuevos.map(e => Number(e.seq) || 0));
+        let maxI = 0;
+        nuevos.slice(-2).forEach(e => {
+          const n = Number(e.bajas) || 0;
+          const i = Number(e.intensidad) || 0;
+          maxI = Math.max(maxI, i);
+          if (n > 0) numeroDaño(n, String(e.agente) === 'rojo' ? 'azul' : 'rojo', i);
+        });
+        if (maxI >= 0.62) sacudir();
+      } catch (e) { console.error('[show] fx', e); }
+    };
+  }
+
+  /* ---------- envoltorio de la victoria: titular y moral final ---------- */
+  const _mostrarVictoria = window.mostrarVictoria;
+  if (typeof _mostrarVictoria === 'function') {
+    window.mostrarVictoria = function (st, hist) {
+      try { _mostrarVictoria(st, hist); } catch (e) { console.error('[show] victoria', e); }
+      try {
+        if (!st || !st.terminada) return;
+        const v = $('#victoria');
+        if (!v || !v.classList.contains('on')) return;
+        const box = v.querySelector('.vic') || v;
+        if (box.querySelector('.vtitular')) return;
+        const d = st.drama || {};
+        const ext = document.createElement('div');
+        ext.className = 'vextra';
+        ext.innerHTML =
+          (d.titular ? '<p class="vtitular">«' + esc(d.titular) + '»</p>' : '') +
+          (d.narrador ? '<p class="vnarrador">' + esc(d.narrador) + '</p>' : '') +
+          (d.moral ? '<p class="vmoral">Moral final — ROJO ' + Math.round(Number(d.moral.rojo)) +
+            ' % · AZUL ' + Math.round(Number(d.moral.azul)) + ' %</p>' : '');
+        const cerrar = box.querySelector('.cerrar');
+        if (cerrar && cerrar.parentNode === box) box.insertBefore(ext, cerrar);
+        else box.appendChild(ext);
+      } catch (e) { console.error('[show] victoria extra', e); }
+    };
+  }
+})();
 </script>
 </body>
 </html>

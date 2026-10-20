@@ -21,14 +21,19 @@ param(
   [int]$ResolucionSeg = 4,
   [int]$ReinoRojo = 73,
   [int]$ReinoAzul = 78,
-  [string]$OutDir = (Join-Path $PSScriptRoot '..\out'),
+  [string]$OutDir = '',
   [switch]$SinReset,
   [int]$MaxAcciones = 2,
   [int]$PuertoVisor = 8765,
-  [switch]$SinServidor
+  [switch]$SinServidor,
+  [switch]$SinDrama,
+  [switch]$SinCerebro
 )
 
 $ErrorActionPreference = 'Stop'
+# el motor vive en <repo>/scripts: las salidas van a <repo>/reports/wb-match
+$RaizProyecto = Split-Path -Parent $PSScriptRoot
+if (-not $OutDir) { $OutDir = Join-Path $RaizProyecto 'reports\wb-match' }
 . (Join-Path $PSScriptRoot '18-wb-multi.ps1')
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
@@ -61,6 +66,9 @@ $script:PicoBajas = @{ rojo = 0; azul = 0 }          # máximo de bajas en una s
 $script:MayorGolpe = @{ agente = ''; bajas = 0; ronda = 0 }
 $script:RachaActual = @{ rojo = 0; azul = 0 }        # rondas seguidas dominando ahora
 $script:RachaMaxima = @{ rojo = 0; azul = 0 }        # mejor racha de la partida
+# --- capa de espectáculo (la pinta el visor desde state.json.drama) ---
+$script:TitularActual = ''      # titular de la ronda en curso
+$script:Narrador = ''           # línea de narración del último golpe
 
 # ---------------------------------------------------------------- utilidades
 function Get-Scoreboard {
@@ -170,13 +178,31 @@ function Ensure-Turn {
 }
 
 function Send-Chat {
-  param([string]$Agente, [string]$A, [string]$Texto, [string]$Tono = 'chulo')
-  # no repetir la última frase de la misma IA: el chat tiene que sentirse vivo
+  param([string]$Agente, [string]$A, [string]$Texto, [string]$Tono = 'chulo',
+    [string]$Tipo = 'chat', [double]$Intensidad = 0.5, [string]$Emocion = '', [int]$RespuestaA = 0)
+  # no repetir frases: ventana deslizante por IA + no calcar lo que dijo el rival
+  $norm = ''
+  if ($Texto) { $norm = (($Texto -replace '[^\p{L}\p{N} ]', '') -replace '\s+', ' ').Trim().ToLowerInvariant() }
   if ($Texto -and $Texto -eq $script:UltimoTexto[$Agente]) { return $false }
+  if ($norm) {
+    if ($script:Recientes[$Agente] -contains $norm) { return $false }
+    $otro = if ($Agente -eq 'rojo') { 'azul' } else { 'rojo' }
+    if ($script:Recientes[$otro] -contains $norm) { return $false }
+  }
   $r = Invoke-WbAgent -Agent $Agente -Name 'send_message' -A @{ to = $A; content = $Texto; kind = 'chat' }
   if ($r.ok) {
     $script:UltimoTexto[$Agente] = $Texto
-    Add-Feed -Agente $Agente -Tipo 'chat' -Texto $Texto -Extra @{ para = $A; tono = $Tono }
+    if ($norm) {
+      [void]$script:Recientes[$Agente].Add($norm)
+      while ($script:Recientes[$Agente].Count -gt 8) { $script:Recientes[$Agente].RemoveAt(0) }
+    }
+    $extra = @{ para = $A; tono = $Tono; intensidad = $Intensidad }
+    if ($Emocion) { $extra['emocion'] = $Emocion }
+    if ($RespuestaA -gt 0) { $extra['respuesta_a'] = $RespuestaA }
+    Add-Feed -Agente $Agente -Tipo $Tipo -Texto $Texto -Extra $extra
+    Add-ShowEvent -Tipo $Tipo -Agente $Agente -Texto $Texto -Extra @{
+      tono = $Tono; intensidad = $Intensidad; emocion = $(if ($Emocion) { $Emocion } else { $null })
+    } | Out-Null
   }
   return $r.ok
 }
@@ -207,6 +233,16 @@ function Plural {
 
 # La personalidad y el generador de diálogo viven en 21-drama.ps1 (dot-sourced).
 . (Join-Path $PSScriptRoot '21-drama.ps1')
+# La capa de dirección (cerebro LLM, moral, tensión, titulares y línea temporal).
+. (Join-Path $PSScriptRoot '22-director.ps1')
+if ($SinDrama -or $SinCerebro) {
+  $script:DirectorioOn = $false
+  Write-Output 'director: cerebro desactivado por parámetro; drama procedural.'
+}
+$script:Rondas = $Rondas
+$script:ResolucionSeg = $ResolucionSeg
+$script:ReinoRojo = $ReinoRojo
+$script:ReinoAzul = $ReinoAzul
 
 function New-Plan {
   param([string]$Agente, $Obs)
@@ -256,20 +292,28 @@ function New-Plan {
     $n++
   }
 
-  # 4) drama: la frase se genera al vuelo con el estado real de la partida
+  # 4) drama: la frase la improvisa el cerebro con el estado real de la partida.
+  #    Si el cerebro no está, Get-Replica cae solo al generador procedural.
   $rival = if ($Agente -eq 'rojo') { 'azul' } else { 'rojo' }
   $mias = [double]$Obs.yo.unidades
   $suyas = [double]$Obs.rival.unidades
   $ratio = if ($suyas -gt 0) { $mias / $suyas } else { 2.0 }
   $ultimoRival = [string]$script:UltimoMensajeRival[$rival]
-  if ((Get-Random -Maximum 100) -lt 18) {
-    $texto = New-Emoji -Agente $Agente
-    $tono = 'emoji'
+  $ctx = Get-ContextoDrama -Agente $Agente -Obs $Obs
+  $tipoBeat = if ($ratio -lt 0.55) { 'nervios' } elseif ($ratio -gt 1.9) { 'burla' } else { 'turno' }
+  # cada tanto, en vez de frase, la IA lanza una emoción suelta (emoji solo)
+  if ((Get-Random -Maximum 100) -lt 20) {
+    $emoji = Get-EmojiDrama -Agente $Agente -Contexto $ctx -ConModelo:([bool]($script:Tension -gt 45))
+    if (-not $emoji) { $emoji = if ($Agente -eq 'rojo') { '😤' } else { '🙄' } }
+    $plan += [pscustomobject]@{ accion = 'emoji'; to = '*'; texto = $emoji; tono = 'emoji'
+      intensidad = [math]::Round([math]::Max(0.35, [math]::Min(1.0, $script:Tension / 100 + 0.25)), 2)
+      emocion = 'emoción' }
   } else {
-    $texto = New-Drama -Agente $Agente -Ratio $ratio -Ronda $script:Ronda -Turno $script:TurnoN -UltimoRival $ultimoRival
-    $tono = if ($ratio -lt 0.55) { 'llanto' } elseif ($ratio -gt 1.9) { 'burla' } else { 'chulo' }
+    $rep = Get-Replica -Agente $Agente -Tipo $tipoBeat -Contexto $ctx -UltimoRival $ultimoRival -Ratio $ratio
+    $plan += [pscustomobject]@{ accion = 'chat'; to = '*'; texto = $rep.texto; tono = $rep.tono
+      intensidad = [math]::Round([math]::Max(0.15, [math]::Min(1.0, [math]::Abs($ratio - 1.0) + 0.3)), 2)
+      fuente = $rep.fuente }
   }
-  $plan += [pscustomobject]@{ accion = 'chat'; to = '*'; texto = $texto; tono = $tono }
   return $plan
 }
 
@@ -332,6 +376,16 @@ function Write-Estado {
     ganador     = $script:Ganador
     tick        = $script:Tick
     actualizado = (Get-Date).ToString('HH:mm:ss')
+    fase        = $(if ($script:Terminada) { 'final' } elseif ($script:Ronda -eq 0) { 'espera' } else { $script:Beat })
+    inicio_ms   = $(if ($script:TInicioPartida) { [DateTimeOffset]::new($script:TInicioPartida.ToUniversalTime()).ToUnixTimeMilliseconds() } else { 0 })
+    ahora_ms    = [DateTimeOffset]::new((Get-Date).ToUniversalTime()).ToUnixTimeMilliseconds()
+    drama       = [ordered]@{
+      moral     = [ordered]@{ rojo = [int][math]::Round($script:Moral.rojo); azul = [int][math]::Round($script:Moral.azul) }
+      tension   = [int][math]::Round($script:Tension)
+      titular   = [string]$script:TitularActual
+      beat      = [string]$script:Beat
+      narrador  = [string]$script:Narrador
+    }
     marcador    = $script:Marcador
     scoreboard  = [ordered]@{ rojo = $r; azul = $a }
     historial   = $script:Historial
@@ -374,6 +428,12 @@ if (Test-Path -LiteralPath $plantilla) {
   Copy-Item -LiteralPath $plantilla -Destination (Join-Path $OutDir 'viewer.html') -Force
 }
 Ensure-Servidor
+# El cerebro dramático es opcional: si no arranca, el show sigue con el
+# generador procedural de 21-drama.ps1 (mismo ritmo, menos imaginación).
+if ($script:DirectorioOn) {
+  if (Start-Cerebro) { Write-Output 'director: cerebro dramático en marcha (diálogo improvisado).' }
+  else { Write-Output 'director: sin cerebro; drama procedural.' }
+}
 
 if (-not $SinReset) {
   Write-Output 'Cargando el guardado save2…'
@@ -418,8 +478,13 @@ $script:TInicioPartida = Get-Date
 Add-Feed -Agente 'sistema' -Tipo 'info' -Texto ('Comienza la partida: ROJO (' + $script:Inicio[$ReinoRojo].nombre + ') contra AZUL (' + $script:Inicio[$ReinoAzul].nombre + ')')
 
 # presentación de cada IA
-$null = Send-Chat -Agente 'rojo' -A '*' -Texto $script:Personas.rojo.apertura
-$null = Send-Chat -Agente 'azul' -A '*' -Texto $script:Personas.azul.apertura
+$script:Beat = 'apertura'
+$ctxIni = Get-ContextoDrama -Agente 'rojo' -Obs $null
+$apR = Get-Replica -Agente 'rojo' -Tipo 'apertura' -Contexto $ctxIni
+$null = Send-Chat -Agente 'rojo' -A '*' -Texto $apR.texto -Tono 'chulo' -Intensidad 0.8
+$ctxIniA = Get-ContextoDrama -Agente 'azul' -Obs $null
+$apA = Get-Replica -Agente 'azul' -Tipo 'apertura' -Contexto $ctxIniA -UltimoRival $apR.texto
+$null = Send-Chat -Agente 'azul' -A '*' -Texto $apA.texto -Tono 'chulo' -Intensidad 0.8
 
 $null = Save-Frame
 $null = Write-Estado
@@ -443,6 +508,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $obs = Get-Observacion -Agente $agente -Propio $propio -Enemigo $enemigo
     $script:Tick = $obs.tick
     $plan = New-Plan -Agente $agente -Obs $obs
+    $ultimaNota = ''
 
     foreach ($p in $plan) {
       switch ($p.accion) {
@@ -453,16 +519,10 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             $corto = @{ czar_bomba = 'czar'; atomic_bomb = 'atomic'; napalm_bomb = 'napalm' }[$p.power]
             if (-not $corto) { $corto = $p.power }
             [void]$script:AccionesRonda[$agente].Add($corto)
-            Add-Feed -Agente $agente -Tipo 'bomba' -Texto $p.nota
-            # la víctima suelta prenda en el chat (drama, no gameplay)
-            if ((($script:Ronda + $script:TurnoN) % 2) -eq 0) {
-              $victima = if ($agente -eq 'rojo') { 'azul' } else { 'rojo' }
-              if ((Get-Random -Maximum 100) -lt 30) {
-                $null = Send-Chat -Agente $victima -A '*' -Texto (New-Emoji -Agente $victima) -Tono 'emoji'
-              } else {
-                $null = Send-Chat -Agente $victima -A '*' -Texto (New-Golpe -Agente $victima) -Tono 'golpe'
-              }
-            }
+            Add-Feed -Agente $agente -Tipo 'bomba' -Texto $p.nota -Extra @{ power = $p.power; x = $p.x; y = $p.y }
+            Add-ShowEvent -Tipo 'bomba' -Agente $agente -Texto $p.nota -Extra @{ power = $p.power } | Out-Null
+            $script:Narrador = $p.nota
+            $ultimaNota = $p.nota
           } else {
             Add-Feed -Agente $agente -Tipo 'error' -Texto ('Falló ' + $p.power + ': ' + $res.code + ' ' + $res.error)
           }
@@ -473,12 +533,22 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             $script:Marcador[$agente].acciones++
             $quien = if ($p.entity -eq 'bandit') { 'bandidos' } else { 'zorros' }
             [void]$script:AccionesRonda[$agente].Add([string]$p.count + ' ' + $quien)
-            Add-Feed -Agente $agente -Tipo 'tropas' -Texto ($p.nota + ' (' + $res.result.spawned + ' creados)')
+            Add-Feed -Agente $agente -Tipo 'tropas' -Texto ($p.nota + ' (' + $res.result.spawned + ' creados)') -Extra @{ entity = $p.entity; count = $p.count }
+            Add-ShowEvent -Tipo 'tropas' -Agente $agente -Texto $p.nota -Extra @{ entity = $p.entity; count = $p.count } | Out-Null
+            $ultimaNota = $p.nota
           } else {
             Add-Feed -Agente $agente -Tipo 'error' -Texto ('Falló el spawn de ' + $p.entity + ': ' + $res.code + ' ' + $res.error)
           }
         }
-        'chat' { $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono $p.tono }
+        'chat' {
+          $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono $p.tono `
+            -Intensidad $(if ($p.PSObject.Properties['intensidad']) { [double]$p.intensidad } else { 0.5 })
+        }
+        'emoji' {
+          $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono 'emoji' -Tipo 'emoji' `
+            -Intensidad $(if ($p.PSObject.Properties['intensidad']) { [double]$p.intensidad } else { 0.6 }) `
+            -Emocion 'golpe'
+        }
       }
     }
 
@@ -496,9 +566,15 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
         $ratioR = if ($suyasR -gt 0) { $miasR / $suyasR } else { 1.0 }
         $textoRival = ''
         try { $textoRival = [string]$delRival[$delRival.Count - 1].content } catch { $textoRival = '' }
-        $resp = New-Drama -Agente $agente -Ratio $ratioR -Ronda $script:Ronda -Turno $script:TurnoN -UltimoRival $textoRival
-        $tonoR = if ($ratioR -lt 0.55) { 'llanto' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'nervios' }
-        $null = Send-Chat -Agente $agente -A $rival -Texto $resp -Tono $tonoR
+        $seqRival = 0
+        try { $seqRival = [int]$delRival[$delRival.Count - 1].seq } catch { $seqRival = 0 }
+        $ctxR = Get-ContextoDrama -Agente $agente -Obs $obs
+        $tipoR = if ($ratioR -lt 0.55) { 'nervios' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'contra' }
+        $repR = Get-Replica -Agente $agente -Tipo $tipoR -Contexto $ctxR -UltimoRival $textoRival -Ratio $ratioR
+        $tonoR = if ($ratioR -lt 0.55) { 'nervios' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'chulo' }
+        $null = Send-Chat -Agente $agente -A $rival -Texto $repR.texto -Tono $tonoR `
+          -Intensidad ([math]::Round([math]::Min(1.0, [math]::Max(0.2, $script:Tension / 100 + 0.2)), 2)) `
+          -RespuestaA $seqRival
         if ($textoRival) { $script:UltimoMensajeRival[$agente] = $textoRival }
       }
     }
@@ -513,7 +589,30 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $script:Marcador[$agente].perdidas += $perdidas
     $script:Marcador[$agente].ciudades_arrasadas += $ciudadesArrasadas
     $script:Marcador[$agente].turnos++
-    Add-Feed -Agente $agente -Tipo 'resultado' -Texto ('Bajas: ' + $bajas + ' · pérdidas: ' + $perdidas + ' · enemigo: ' + $despues[$enemigo].unidades + 'u/' + $despues[$enemigo].ciudades + 'c')
+    # el pulso del show: la moral sube al pegar y baja al recibir
+    $pulso = Update-Drama -Agente $agente -Bajas $bajas -Perdidas $perdidas
+    $intens = Get-Intensidad -Bajas $bajas
+    if ($bajas -ge 60) { $script:Narrador = 'El público se levanta: ' + $bajas + ' bajas de un solo golpe.' }
+    Add-Feed -Agente $agente -Tipo 'resultado' -Texto ('Bajas: ' + $bajas + ' · pérdidas: ' + $perdidas + ' · enemigo: ' + $despues[$enemigo].unidades + 'u/' + $despues[$enemigo].ciudades + 'c') -Extra @{ bajas = $bajas; perdidas = $perdidas; intensidad = $intens }
+    Add-ShowEvent -Tipo 'resultado' -Agente $agente -Texto ('Bajas: ' + $bajas + ' · pérdidas: ' + $perdidas) -Extra @{ bajas = $bajas; perdidas = $perdidas; intensidad = $intens } | Out-Null
+    # reacción del rival al golpe recibido (una de cada dos veces, para no saturar)
+    if ($bajas -ge 25 -and ((Get-Random -Maximum 100) -lt 55)) {
+      $victima = if ($agente -eq 'rojo') { 'azul' } else { 'rojo' }
+      # el contexto se construye con la foto de DESPUÉS del turno, para que sepa
+      # cuántas unidades le quedan de verdad (antes iba a 0/0 y decía barbaridades)
+      $obsV = [pscustomobject]@{
+        yo    = if ($victima -eq 'rojo') { $despues[$ReinoRojo] } else { $despues[$ReinoAzul] }
+        rival = if ($victima -eq 'rojo') { $despues[$ReinoAzul] } else { $despues[$ReinoRojo] }
+      }
+      $ctxV = Get-ContextoDrama -Agente $victima -Obs $obsV -BajasTurno $perdidas -PerdidasTurno $bajas -GolpeRival $ultimaNota
+      if ((Get-Random -Maximum 100) -lt 35) {
+        $em = Get-EmojiDrama -Agente $victima -Contexto $ctxV -ConModelo:([bool]($intens -gt 0.6))
+        $null = Send-Chat -Agente $victima -A '*' -Texto $em -Tono 'emoji' -Tipo 'emoji' -Intensidad ([math]::Max(0.5, $intens)) -Emocion 'dolor'
+      } else {
+        $repV = Get-Replica -Agente $victima -Tipo 'golpe' -Contexto $ctxV -UltimoRival $ultimaNota
+        $null = Send-Chat -Agente $victima -A $agente -Texto $repV.texto -Tono 'golpe' -Intensidad ([math]::Max(0.4, $intens))
+      }
+    }
 
     Write-Output ('[r' + $idxRonda + ' ' + $agente + '] bajas=' + $bajas + ' perdidas=' + $perdidas + ' | ROJO ' + $despues[$ReinoRojo].unidades + 'u AZUL ' + $despues[$ReinoAzul].unidades + 'u')
 
@@ -552,6 +651,21 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
   if ($cA -gt 0) { $txtRonda += ' y AZUL pierde ' + (Plural $cA 'ciudad' 'ciudades') }
   $txtRonda += '. En pie: ROJO ' + $snap[$ReinoRojo].unidades + ', AZUL ' + $snap[$ReinoAzul].unidades + '.'
   Add-Feed -Agente 'sistema' -Tipo 'ronda' -Texto $txtRonda
+  Add-ShowEvent -Tipo 'ronda' -Agente 'sistema' -Texto $txtRonda -Extra @{ dominio = $dominio } | Out-Null
+  # titular de prensa: lo escribe el cerebro si está; si no, sale del propio cierre
+  $script:Beat = 'ronda'
+  Push-Tension -Cuanto 6
+  $ctxTit = Get-ContextoDrama -Agente 'rojo' -Obs $null -BajasTurno $bR -PerdidasTurno $bA
+  $ctxTit['ronda'] = $idxRonda
+  $titular = Get-Titular -Agente 'rojo' -Contexto $ctxTit
+  if (-not $titular) {
+    $titular = if ($dominio -eq 'rojo') { 'ROJO pega más fuerte: ' + $bR + ' bajas frente a ' + $bA }
+    elseif ($dominio -eq 'azul') { 'AZUL pega más fuerte: ' + $bA + ' bajas frente a ' + $bR }
+    else { 'Ronda igualada: ' + $bR + ' bajas por bando' }
+  }
+  $script:TitularActual = $titular
+  Add-Feed -Agente 'sistema' -Tipo 'titular' -Texto $titular -Extra @{ ronda = $idxRonda }
+  Add-ShowEvent -Tipo 'titular' -Agente 'sistema' -Texto $titular | Out-Null
   [void]$script:Historial.Add([ordered]@{
     ronda          = $idxRonda
     rojo_unidades  = $snap[$ReinoRojo].unidades
@@ -563,7 +677,16 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     rojo_acciones  = ($script:AccionesRonda.rojo -join ' · ')
     azul_acciones  = ($script:AccionesRonda.azul -join ' · ')
     dominio        = $dominio
+    titular        = $titular
+    golpe          = @{ agente = $golpeRonda.agente; bajas = $golpeRonda.bajas }
   })
+  Add-ShowRonda -Ronda $idxRonda -Titular $titular -Dominio $dominio -Rojo @{
+    unidades = [int]$snap[$ReinoRojo].unidades; bajas = [int]$bR
+    ciudades = [int]$snap[$ReinoRojo].ciudades; acciones = @($script:AccionesRonda.rojo)
+  } -Azul @{
+    unidades = [int]$snap[$ReinoAzul].unidades; bajas = [int]$bA
+    ciudades = [int]$snap[$ReinoAzul].ciudades; acciones = @($script:AccionesRonda.azul)
+  }
   $marcaRonda = @{ rojo = $script:Marcador.rojo.bajas; azul = $script:Marcador.azul.bajas }
   $snapRonda = $snap
   $null = Write-Estado
@@ -581,7 +704,16 @@ Write-Output ('=== FIN: gana ' + $ganador + ' (bajas ' + $mr.bajas + ' vs ' + $m
 
 if ($ganador -ne 'EMPATE') {
   $clave = $ganador.ToLower()
-  $null = Send-Chat -Agente $clave -A '*' -Texto $script:Personas[$clave].victoria
+  $ctxFin = Get-ContextoDrama -Agente $clave -Obs $null
+  $ver = Get-Veredicto -Agente $clave -Contexto $ctxFin -Ganador $ganador
+  if (-not $ver) { $ver = $script:Personas[$clave].victoria }
+  $null = Send-Chat -Agente $clave -A '*' -Texto $ver -Tono 'burla' -Intensidad 1.0
+  # el perdedor también tiene su última palabra
+  $perdedor = if ($clave -eq 'rojo') { 'azul' } else { 'rojo' }
+  $ctxPer = Get-ContextoDrama -Agente $perdedor -Obs $null
+  $ctxPer['esFinal'] = $true
+  $repPer = Get-Replica -Agente $perdedor -Tipo 'final' -Contexto $ctxPer
+  $null = Send-Chat -Agente $perdedor -A '*' -Texto $repPer.texto -Tono 'llanto' -Intensidad 0.9
 }
 # (el resumen final ya se publica como entrada 'ronda'; no duplicamos aviso)
 # entrada de feed con el resumen final (tipo 'ronda', como los cierres de ronda)
@@ -602,8 +734,13 @@ if ($resumenFin.racha.rondas -gt 0) {
   $txtFin += ' Racha: nadie dominó rondas seguidas.'
 }
 Add-Feed -Agente 'sistema' -Tipo 'ronda' -Texto $txtFin
+Add-ShowEvent -Tipo 'final' -Agente 'sistema' -Texto $txtFin -Extra @{ ganador = $ganador } | Out-Null
+$script:Beat = 'final'
 $null = Save-Frame
 $null = Write-Estado
+# la partida entera, para poder repetirla sin WorldBox (demo/index.html)
+$null = Save-Show -Ruta (Join-Path $OutDir 'show.json') -Meta @{ ganador = $ganador }
+Stop-Cerebro
 
 $informe = @()
 $informe += '# Partida de 2 IAs en WorldBox — resultado'

@@ -11,6 +11,11 @@
 $script:UltimoMensajeRival = @{ rojo = ''; azul = '' }
 # último texto que cada IA dijo (para no repetirse)
 $script:UltimoTexto = @{ rojo = ''; azul = '' }
+# ventana deslizante de frases ya dichas (normalizadas) para no repetir ideas
+$script:Recientes = @{
+  rojo = [System.Collections.ArrayList]::new()
+  azul = [System.Collections.ArrayList]::new()
+}
 
 $script:Personas = @{
   rojo = [pscustomobject]@{

@@ -18,12 +18,14 @@ hay partida en marcha y sigue mostrando el último estado cuando acaba.
 [CmdletBinding()]
 param(
   [int]$Port = 8765,
-  [string]$Dir = (Join-Path $PSScriptRoot '..\out'),
+  [string]$Dir = '',
   [int]$AnchoCaptura = 900
 )
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '18-wb-multi.ps1')
+# por defecto sirve <repo>/reports/wb-match (el motor vive en <repo>/scripts)
+if (-not $Dir) { $Dir = Join-Path (Split-Path -Parent $PSScriptRoot) 'reports\wb-match' }
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 
 $script:UltimaCaptura = [datetime]::MinValue

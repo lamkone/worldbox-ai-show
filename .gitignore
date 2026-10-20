@@ -1,8 +1,16 @@
-# ficheros locales / generados
+# Salidas del motor (estado, feed, capturas, show.json, informes)
 out/
+reports/
 *.log
-*.pid
+
+# Secretos: tokens del bridge por agente
 scripts/agents.local.json
+
+# Node
+node_modules/
+
+# Procesos y basura del sistema
+*.pid
 tools/
 .DS_Store
 Thumbs.db

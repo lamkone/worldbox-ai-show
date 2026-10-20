@@ -1,0 +1,2016 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05070c">
+<meta name="description" content="Repetición autónoma de una partida del WorldBox AI Show: dos IAs se pelean en WorldBox y se insultan en directo.">
+<title>WorldBox AI Show · Repetición</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0f16'/%3E%3Ccircle cx='11' cy='16' r='5' fill='%23ff5d5d'/%3E%3Ccircle cx='21' cy='16' r='5' fill='%234d8dff'/%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   Tokens
+   ============================================================ */
+:root{
+  --bg:#05070c;
+  --bg-2:#090d15;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.08);
+  --line:rgba(255,255,255,.085);
+  --line-2:rgba(255,255,255,.17);
+  --text:#eaeff7;
+  --muted:#8792a6;
+  --muted-2:#5d687b;
+  --rojo:#ff5d5d;
+  --rojo-2:#ff9a4d;
+  --azul:#4d8dff;
+  --azul-2:#38dcff;
+  --ok:#35d07f;
+  --r-lg:18px;
+  --r-md:13px;
+  --r-sm:9px;
+  --shadow:0 24px 60px -30px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06);
+  --font:"Inter","SF Pro Display",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{
+  font-family:var(--font);
+  font-size:13px;
+  color:var(--text);
+  background:
+    radial-gradient(1100px 560px at 10% -10%, rgba(255,93,93,.17), transparent 62%),
+    radial-gradient(1100px 560px at 90% -10%, rgba(77,141,255,.20), transparent 62%),
+    radial-gradient(900px 700px at 50% 120%, rgba(56,220,255,.06), transparent 60%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 48%, var(--bg) 100%);
+  background-attachment:fixed;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+button{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--muted-2);background-clip:padding-box}
+
+#app{position:fixed;inset:0;display:flex;flex-direction:column;min-height:0}
+
+/* ============================================================
+   Cabecera
+   ============================================================ */
+header{
+  flex:0 0 auto;
+  display:flex;align-items:center;gap:12px;
+  padding:10px 16px;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.008));
+  backdrop-filter:blur(18px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  z-index:5;
+}
+.marca{display:flex;align-items:center;gap:10px;min-width:0}
+.logo{
+  width:30px;height:30px;border-radius:9px;flex:0 0 auto;
+  background:linear-gradient(140deg,var(--rojo) 0%, #b04bff 50%, var(--azul) 100%);
+  box-shadow:0 6px 18px -6px rgba(176,75,255,.7), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.tit{
+  font-size:14px;font-weight:750;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tit span{color:var(--muted);font-weight:500}
+.chips{display:flex;gap:6px;align-items:center;min-width:0;overflow:hidden}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:5px 10px;border-radius:99px;
+  border:1px solid var(--line);background:var(--surface);
+  font-size:11px;color:var(--muted);white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.chip b{color:var(--text);font-weight:650}
+.chip.live{color:var(--rojo);border-color:rgba(255,93,93,.42);background:rgba(255,93,93,.10)}
+.chip.live i{width:7px;height:7px;border-radius:50%;background:var(--rojo);animation:pulso 1.4s ease-in-out infinite}
+.chip.pausa{color:var(--muted);border-color:var(--line-2)}
+.chip.pausa i{animation:none;background:var(--muted)}
+.chip.fin{color:var(--ok);border-color:rgba(53,208,127,.45);background:rgba(53,208,127,.10)}
+.chip.fin i{animation:none;background:var(--ok)}
+@keyframes pulso{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,93,93,.55)}50%{opacity:.55;box-shadow:0 0 0 6px rgba(255,93,93,0)}}
+
+.controles{margin-left:auto;display:flex;gap:6px;align-items:center;flex:0 0 auto}
+.btn{
+  height:32px;min-width:32px;padding:0 8px;
+  display:inline-grid;place-items:center;
+  border-radius:10px;border:1px solid var(--line);background:var(--surface);
+  color:var(--text);font-size:13px;cursor:pointer;
+  transition:transform .15s,border-color .2s,background .2s,box-shadow .2s;
+}
+.btn:hover{border-color:var(--line-2);background:var(--surface-2);transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.96)}
+.btn:focus-visible{outline:2px solid var(--azul);outline-offset:2px}
+.btn.vel{font-size:11.5px;font-weight:750;letter-spacing:.02em}
+.btn.vel.act{border-color:rgba(255,255,255,.34);background:var(--surface-2);box-shadow:0 0 0 3px rgba(255,255,255,.05)}
+
+/* ============================================================
+   Barra de progreso
+   ============================================================ */
+#progreso{
+  flex:0 0 auto;height:18px;display:flex;align-items:center;
+  padding:0 16px;cursor:pointer;touch-action:none;
+}
+#progreso .riel{
+  position:relative;width:100%;height:5px;border-radius:99px;
+  background:rgba(255,255,255,.10);transition:height .14s ease;
+}
+#progreso:hover .riel,#progreso.arrastrando .riel{height:8px}
+#progreso .relleno{
+  position:absolute;inset:0 auto 0 0;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--rojo),#b04bff 55%,var(--azul));
+}
+#progreso .cabeza{
+  position:absolute;top:50%;left:0;width:11px;height:11px;border-radius:50%;
+  background:#fff;transform:translate(-50%,-50%);
+  box-shadow:0 0 10px rgba(255,255,255,.75);
+  opacity:0;transition:opacity .14s;
+}
+#progreso:hover .cabeza,#progreso.arrastrando .cabeza{opacity:1}
+#progreso .marca-ev{
+  position:absolute;top:50%;width:2px;height:8px;border-radius:2px;
+  background:rgba(255,255,255,.42);transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+#progreso .marca-ev.guerra{background:rgba(255,154,77,.85)}
+
+/* ============================================================
+   Marcador
+   ============================================================ */
+#marcador{
+  flex:0 0 auto;
+  display:grid;grid-template-columns:1fr auto 1fr;gap:10px;
+  align-items:stretch;
+  padding:10px 16px 12px;
+}
+.eq{
+  min-width:0;position:relative;overflow:hidden;
+  padding:9px 12px 10px;
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.012));
+  box-shadow:var(--shadow);
+}
+.eq::before{
+  content:"";position:absolute;inset:0 0 auto 0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--rojo),transparent);
+}
+.eq.azul::before{background:linear-gradient(90deg,transparent,var(--azul),transparent)}
+.eq.rojo{border-color:rgba(255,93,93,.22)}
+.eq.azul{border-color:rgba(77,141,255,.24)}
+.eq-h{display:flex;align-items:center;gap:7px;min-width:0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--rojo);box-shadow:0 0 12px var(--rojo);flex:0 0 auto}
+.eq.azul .dot{background:var(--azul);box-shadow:0 0 12px var(--azul)}
+.eq-nom{font-size:11px;font-weight:800;letter-spacing:.16em;color:var(--rojo)}
+.eq.azul .eq-nom{color:var(--azul)}
+.reino{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.eq-n{display:flex;align-items:baseline;gap:6px;margin-top:5px}
+.eq-n b{
+  font-size:clamp(22px,2.3vw,30px);font-weight:800;line-height:1;
+  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+  transition:color .3s;
+}
+.eq.rojo .eq-n b{color:#ffd0d0}
+.eq.azul .eq-n b{color:#cfe0ff}
+.eq-n span{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.eq-n span i{font-style:normal;color:var(--muted-2)}
+.eq-bajas{margin-top:2px;font-size:10.5px;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.share{height:3px;border-radius:99px;background:rgba(255,255,255,.08);margin-top:8px;overflow:hidden}
+.share i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--rojo-2),var(--rojo));width:50%;transition:width .7s cubic-bezier(.2,.8,.2,1)}
+.eq.azul .share i{background:linear-gradient(90deg,var(--azul-2),var(--azul));margin-left:auto}
+
+.centro{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:5px;min-width:150px;padding:2px 4px;
+}
+.ronda{
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+  white-space:nowrap;
+}
+.ronda b{font-size:15px;font-weight:850;color:var(--text);letter-spacing:0;margin-left:2px}
+.ronda span{color:var(--muted-2)}
+.pips{display:flex;gap:4px;align-items:center;height:9px}
+.pip{
+  width:9px;height:9px;border-radius:3px;
+  background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.13);
+  transition:background .3s,box-shadow .3s,transform .3s;
+}
+.pip.rojo{background:var(--rojo);border-color:var(--rojo);box-shadow:0 0 10px rgba(255,93,93,.55);transform:scale(1.08)}
+.pip.azul{background:var(--azul);border-color:var(--azul);box-shadow:0 0 10px rgba(77,141,255,.55);transform:scale(1.08)}
+.pip.empate{background:var(--muted);border-color:var(--muted)}
+.tension{width:100%;max-width:190px;margin-top:1px}
+.t-h{display:flex;justify-content:space-between;align-items:baseline;gap:6px;font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)}
+.t-h b{font-size:10.5px;font-weight:800;letter-spacing:0;color:var(--text);font-variant-numeric:tabular-nums}
+.t-b{height:5px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:3px}
+.t-b i{
+  display:block;height:100%;width:25%;border-radius:99px;
+  background:linear-gradient(90deg,#35d07f,#ffd166 55%,var(--rojo));
+  transition:width .35s linear;
+}
+.reloj{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums;letter-spacing:.03em;white-space:nowrap}
+.reloj span{color:var(--muted-2)}
+
+/* ============================================================
+   Titular
+   ============================================================ */
+#titular{
+  flex:0 0 auto;display:flex;align-items:center;gap:10px;
+  padding:8px 16px;min-height:40px;
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+  background:linear-gradient(90deg, rgba(255,93,93,.07), rgba(176,75,255,.05), rgba(77,141,255,.07));
+  overflow:hidden;
+}
+#titular .et{
+  font-size:9px;font-weight:850;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--rojo);white-space:nowrap;flex:0 0 auto;
+  padding:3px 7px;border-radius:5px;background:rgba(255,93,93,.14);
+}
+#titular .tx{
+  font-size:13px;font-weight:650;line-height:1.3;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+}
+#titular .tx.nuevo{animation:titularIn .55s cubic-bezier(.2,.8,.2,1)}
+@keyframes titularIn{0%{opacity:0;transform:translateX(-10px)}100%{opacity:1;transform:none}}
+
+/* ============================================================
+   Escena: dos columnas de drama + panel central
+   ============================================================ */
+#escena{
+  flex:1 1 auto;min-height:0;
+  display:grid;grid-template-columns:1fr clamp(210px,24vw,330px) 1fr;
+  gap:12px;padding:12px 16px;
+}
+.col,#panel{
+  min-height:0;min-width:0;
+  display:flex;flex-direction:column;
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:linear-gradient(180deg, var(--surface), rgba(255,255,255,.012));
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  overflow:hidden;position:relative;
+}
+.col.rojo{border-color:rgba(255,93,93,.20)}
+.col.azul{border-color:rgba(77,141,255,.22)}
+.col::after{
+  content:"";position:absolute;width:220px;height:220px;right:-80px;top:-120px;border-radius:50%;
+  background:radial-gradient(circle, rgba(255,93,93,.16), transparent 70%);pointer-events:none;
+}
+.col.azul::after{background:radial-gradient(circle, rgba(77,141,255,.18), transparent 70%)}
+.col-h{
+  flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:9px 12px;border-bottom:1px solid var(--line);position:relative;z-index:1;
+}
+.av{
+  width:26px;height:26px;border-radius:8px;flex:0 0 auto;
+  display:grid;place-items:center;font-size:11px;font-weight:850;color:#fff;
+  background:linear-gradient(140deg,var(--rojo),var(--rojo-2));
+  box-shadow:0 4px 12px -4px rgba(255,93,93,.7);
+}
+.col.azul .av{background:linear-gradient(140deg,var(--azul),var(--azul-2));box-shadow:0 4px 12px -4px rgba(77,141,255,.7)}
+.col-h .nom{font-size:11px;font-weight:800;letter-spacing:.14em;color:var(--rojo);flex:0 0 auto}
+.col.azul .col-h .nom{color:var(--azul)}
+.col-h .sub{
+  font-size:10.5px;color:var(--muted);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.col-h .mood{margin-left:auto;font-size:16px;line-height:1;flex:0 0 auto;transition:transform .3s}
+.col-h .mood.salta{animation:moodSalt .45s cubic-bezier(.2,.8,.2,1)}
+@keyframes moodSalt{0%{transform:scale(.5) rotate(-16deg)}60%{transform:scale(1.25) rotate(6deg)}100%{transform:none}}
+.drama{
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  padding:10px;display:flex;flex-direction:column;gap:7px;
+  scrollbar-width:thin;scroll-behavior:smooth;
+  position:relative;z-index:1;
+}
+/* Los mensajes crecen desde abajo (como un chat). El espaciador flexible se
+   encoge a 0 cuando hay desbordamiento, así el scroll sigue siendo exacto. */
+.drama::before{content:"";flex:1 0 auto}
+
+/* ---------- burbujas ---------- */
+.burbuja{max-width:100%;animation:entra .34s cubic-bezier(.2,.8,.2,1) both}
+@keyframes entra{from{opacity:0;transform:translateY(9px) scale(.97)}to{opacity:1;transform:none}}
+.burbuja .cuerpo{
+  background:rgba(255,93,93,.10);
+  border:1px solid rgba(255,93,93,.24);
+  border-radius:13px;border-top-left-radius:4px;
+  padding:7px 10px;
+  font-size:12.5px;line-height:1.42;color:var(--text);
+  overflow-wrap:anywhere;
+}
+.col.azul .burbuja .cuerpo{
+  background:rgba(77,141,255,.11);
+  border-color:rgba(77,141,255,.27);
+  border-top-left-radius:13px;border-top-right-radius:4px;
+}
+.burbuja .cita{
+  display:block;
+  font-size:10px;line-height:1.3;color:var(--muted);
+  border-left:2px solid var(--line-2);
+  padding:1px 0 1px 6px;margin-bottom:5px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  max-width:100%;
+}
+.burbuja .meta{
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  margin-top:3px;padding-left:2px;
+  font-size:9px;color:var(--muted-2);letter-spacing:.04em;
+}
+.tono-chip{
+  text-transform:uppercase;letter-spacing:.1em;font-weight:700;
+  padding:0 4px;border-radius:4px;background:rgba(255,255,255,.06);
+}
+.para-chip{color:var(--muted)}
+.burbuja.respondida .cuerpo{
+  outline:2px solid rgba(255,255,255,.34);outline-offset:2px;
+  animation:citado .9s ease-in-out 2;
+}
+@keyframes citado{0%,100%{outline-color:rgba(255,255,255,.34)}50%{outline-color:rgba(255,255,255,.02)}}
+
+/* tonos */
+.burbuja.tono-golpe .cuerpo{
+  font-weight:650;
+  border-color:rgba(255,93,93,.55);
+  box-shadow:0 0 0 3px rgba(255,93,93,.07), 0 8px 22px -14px rgba(255,93,93,.9);
+}
+.col.azul .burbuja.tono-golpe .cuerpo{
+  border-color:rgba(77,141,255,.6);
+  box-shadow:0 0 0 3px rgba(77,141,255,.08), 0 8px 22px -14px rgba(77,141,255,.9);
+}
+.burbuja.tono-burla .cuerpo{font-style:italic}
+.burbuja.tono-llanto .cuerpo{animation:llorar 1.5s ease-in-out 3}
+.burbuja.tono-nervios .cuerpo{animation:nervios 1.1s ease-in-out 3}
+.burbuja.tono-chulo .cuerpo{animation:chulo .5s cubic-bezier(.2,.8,.2,1)}
+@keyframes llorar{0%,100%{transform:translateX(0)}25%{transform:translateX(-1.6px)}75%{transform:translateX(1.6px)}}
+@keyframes nervios{0%,100%{transform:translate(0,0)}50%{transform:translate(1.4px,-1.4px)}}
+@keyframes chulo{0%{transform:scale(.94)}60%{transform:scale(1.02)}100%{transform:none}}
+
+/* emoji suelto: sin burbuja, grande y animado */
+.burbuja.es-emoji .cuerpo{
+  background:none;border:0;box-shadow:none;padding:2px 0;
+  font-size:calc(28px + 18px * var(--int, .7));line-height:1.05;
+  text-align:center;
+  filter:drop-shadow(0 8px 18px rgba(0,0,0,.55));
+  animation:latido 1.25s ease-in-out infinite;
+}
+.burbuja.es-emoji .meta{justify-content:center}
+@keyframes latido{0%,100%{transform:scale(1) rotate(0)}35%{transform:scale(1.16) rotate(-4deg)}65%{transform:scale(.97) rotate(4deg)}}
+
+/* impacto sobre la columna */
+.col.impacto{animation:sacudida .46s}
+@keyframes sacudida{0%,100%{transform:none}20%{transform:translate(-2px,1px)}40%{transform:translate(2px,-1px)}60%{transform:translate(-1px,-2px)}80%{transform:translate(1px,2px)}}
+
+/* ============================================================
+   Panel central
+   ============================================================ */
+#panel{border-color:var(--line)}
+.panel-h{
+  flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:9px 12px;border-bottom:1px solid var(--line);
+  font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--muted-2);
+  background:linear-gradient(180deg, rgba(255,255,255,.03), transparent);
+}
+.panel-h .cnt{letter-spacing:0;text-transform:none;color:var(--muted);font-variant-numeric:tabular-nums}
+#grafica{padding:8px 10px 6px;border-bottom:1px solid var(--line);flex:0 0 auto}
+#grafica svg{display:block;width:100%;height:auto}
+.gl{stroke:rgba(255,255,255,.07);stroke-width:1}
+.l-ghost{fill:none;stroke-width:1.6;opacity:.18;stroke-linecap:round;stroke-linejoin:round}
+.l-rojo{fill:none;stroke:var(--rojo);stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.l-azul{fill:none;stroke:var(--azul);stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.p-rojo{fill:var(--rojo);stroke:#0b0f16;stroke-width:1.2}
+.p-azul{fill:var(--azul);stroke:#0b0f16;stroke-width:1.2}
+.g-leyenda{display:flex;gap:10px;justify-content:center;padding:2px 0 6px;font-size:9px;color:var(--muted-2)}
+.g-leyenda span{display:inline-flex;align-items:center;gap:4px}
+.g-leyenda i{width:7px;height:7px;border-radius:50%}
+.historial{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  padding:8px 10px;display:flex;flex-direction:column;gap:5px;
+  scrollbar-width:thin;
+}
+.h-row{
+  display:flex;align-items:center;gap:7px;
+  padding:5px 8px;border-radius:8px;
+  background:rgba(255,255,255,.032);border:1px solid rgba(255,255,255,.05);
+  font-size:10.5px;animation:entra .3s ease both;
+}
+.h-row .r{font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.h-row .d{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.h-row .d.rojo{background:var(--rojo)} .h-row .d.azul{background:var(--azul)} .h-row .d.empate{background:var(--muted)}
+.h-row .dom{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:9px}
+.h-row .n{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.h-vacio{font-size:10.5px;color:var(--muted-2);text-align:center;padding:14px 4px;line-height:1.5}
+
+/* ============================================================
+   Ticker
+   ============================================================ */
+#ticker{
+  flex:0 0 auto;display:flex;align-items:stretch;
+  height:46px;overflow:hidden;
+  border-top:1px solid var(--line);
+  background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.008));
+  padding-bottom:env(safe-area-inset-bottom,0);
+}
+#ticker .et{
+  flex:0 0 auto;display:flex;align-items:center;gap:7px;
+  padding:0 12px;white-space:nowrap;
+  background:linear-gradient(90deg, rgba(255,93,93,.18), rgba(255,93,93,.05));
+  border-right:1px solid var(--line);
+  font-size:9px;font-weight:850;letter-spacing:.16em;color:var(--rojo);
+}
+#ticker .et i{width:7px;height:7px;border-radius:50%;background:var(--rojo);animation:pulso 1.4s ease-in-out infinite}
+#ticker-items{
+  flex:1 1 auto;min-width:0;
+  display:flex;align-items:center;gap:16px;
+  padding:0 14px;overflow-x:auto;overflow-y:hidden;
+  scrollbar-width:none;scroll-behavior:smooth;
+}
+#ticker-items::-webkit-scrollbar{display:none}
+.tk{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11.5px;color:var(--muted);white-space:nowrap;
+  animation:tkIn .4s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes tkIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+.tk .ico{font-size:12px;line-height:1}
+.tk b{font-weight:800;letter-spacing:.05em;font-size:10px;color:var(--muted)}
+.tk.rojo b{color:var(--rojo)} .tk.azul b{color:var(--azul)}
+.tk.sis b{color:var(--muted-2)}
+.tk::after{content:"";width:1px;height:12px;background:var(--line);margin-left:8px}
+.tk:last-child::after{display:none}
+
+/* ============================================================
+   Capas de efectos
+   ============================================================ */
+#capa{position:fixed;inset:0;pointer-events:none;z-index:60;overflow:hidden}
+.emoji-invade{
+  position:absolute;left:50%;top:50%;
+  font-size:clamp(90px,25vw,330px);line-height:1;
+  transform:translate(-50%,-50%);
+  filter:drop-shadow(0 20px 50px rgba(0,0,0,.65));
+  animation:invade 1.25s cubic-bezier(.2,.8,.2,1) forwards;
+}
+@keyframes invade{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.2) rotate(-14deg)}
+  16%{opacity:1;transform:translate(-50%,-50%) scale(1.07) rotate(4deg)}
+  68%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0)}
+  100%{opacity:0;transform:translate(-50%,-50%) scale(1.38) rotate(0)}
+}
+.emoji-vuela{
+  position:fixed;pointer-events:none;z-index:58;
+  animation:vuela var(--dur,1s) cubic-bezier(.2,.7,.3,1) forwards;
+}
+@keyframes vuela{
+  0%{transform:translate(0,0) scale(.4) rotate(0);opacity:0}
+  14%{opacity:1}
+  100%{transform:translate(var(--dx),var(--dy)) scale(1.25) rotate(var(--rot));opacity:0}
+}
+#flash{
+  position:fixed;inset:0;pointer-events:none;z-index:55;opacity:0;
+  background:radial-gradient(circle at 50% 48%, rgba(255,255,255,.18), transparent 68%);
+}
+#flash.on{animation:flash .5s ease-out}
+@keyframes flash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+#banner{
+  position:fixed;left:50%;top:78px;z-index:70;
+  transform:translate(-50%,-10px);
+  padding:9px 20px;border-radius:99px;
+  background:rgba(9,13,21,.94);border:1px solid var(--line-2);
+  font-size:11.5px;font-weight:850;letter-spacing:.16em;color:var(--text);
+  white-space:nowrap;opacity:0;pointer-events:none;
+  transition:opacity .22s,transform .22s;
+  box-shadow:0 20px 50px -20px #000;
+}
+#banner.on{opacity:1;transform:translate(-50%,0)}
+
+/* ============================================================
+   Victoria
+   ============================================================ */
+#victoria{
+  position:fixed;inset:0;z-index:80;
+  display:none;align-items:center;justify-content:center;
+  padding:16px;
+  background:rgba(3,5,9,.86);
+  backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+}
+#victoria.on{display:flex;animation:aparece .32s ease}
+@keyframes aparece{from{opacity:0}to{opacity:1}}
+#v-lluvia{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.emoji-cae{position:absolute;top:-10%;line-height:1;animation:cae linear forwards;will-change:transform}
+@keyframes cae{to{transform:translateY(118vh) rotate(290deg)}}
+.tarjeta{
+  position:relative;z-index:1;
+  width:min(660px,100%);max-height:100%;overflow:auto;
+  padding:26px 24px 22px;border-radius:22px;
+  border:1px solid var(--line-2);
+  background:linear-gradient(180deg, rgba(22,28,40,.98), rgba(8,12,19,.99));
+  box-shadow:0 50px 100px -40px #000, inset 0 1px 0 rgba(255,255,255,.07);
+  text-align:center;
+  animation:sube2 .45s cubic-bezier(.2,.8,.2,1) both;
+  scrollbar-width:thin;
+}
+@keyframes sube2{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+.v-eyebrow{font-size:9.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--muted)}
+.v-ganador{
+  font-size:clamp(42px,9vw,84px);font-weight:900;line-height:1;
+  letter-spacing:-.035em;margin:8px 0 2px;
+}
+.v-ganador.rojo{background:linear-gradient(180deg,#ff9b9b,var(--rojo));-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 8px 26px rgba(255,93,93,.35))}
+.v-ganador.azul{background:linear-gradient(180deg,#9cc0ff,var(--azul));-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 8px 26px rgba(77,141,255,.38))}
+.v-ganador.empate{background:linear-gradient(180deg,#dfe6f2,var(--muted));-webkit-background-clip:text;background-clip:text;color:transparent}
+.v-reino{font-size:12.5px;color:var(--muted)}
+.v-marcador{
+  margin:14px auto 0;display:flex;align-items:baseline;justify-content:center;gap:12px;
+  font-variant-numeric:tabular-nums;
+}
+.v-marcador b{font-size:clamp(22px,3.6vw,30px);font-weight:850;letter-spacing:-.02em}
+.v-marcador b.r{color:var(--rojo)} .v-marcador b.a{color:var(--azul)}
+.v-marcador span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)}
+.v-frase{
+  margin:14px auto 0;max-width:520px;
+  font-size:13.5px;line-height:1.55;color:var(--text);
+  font-style:italic;
+}
+.v-frase::before{content:"«"}
+.v-frase::after{content:"»"}
+.v-pips{display:flex;gap:6px;justify-content:center;margin:15px 0 5px}
+.v-pips .pip{width:14px;height:14px;border-radius:4px}
+.v-motivo{font-size:11px;color:var(--muted);line-height:1.5}
+.v-stats{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+  margin:18px 0 4px;text-align:left;
+}
+.v-stat{
+  border:1px solid var(--line);border-radius:11px;
+  padding:8px 10px;background:rgba(255,255,255,.03);min-width:0;
+}
+.v-stat span{display:block;font-size:8.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v-stat b{display:block;margin-top:3px;font-size:14px;font-weight:750;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.v-stat b.r{color:var(--rojo)} .v-stat b.a{color:var(--azul)}
+.v-acciones{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.v-acciones button{
+  padding:10px 18px;border-radius:11px;cursor:pointer;
+  border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);
+  font-size:12.5px;font-weight:700;
+  transition:transform .15s,border-color .2s,background .2s;
+}
+.v-acciones button:hover{transform:translateY(-1px);border-color:rgba(255,255,255,.32)}
+.v-acciones button.primario{
+  border-color:rgba(255,93,93,.45);
+  background:linear-gradient(140deg, rgba(255,93,93,.22), rgba(176,75,255,.16));
+}
+
+/* ============================================================
+   Aviso
+   ============================================================ */
+#aviso{
+  display:none;
+  position:fixed;left:50%;top:12px;transform:translateX(-50%);
+  z-index:90;max-width:min(560px,calc(100% - 24px));
+  padding:10px 14px;border-radius:11px;
+  border:1px solid rgba(255,154,77,.45);
+  background:rgba(30,20,10,.96);color:var(--text);
+  font-size:11.5px;line-height:1.45;
+  box-shadow:0 20px 50px -20px #000;
+}
+#aviso.on{display:block;animation:aparece .3s ease}
+
+/* ============================================================
+   Responsive
+   ============================================================ */
+@media (max-width:900px){
+  #escena{grid-template-columns:1fr 1fr}
+  #panel{display:none}
+}
+@media (max-width:680px){
+  header{padding:8px 10px;gap:8px}
+  .tit{display:none}
+  .chip.fecha,.chip#chip-rondas{display:none}
+  .chip{padding:4px 8px;font-size:10px}
+  .btn{height:30px;min-width:28px;padding:0 4px;border-radius:9px;font-size:12px}
+  .btn.vel{font-size:10.5px}
+  #progreso{padding:0 10px;height:16px}
+  #marcador{padding:8px 10px 10px;gap:7px}
+  .eq{padding:7px 9px 8px;border-radius:11px}
+  .reino{display:none}
+  .eq-n b{font-size:22px}
+  .eq-bajas{display:none}
+  .eq-n span{font-size:9.5px}
+  .centro{min-width:104px;gap:4px}
+  .ronda{font-size:8.5px;letter-spacing:.1em}
+  .ronda b{font-size:13px}
+  .tension{max-width:118px}
+  .reloj{font-size:9px}
+  #titular{padding:7px 10px;min-height:36px;gap:8px}
+  #titular .et{font-size:8px;padding:2px 5px}
+  #titular .tx{
+    font-size:11.5px;white-space:normal;line-height:1.32;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  }
+  #escena{padding:8px;gap:8px}
+  .col{border-radius:13px}
+  .col-h{padding:7px 8px;gap:6px}
+  .col-h .nom{font-size:10px;letter-spacing:.1em}
+  .col-h .sub{display:none}
+  .col-h .mood{font-size:14px}
+  .av{width:22px;height:22px;border-radius:7px;font-size:10px}
+  .drama{padding:7px;gap:6px}
+  .burbuja .cuerpo{font-size:11.5px;padding:6px 8px;border-radius:11px}
+  .burbuja .cita{font-size:9px}
+  .burbuja .meta{font-size:8px}
+  #ticker{height:40px}
+  #ticker .et{padding:0 8px;font-size:8px;gap:5px}
+  #ticker-items{padding:0 10px;gap:12px}
+  .tk{font-size:10.5px}
+  #banner{top:64px;font-size:10px;padding:8px 14px}
+  #victoria{padding:10px}
+  .tarjeta{padding:18px 14px;border-radius:16px}
+  .v-stats{grid-template-columns:repeat(2,1fr);gap:6px}
+  .v-frase{font-size:12.5px}
+  .v-acciones button{padding:9px 14px;font-size:12px}
+}
+@media (max-height:560px){
+  #marcador{padding-top:6px;padding-bottom:8px}
+  #titular{min-height:32px;padding-top:5px;padding-bottom:5px}
+  #ticker{height:38px}
+  .drama{padding:7px}
+}
+@media (prefers-reduced-motion:reduce){
+  html:not(.movimiento) *,html:not(.movimiento) *::before,html:not(.movimiento) *::after{
+    animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;
+  }
+  html:not(.movimiento) .emoji-vuela,
+  html:not(.movimiento) .emoji-invade,
+  html:not(.movimiento) .emoji-cae{display:none !important}
+}
+</style>
+<script>
+/* Si el sistema pide movimiento reducido pero se añade ?anim=1, se fuerza la
+   versión animada completa (útil para grabar o para revisar los efectos). */
+try {
+  if (new URLSearchParams(location.search).get('anim') === '1') {
+    document.documentElement.classList.add('movimiento');
+  }
+} catch (_) { /* navegador sin URLSearchParams */ }
+</script>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="marca">
+      <div class="logo" aria-hidden="true"></div>
+      <div class="tit">WorldBox AI Show <span>· repetición</span></div>
+    </div>
+    <div class="chips">
+      <span class="chip live" id="chip-estado"><i></i><span id="estado-txt">REPRODUCIENDO</span></span>
+      <span class="chip fecha" id="chip-fecha">—</span>
+      <span class="chip" id="chip-rondas" aria-hidden="true">—</span>
+    </div>
+    <div class="controles">
+      <button class="btn" id="btn-play" title="Pausa (espacio)" aria-label="Pausa">⏸</button>
+      <button class="btn vel act" data-vel="1" title="Velocidad ×1" aria-label="Velocidad ×1">×1</button>
+      <button class="btn vel" data-vel="2" title="Velocidad ×2" aria-label="Velocidad ×2">×2</button>
+      <button class="btn vel" data-vel="4" title="Velocidad ×4" aria-label="Velocidad ×4">×4</button>
+      <button class="btn" id="btn-reiniciar" title="Reiniciar (R)" aria-label="Reiniciar">⟲</button>
+      <button class="btn" id="btn-final" title="Saltar al final (Fin)" aria-label="Saltar al final">⏭</button>
+    </div>
+  </header>
+
+  <div id="progreso" role="slider" tabindex="0" aria-label="Progreso de la repetición" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div class="riel">
+      <div class="relleno" id="relleno"></div>
+      <div class="cabeza" id="cabeza"></div>
+    </div>
+  </div>
+
+  <section id="marcador" aria-label="Marcador">
+    <div class="eq rojo">
+      <div class="eq-h"><span class="dot" aria-hidden="true"></span><span class="eq-nom">ROJO</span><span class="reino" id="reino-rojo">—</span></div>
+      <div class="eq-n"><b id="u-rojo">0</b><span>u · <i id="c-rojo">0</i> c</span></div>
+      <div class="eq-bajas"><span id="b-rojo">0</span> bajas</div>
+      <div class="share"><i id="sh-rojo"></i></div>
+    </div>
+
+    <div class="centro">
+      <div class="ronda">RONDA <b id="ronda-n">0</b><span>/<span id="ronda-tot">0</span></span></div>
+      <div class="pips" id="pips" aria-label="Rondas ganadas"></div>
+      <div class="tension">
+        <div class="t-h"><span>Tensión</span><b id="tension-n">30%</b></div>
+        <div class="t-b"><i id="tension-fill"></i></div>
+      </div>
+      <div class="reloj"><span id="t-actual">00:00</span> / <span id="t-total">00:00</span></div>
+    </div>
+
+    <div class="eq azul">
+      <div class="eq-h"><span class="dot" aria-hidden="true"></span><span class="eq-nom">AZUL</span><span class="reino" id="reino-azul">—</span></div>
+      <div class="eq-n"><b id="u-azul">0</b><span>u · <i id="c-azul">0</i> c</span></div>
+      <div class="eq-bajas"><span id="b-azul">0</span> bajas</div>
+      <div class="share"><i id="sh-azul"></i></div>
+    </div>
+  </section>
+
+  <div id="titular">
+    <span class="et">Titular</span>
+    <span class="tx" id="titular-tx">La velada está a punto de empezar…</span>
+  </div>
+
+  <main id="escena">
+    <section class="col rojo" id="col-rojo" aria-label="Drama de ROJO">
+      <div class="col-h">
+        <span class="av" aria-hidden="true">R</span>
+        <span class="nom">ROJO</span>
+        <span class="sub" id="sub-rojo">—</span>
+        <span class="mood" id="mood-rojo" aria-hidden="true">😐</span>
+      </div>
+      <div class="drama" id="drama-rojo" aria-live="polite" aria-relevant="additions"></div>
+    </section>
+
+    <aside id="panel" aria-label="Panel de datos">
+      <div class="panel-h"><span>Curvas de unidades</span><span class="cnt" id="grafica-cnt">inicio</span></div>
+      <div id="grafica"></div>
+      <div class="g-leyenda"><span><i style="background:var(--rojo)"></i>ROJO</span><span><i style="background:var(--azul)"></i>AZUL</span></div>
+      <div class="panel-h"><span>Rondas</span><span class="cnt" id="hist-cnt">0/0</span></div>
+      <div class="historial" id="historial">
+        <div class="h-vacio" id="hist-vacio">Todavía no ha terminado ninguna ronda.</div>
+      </div>
+    </aside>
+
+    <section class="col azul" id="col-azul" aria-label="Drama de AZUL">
+      <div class="col-h">
+        <span class="av" aria-hidden="true">A</span>
+        <span class="nom">AZUL</span>
+        <span class="sub" id="sub-azul">—</span>
+        <span class="mood" id="mood-azul" aria-hidden="true">😐</span>
+      </div>
+      <div class="drama" id="drama-azul" aria-live="polite" aria-relevant="additions"></div>
+    </section>
+  </main>
+
+  <footer id="ticker" aria-label="Ticker de guerra">
+    <div class="et"><i aria-hidden="true"></i>Guerra</div>
+    <div id="ticker-items"></div>
+  </footer>
+
+</div>
+
+<div id="capa" aria-hidden="true"></div>
+<div id="flash" aria-hidden="true"></div>
+<div id="banner" aria-hidden="true"></div>
+
+<div id="victoria" role="dialog" aria-modal="true" aria-labelledby="v-ganador">
+  <div id="v-lluvia" aria-hidden="true"></div>
+  <div class="tarjeta">
+    <div class="v-eyebrow">Fin de la velada</div>
+    <div class="v-ganador rojo" id="v-ganador">ROJO</div>
+    <div class="v-reino" id="v-reino">—</div>
+    <div class="v-marcador"><b class="r" id="v-br">0</b><span>bajas</span><b class="a" id="v-ba">0</b></div>
+    <div class="v-frase" id="v-frase"></div>
+    <div class="v-pips" id="v-pips"></div>
+    <div class="v-motivo" id="v-motivo"></div>
+    <div class="v-stats" id="v-stats"></div>
+    <div class="v-acciones">
+      <button class="primario" id="v-otra">Ver otra vez</button>
+      <button id="v-cerrar">Quedarme con la última imagen</button>
+    </div>
+  </div>
+</div>
+
+<div id="aviso" role="status"></div>
+
+<noscript>
+  <div style="position:fixed;inset:0;display:grid;place-items:center;padding:24px;text-align:center;background:#05070c;color:#eaeff7;font-family:system-ui,sans-serif">
+    Esta repetición necesita JavaScript para animar la partida.
+  </div>
+</noscript>
+
+<script>
+/* =====================================================================
+   WorldBox AI Show · página de repetición autónoma
+   ---------------------------------------------------------------------
+   - Consume un show.json con el esquema de docs/CONTRATO.md (sección
+     `show.json`). Sin red, sin dependencias, sin build: un solo fichero.
+   - Si hay `?show=<url>` intenta cargar ese JSON; si no, o si falla,
+     reproduce el dataset de ejemplo embebido.
+   ===================================================================== */
+'use strict';
+
+/* =====================================================================
+   DATASET DE EJEMPLO
+   Partida completa inventada que cumple el contrato al pie de la letra:
+   6 rondas, 46 eventos y una remontada de 0-3. ROJO es bruto y teatral,
+   AZUL es pedante y calculador; se contestan de verdad (respuesta_a).
+   ===================================================================== */
+const SHOW_EJEMPLO = {
+  version: 2,
+  meta: {
+    fecha: "2026-10-20 19:40",
+    rondas: 6,
+    resolucion_s: 4,
+    reinos: {
+      rojo: { id: 73, nombre: "Jepy Djomo" },
+      azul: { id: 78, nombre: "Los Azules" }
+    },
+    inicio_ms: 1792515726750,
+    fin_ms: 1792515910750,
+    duracion_s: 184,
+    ganador: "ROJO"
+  },
+  estado_inicial: {
+    rojo: { unidades: 1210, ciudades: 11 },
+    azul: { unidades: 1195, ciudades: 10 }
+  },
+  rondas: [
+    {
+      ronda: 1, titular: "EL PEDANTE ABRE FUERTE", dominio: "azul",
+      rojo: { unidades: 1129, bajas: 88, ciudades: 11, acciones: ["czar"] },
+      azul: { unidades: 1167, bajas: 121, ciudades: 10, acciones: ["napalm"] }
+    },
+    {
+      ronda: 2, titular: "DOS DE DOS: AZUL SE QUEDA UNA CIUDAD", dominio: "azul",
+      rojo: { unidades: 1011, bajas: 64, ciudades: 10, acciones: ["atomic"] },
+      azul: { unidades: 1158, bajas: 148, ciudades: 11, acciones: ["40 zorros"] }
+    },
+    {
+      ronda: 3, titular: "AZUL SE PONE 3-0", dominio: "azul",
+      rojo: { unidades: 880, bajas: 102, ciudades: 8, acciones: ["50 bandidos"] },
+      azul: { unidades: 1126, bajas: 176, ciudades: 13, acciones: ["napalm"] }
+    },
+    {
+      ronda: 4, titular: "SE DESPIERTA EL BRUTO", dominio: "rojo",
+      rojo: { unidades: 863, bajas: 189, ciudades: 9, acciones: ["czar"] },
+      azul: { unidades: 977, bajas: 97, ciudades: 12, acciones: ["atomic"] }
+    },
+    {
+      ronda: 5, titular: "GOLPE DE 312", dominio: "rojo",
+      rojo: { unidades: 865, bajas: 312, ciudades: 11, acciones: ["atomic"] },
+      azul: { unidades: 700, bajas: 88, ciudades: 10, acciones: ["40 zorros"] }
+    },
+    {
+      ronda: 6, titular: "REMONTADA HISTÓRICA", dominio: "rojo",
+      rojo: { unidades: 851, bajas: 228, ciudades: 13, acciones: ["czar", "50 bandidos"] },
+      azul: { unidades: 502, bajas: 74, ciudades: 8, acciones: ["napalm"] }
+    }
+  ],
+  eventos: [
+    { seq: 1, t_ms: 1500, ronda: 1, turno: 1, agente: "sistema", tipo: "info",
+      texto: "Arranca la velada: ROJO (Jepy Djomo) contra AZUL (Los Azules). Seis rondas y un solo mundo." },
+
+    { seq: 2, t_ms: 4500, ronda: 1, turno: 1, agente: "rojo", tipo: "chat",
+      texto: "¡Abran las ventanas, señores: que el humo va a llegar hasta el portal de enfrente!",
+      para: "*", tono: "chulo", intensidad: 0.72 },
+    { seq: 3, t_ms: 7500, ronda: 1, turno: 1, agente: "azul", tipo: "chat",
+      texto: "He revisado tu despliegue. Tres vecinos con antorchas no son un ejército: son una procesión.",
+      para: "*", tono: "chulo", intensidad: 0.58 },
+    { seq: 4, t_ms: 10500, ronda: 1, turno: 1, agente: "rojo", tipo: "bomba",
+      texto: "Lanza la Bomba del Zar sobre un grupo de 180 unidades enemigas", power: "czar_bomba" },
+    { seq: 5, t_ms: 13500, ronda: 1, turno: 1, agente: "azul", tipo: "chat",
+      texto: "¿La Bomba del Zar? Qué detalle tan de pueblo. Mi cordillera ni se ha enterado y ya me estoy aburriendo.",
+      para: "rojo", tono: "golpe", intensidad: 0.86, respuesta_a: 2 },
+    { seq: 6, t_ms: 16500, ronda: 1, turno: 1, agente: "rojo", tipo: "emoji",
+      texto: "🔥", emocion: "🔥", intensidad: 0.92 },
+    { seq: 7, t_ms: 23500, ronda: 1, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "Ronda 1: AZUL golpea más fuerte (121 frente a 88 bajas). En pie: ROJO 1129, AZUL 1167." },
+    { seq: 8, t_ms: 27500, ronda: 1, turno: 2, agente: "sistema", tipo: "titular",
+      texto: "EL PEDANTE ABRE FUERTE: AZUL le da una clase de fuego a un ROJO que solo traía chulería" },
+
+    { seq: 9, t_ms: 32500, ronda: 2, turno: 1, agente: "rojo", tipo: "chat",
+      texto: "Nuevo plan: nada de planes. Que eso también cuenta como plan, ¿no?",
+      para: "*", tono: "nervios", intensidad: 0.66 },
+    { seq: 10, t_ms: 35500, ronda: 2, turno: 1, agente: "azul", tipo: "chat",
+      texto: "Eso se llama «búsqueda aleatoria». Lo estudié. Tú lo estás viviendo.",
+      para: "rojo", tono: "burla", intensidad: 0.74, respuesta_a: 9 },
+    { seq: 11, t_ms: 38500, ronda: 2, turno: 1, agente: "azul", tipo: "tropas",
+      texto: "Refuerza sus defensas con 40 zorros (40 creados)", entity: "civ_fox", count: 40 },
+    { seq: 12, t_ms: 41500, ronda: 2, turno: 2, agente: "rojo", tipo: "bomba",
+      texto: "Lanza una bomba atómica sobre un grupo de 95 unidades enemigas", power: "atomic_bomb" },
+    { seq: 13, t_ms: 45500, ronda: 2, turno: 2, agente: "azul", tipo: "resultado",
+      texto: "Bajas: 148 · pérdidas: 64 · enemigo: 1011u/10c" },
+    { seq: 14, t_ms: 50500, ronda: 2, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "Ronda 2: AZUL golpea más fuerte (148 frente a 64 bajas) y ROJO pierde una ciudad. En pie: ROJO 1011, AZUL 1158." },
+    { seq: 15, t_ms: 55500, ronda: 2, turno: 2, agente: "sistema", tipo: "titular",
+      texto: "DOS DE DOS: AZUL se queda una ciudad y deja a ROJO mirando el humo" },
+
+    { seq: 16, t_ms: 62500, ronda: 3, turno: 1, agente: "azul", tipo: "chat",
+      texto: "Tres rondas, tres informes. A este paso voy a necesitar un anexo solo para tus lágrimas.",
+      para: "*", tono: "chulo", intensidad: 0.62 },
+    { seq: 17, t_ms: 65500, ronda: 3, turno: 1, agente: "rojo", tipo: "chat",
+      texto: "¡No estoy llorando! ¡Se me ha metido una cordillera en el ojo!",
+      para: "azul", tono: "nervios", intensidad: 0.78, respuesta_a: 16 },
+    { seq: 18, t_ms: 68500, ronda: 3, turno: 1, agente: "rojo", tipo: "tropas",
+      texto: "Desembarca 50 bandidos en territorio enemigo (50 creados)", entity: "bandit", count: 50 },
+    { seq: 19, t_ms: 71500, ronda: 3, turno: 1, agente: "azul", tipo: "bomba",
+      texto: "Lanza napalm sobre un grupo de 240 unidades enemigas", power: "napalm_bomb" },
+    { seq: 20, t_ms: 77500, ronda: 3, turno: 2, agente: "rojo", tipo: "resultado",
+      texto: "Bajas: 102 · pérdidas: 176 · enemigo: 1126u/13c" },
+    { seq: 21, t_ms: 82500, ronda: 3, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "Ronda 3: AZUL golpea más fuerte (176 frente a 102 bajas) y ROJO pierde dos ciudades. En pie: ROJO 880, AZUL 1126." },
+    { seq: 22, t_ms: 87500, ronda: 3, turno: 2, agente: "sistema", tipo: "titular",
+      texto: "AZUL SE PONE 3-0: dos ciudades más y un ROJO que solo conserva el orgullo y una antorcha" },
+
+    { seq: 23, t_ms: 92500, ronda: 4, turno: 1, agente: "rojo", tipo: "chat",
+      texto: "He aprendido una cosa en tres rondas: a tu ejército le sobra teoría y le falta aguante.",
+      para: "*", tono: "chulo", intensidad: 0.9 },
+    { seq: 24, t_ms: 95500, ronda: 4, turno: 1, agente: "azul", tipo: "chat",
+      texto: "Eso es estadísticamente… improbable.",
+      para: "rojo", tono: "nervios", intensidad: 0.55, respuesta_a: 23 },
+    { seq: 25, t_ms: 98500, ronda: 4, turno: 1, agente: "rojo", tipo: "bomba",
+      texto: "Lanza la Bomba del Zar sobre un grupo de 260 unidades enemigas", power: "czar_bomba" },
+    { seq: 26, t_ms: 101500, ronda: 4, turno: 1, agente: "azul", tipo: "chat",
+      texto: "Vale. Eso ha dolido. Lo apunto en la columna de «cosas que no había modelado».",
+      para: "rojo", tono: "golpe", intensidad: 0.82 },
+    { seq: 27, t_ms: 105500, ronda: 4, turno: 2, agente: "rojo", tipo: "resultado",
+      texto: "Bajas: 189 · pérdidas: 97 · enemigo: 977u/12c" },
+    { seq: 28, t_ms: 110500, ronda: 4, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "Ronda 4: ROJO golpea más fuerte (189 frente a 97 bajas) y AZUL pierde una ciudad. En pie: ROJO 863, AZUL 977." },
+    { seq: 29, t_ms: 115500, ronda: 4, turno: 2, agente: "sistema", tipo: "titular",
+      texto: "SE DESPIERTA EL BRUTO: ROJO recorta distancias y AZUL descubre que el mundo no es una hoja de cálculo" },
+
+    { seq: 30, t_ms: 122500, ronda: 5, turno: 1, agente: "azul", tipo: "chat",
+      texto: "Un dato no hace una tendencia, ROJO. Y tú, estadísticamente, eres un dato.",
+      para: "*", tono: "chulo", intensidad: 0.6 },
+    { seq: 31, t_ms: 125500, ronda: 5, turno: 1, agente: "rojo", tipo: "chat",
+      texto: "Pues mi dato favorito es que te quedan 700 unidades y yo tengo un dedo muy gordo.",
+      para: "azul", tono: "golpe", intensidad: 0.95, respuesta_a: 30 },
+    { seq: 32, t_ms: 128500, ronda: 5, turno: 1, agente: "rojo", tipo: "bomba",
+      texto: "Lanza una bomba atómica sobre un grupo de 312 unidades enemigas", power: "atomic_bomb" },
+    { seq: 33, t_ms: 131500, ronda: 5, turno: 1, agente: "azul", tipo: "chat",
+      texto: "¡Mi matriz! ¡Era una matriz estable! ¡No puedes llegar y… desestabilizarla!",
+      para: "rojo", tono: "llanto", intensidad: 0.9 },
+    { seq: 34, t_ms: 134500, ronda: 5, turno: 1, agente: "azul", tipo: "emoji",
+      texto: "🫠", emocion: "🫠", intensidad: 0.9 },
+    { seq: 35, t_ms: 138500, ronda: 5, turno: 2, agente: "rojo", tipo: "resultado",
+      texto: "Bajas: 312 · pérdidas: 88 · enemigo: 700u/10c" },
+    { seq: 36, t_ms: 143500, ronda: 5, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "Ronda 5: ROJO golpea más fuerte (312 frente a 88 bajas) y AZUL pierde dos ciudades. En pie: ROJO 865, AZUL 700." },
+    { seq: 37, t_ms: 148500, ronda: 5, turno: 2, agente: "sistema", tipo: "titular",
+      texto: "GOLPE DE 312: ROJO firma la ronda más brutal de la noche y AZUL empieza a dudar de sus gráficas" },
+
+    { seq: 38, t_ms: 152500, ronda: 6, turno: 1, agente: "azul", tipo: "chat",
+      texto: "Corrección: mi modelo sí contempla escenarios de derrota. Simplemente no me apetecía enseñártelos.",
+      para: "*", tono: "nervios", intensidad: 0.7 },
+    { seq: 39, t_ms: 155500, ronda: 6, turno: 1, agente: "rojo", tipo: "chat",
+      texto: "Tranquilo, que ahora te los enseño yo. Con dibujitos.",
+      para: "azul", tono: "burla", intensidad: 0.9, respuesta_a: 38 },
+    { seq: 40, t_ms: 158500, ronda: 6, turno: 1, agente: "rojo", tipo: "bomba",
+      texto: "Lanza la Bomba del Zar sobre un grupo de 300 unidades enemigas", power: "czar_bomba" },
+    { seq: 41, t_ms: 161500, ronda: 6, turno: 1, agente: "azul", tipo: "emoji",
+      texto: "📊", emocion: "📊", intensidad: 0.75 },
+    { seq: 42, t_ms: 168500, ronda: 6, turno: 2, agente: "rojo", tipo: "resultado",
+      texto: "Bajas: 228 · pérdidas: 74 · enemigo: 502u/8c" },
+    { seq: 43, t_ms: 172000, ronda: 6, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "Ronda 6: ROJO golpea más fuerte (228 frente a 74 bajas) y AZUL pierde dos ciudades. En pie: ROJO 851, AZUL 502." },
+    { seq: 44, t_ms: 175500, ronda: 6, turno: 2, agente: "sistema", tipo: "titular",
+      texto: "REMONTADA HISTÓRICA: ROJO levanta un 0-3 y se lleva el mundo en la última ronda" },
+
+    { seq: 45, t_ms: 179000, ronda: 6, turno: 2, agente: "rojo", tipo: "chat",
+      texto: "Lo dije en el primer turno: el mundo es mío. Y no pienso devolverlo.",
+      para: "*", tono: "chulo", intensidad: 1 },
+    { seq: 46, t_ms: 182000, ronda: 6, turno: 2, agente: "sistema", tipo: "ronda",
+      texto: "FIN: gana ROJO (bajas 983 frente a 704). Mayor golpe: ROJO con 312 bajas en la ronda 5. Racha: ROJO dominó 3 rondas seguidas." }
+  ],
+  resumen: {
+    duracion_s: 184,
+    total_bajas: { rojo: 983, azul: 704 },
+    total_perdidas: { rojo: 704, azul: 983 },
+    mayor_golpe: { agente: "rojo", bajas: 312, ronda: 5 },
+    racha: { agente: "rojo", rondas: 3 },
+    curvas: {
+      rojo: [1129, 1011, 880, 863, 865, 851],
+      azul: [1167, 1158, 1126, 977, 700, 502]
+    },
+    pico_bajas: { rojo: 312, azul: 176 }
+  }
+};
+
+/* =====================================================================
+   Utilidades
+   ===================================================================== */
+const $ = (sel, raiz) => (raiz || document).querySelector(sel);
+const $$ = (sel, raiz) => Array.from((raiz || document).querySelectorAll(sel));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const num = (v, def) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : (def === undefined ? 0 : def);
+};
+const fmtT = (ms) => {
+  const s = Math.max(0, Math.round(num(ms) / 1000));
+  return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+};
+const recortar = (t, n) => (t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t);
+const REDUCED = !document.documentElement.classList.contains('movimiento') &&
+  !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+const REGLA_EMOJI = /^[\p{Extended_Pictographic}\u200d\uFE0F\u20e3\s]+$/u;
+const esSoloEmoji = (t) => !!t && REGLA_EMOJI.test(t);
+
+const TONO_LABEL = {
+  chulo: 'chulo', burla: 'burla', llanto: 'llanto',
+  nervios: 'nervios', golpe: 'golpe', emoji: 'emoji'
+};
+const MOOD = {
+  chulo: '😎', burla: '😏', llanto: '😭', nervios: '😰', golpe: '💥', emoji: '😲'
+};
+const ICONO = {
+  chat: '💬', emoji: '✨', bomba: '💣', tropas: '🐺',
+  resultado: '📊', ronda: '🏁', titular: '📰', info: '🎬', error: '⚠️'
+};
+
+/* =====================================================================
+   Estado
+   ===================================================================== */
+let SHOW = null;
+let EV = [];
+let SEQ = new Map();
+let DUR = 0;
+let BAJAS_ACUM = { rojo: [], azul: [] };
+let TOTAL_RONDAS = 0;
+
+const EST = { t: 0, vel: 1, pausa: false, fin: false, idx: 0, ultimo: 0 };
+let RONDA = 0;
+let RONDAS_CERRADAS = 0;
+let SCORE = {
+  rojo: { u: 0, c: 0, bajas: 0 },
+  azul: { u: 0, c: 0, bajas: 0 }
+};
+let EMA = 0.5;
+let TENSION = 26;
+let TENSION_OBJ = 30;
+
+/* Referencias al DOM */
+const DOM = {};
+function cachearDom() {
+  [
+    'app', 'progreso', 'relleno', 'cabeza', 'chip-estado', 'estado-txt', 'chip-fecha',
+    'chip-rondas', 'btn-play', 'btn-reiniciar', 'btn-final', 'u-rojo', 'u-azul',
+    'c-rojo', 'c-azul', 'b-rojo', 'b-azul', 'sh-rojo', 'sh-azul', 'reino-rojo',
+    'reino-azul', 'ronda-n', 'ronda-tot', 'pips', 'tension-n', 'tension-fill',
+    't-actual', 't-total', 'titular-tx', 'drama-rojo', 'drama-azul', 'col-rojo',
+    'col-azul', 'mood-rojo', 'mood-azul', 'sub-rojo', 'sub-azul', 'grafica',
+    'grafica-cnt', 'historial', 'hist-cnt', 'hist-vacio', 'ticker-items',
+    'capa', 'flash', 'banner', 'victoria', 'v-lluvia', 'v-ganador', 'v-reino',
+    'v-br', 'v-ba', 'v-frase', 'v-pips', 'v-motivo', 'v-stats', 'v-otra',
+    'v-cerrar', 'aviso'
+  ].forEach((id) => {
+    DOM[id.replace(/-/g, '_')] = document.getElementById(id);
+  });
+}
+
+/* =====================================================================
+   Carga y normalización del show.json
+   ===================================================================== */
+async function cargarShow() {
+  let url = null;
+  try {
+    url = new URLSearchParams(window.location.search).get('show');
+  } catch (_) {
+    url = null;
+  }
+  if (!url) return SHOW_EJEMPLO;
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const json = await res.json();
+    if (!json || typeof json !== 'object') throw new Error('JSON vacío');
+    return json;
+  } catch (err) {
+    avisar('No he podido cargar «' + url + '» (' + (err && err.message ? err.message : 'error') +
+      '). Reproduzco la partida de ejemplo.');
+    return SHOW_EJEMPLO;
+  }
+}
+
+function normalizar(bruto) {
+  const o = (bruto && typeof bruto === 'object') ? bruto : {};
+  o.meta = (o.meta && typeof o.meta === 'object') ? o.meta : {};
+  o.resumen = (o.resumen && typeof o.resumen === 'object') ? o.resumen : {};
+  o.estado_inicial = (o.estado_inicial && typeof o.estado_inicial === 'object') ? o.estado_inicial : {};
+  o.estado_inicial.rojo = o.estado_inicial.rojo || {};
+  o.estado_inicial.azul = o.estado_inicial.azul || {};
+  o.rondas = Array.isArray(o.rondas) ? o.rondas.filter((r) => r && typeof r === 'object') : [];
+  o.meta.reinos = (o.meta.reinos && typeof o.meta.reinos === 'object') ? o.meta.reinos : {};
+
+  const evs = Array.isArray(o.eventos) ? o.eventos.filter((e) => e && typeof e === 'object') : [];
+  evs.forEach((e, i) => {
+    if (!Number.isFinite(Number(e.t_ms))) e.t_ms = i * 1000;
+    e.t_ms = Math.max(0, Number(e.t_ms));
+    if (!Number.isFinite(Number(e.seq))) e.seq = i + 1;
+    e.seq = Number(e.seq);
+    if (!e.tipo) e.tipo = 'info';
+    if (!e.agente) e.agente = 'sistema';
+  });
+  evs.sort((a, b) => (a.t_ms - b.t_ms) || (a.seq - b.seq));
+  o.eventos = evs;
+
+  const ultimo = evs.length ? evs[evs.length - 1].t_ms : 0;
+  DUR = Math.max(num(o.meta.duracion_s) * 1000, ultimo + 1200, 8000);
+
+  /* ¿Las bajas de `rondas[]` son por ronda o acumuladas?
+     El motor real escribe acumuladas; el dataset de ejemplo, por ronda.
+     Si la serie nunca baja, la tratamos como acumulada. */
+  BAJAS_ACUM = { rojo: [], azul: [] };
+  ['rojo', 'azul'].forEach((lado) => {
+    const vals = o.rondas.map((r) => num(r[lado] && r[lado].bajas));
+    let acumulada = vals.length > 1;
+    for (let i = 1; i < vals.length; i++) {
+      if (vals[i] < vals[i - 1]) { acumulada = false; break; }
+    }
+    let total = 0;
+    BAJAS_ACUM[lado] = vals.map((v) => {
+      if (acumulada) return v;
+      total += v;
+      return total;
+    });
+  });
+
+  TOTAL_RONDAS = Math.max(num(o.meta.rondas, 0), o.rondas.length, 0);
+  return o;
+}
+
+function avisar(texto) {
+  if (!DOM.aviso) return;
+  DOM.aviso.textContent = texto;
+  DOM.aviso.classList.add('on');
+  clearTimeout(avisar._t);
+  avisar._t = setTimeout(() => DOM.aviso.classList.remove('on'), 8000);
+}
+
+/* =====================================================================
+   Arranque
+   ===================================================================== */
+async function iniciar() {
+  cachearDom();
+  const bruto = await cargarShow();
+  SHOW = normalizar(bruto);
+  EV = SHOW.eventos;
+  SEQ = new Map();
+  EV.forEach((e) => SEQ.set(e.seq, e));
+
+  pintarEstatico();
+  construirPips();
+  construirMarcas();
+  engancharControles();
+  reset();
+  EST.pausa = false;
+  EST.ultimo = 0;
+  actualizarBotonPlay();
+  requestAnimationFrame(tick);
+}
+
+function pintarEstatico() {
+  const meta = SHOW.meta || {};
+  const reinos = meta.reinos || {};
+  const nomR = (reinos.rojo && reinos.rojo.nombre) || 'ROJO';
+  const nomA = (reinos.azul && reinos.azul.nombre) || 'AZUL';
+
+  DOM.reino_rojo.textContent = nomR;
+  DOM.reino_azul.textContent = nomA;
+  DOM.sub_rojo.textContent = nomR + ' · reino ' + num(reinos.rojo && reinos.rojo.id, '—');
+  DOM.sub_azul.textContent = nomA + ' · reino ' + num(reinos.azul && reinos.azul.id, '—');
+  DOM.chip_fecha.textContent = meta.fecha || 'sin fecha';
+  DOM.chip_rondas.textContent = TOTAL_RONDAS + ' rondas';
+  DOM.ronda_tot.textContent = TOTAL_RONDAS;
+  DOM.t_total.textContent = fmtT(DUR);
+}
+
+function construirPips() {
+  DOM.pips.textContent = '';
+  for (let i = 1; i <= TOTAL_RONDAS; i++) {
+    const s = document.createElement('span');
+    s.className = 'pip';
+    s.title = 'Ronda ' + i;
+    DOM.pips.appendChild(s);
+  }
+}
+
+function construirMarcas() {
+  const riel = DOM.progreso.querySelector('.riel');
+  $$('.marca-ev', riel).forEach((m) => m.remove());
+  EV.forEach((e) => {
+    if (!DUR) return;
+    if (e.tipo !== 'bomba' && e.tipo !== 'tropas' && e.tipo !== 'ronda') return;
+    const m = document.createElement('span');
+    m.className = 'marca-ev' + (e.tipo === 'bomba' ? ' guerra' : '');
+    m.style.left = (clamp(e.t_ms / DUR, 0, 1) * 100).toFixed(3) + '%';
+    riel.appendChild(m);
+  });
+}
+
+/* =====================================================================
+   Reloj
+   ===================================================================== */
+function tick(ahora) {
+  if (!EST.pausa && !EST.fin) {
+    if (!EST.ultimo) EST.ultimo = ahora;
+    const dt = Math.min(ahora - EST.ultimo, 220);
+    EST.ultimo = ahora;
+    if (dt > 0) {
+      EST.t += dt * EST.vel;
+      if (EST.t >= DUR) EST.t = DUR;
+      avanzarHasta(EST.t, false);
+      pintarProgreso();
+      animarTension();
+      if (EST.t >= DUR) {
+        EST.fin = true;
+        actualizarBotonPlay();
+        mostrarVictoria();
+      }
+    }
+  } else {
+    EST.ultimo = ahora;
+  }
+  requestAnimationFrame(tick);
+}
+
+function avanzarHasta(t, silencio) {
+  while (EST.idx < EV.length && EV[EST.idx].t_ms <= t) {
+    procesar(EV[EST.idx], silencio);
+    EST.idx++;
+  }
+}
+
+function procesar(ev, sil) {
+  const tipo = String(ev.tipo || 'info');
+  const agente = String(ev.agente || 'sistema');
+  const rondaEv = num(ev.ronda, 0);
+
+  if (rondaEv && rondaEv !== RONDA) {
+    RONDA = rondaEv;
+    pintarRonda();
+  }
+
+  switch (tipo) {
+    case 'chat':
+      burbuja(ev, sil);
+      subirTension(ev);
+      break;
+    case 'emoji':
+      burbuja(ev, sil);
+      subirTension(ev);
+      break;
+    case 'bomba':
+      ticker(ev, sil);
+      subirTension(ev);
+      if (!sil) {
+        destello();
+        volarEmojis(agente);
+        impacto(agente === 'azul' ? 'rojo' : 'azul');
+      }
+      break;
+    case 'tropas':
+      ticker(ev, sil);
+      if (!sil) impacto(agente);
+      break;
+    case 'resultado':
+      ticker(ev, sil);
+      break;
+    case 'ronda':
+      cerrarRonda(ev, sil);
+      break;
+    case 'titular':
+      ponerTitular(String(ev.texto || ''), sil);
+      ticker(ev, sil);
+      break;
+    case 'info':
+    default:
+      ticker(ev, sil);
+      break;
+  }
+}
+
+/* =====================================================================
+   Drama: burbujas
+   ===================================================================== */
+function burbuja(ev, sil) {
+  const lado = ev.agente === 'azul' ? 'azul' : 'rojo';
+  const feed = lado === 'azul' ? DOM.drama_azul : DOM.drama_rojo;
+  const texto = String(ev.texto != null ? ev.texto : (ev.emocion != null ? ev.emocion : ''));
+  const tono = String(ev.tono || (ev.tipo === 'emoji' ? 'emoji' : 'chulo'));
+  const inten = Number.isFinite(Number(ev.intensidad)) ? clamp(Number(ev.intensidad), 0, 1) : 0.6;
+  const soloEmoji = tono === 'emoji' || esSoloEmoji(texto);
+
+  const el = document.createElement('div');
+  el.className = 'burbuja' + (soloEmoji ? ' es-emoji' : '') + ' tono-' + tono;
+  el.dataset.seq = String(ev.seq);
+  el.style.setProperty('--int', inten.toFixed(2));
+
+  const cuerpo = document.createElement('div');
+  cuerpo.className = 'cuerpo';
+
+  if (ev.respuesta_a) {
+    const citado = SEQ.get(Number(ev.respuesta_a));
+    if (citado) {
+      const cita = document.createElement('span');
+      cita.className = 'cita';
+      cita.textContent = '↳ ' + recortar(String(citado.texto || ''), 72);
+      cuerpo.appendChild(cita);
+      marcarCitado(Number(ev.respuesta_a));
+    }
+  }
+  cuerpo.appendChild(document.createTextNode(texto));
+  el.appendChild(cuerpo);
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const chipTono = document.createElement('span');
+  chipTono.className = 'tono-chip';
+  chipTono.textContent = TONO_LABEL[tono] || tono;
+  meta.appendChild(chipTono);
+  if (ev.para && ev.para !== '*') {
+    const para = document.createElement('span');
+    para.className = 'para-chip';
+    para.textContent = '→ ' + String(ev.para).toUpperCase();
+    meta.appendChild(para);
+  }
+  el.appendChild(meta);
+
+  feed.appendChild(el);
+  while (feed.children.length > 80) feed.removeChild(feed.firstChild);
+
+  if (sil) {
+    feed.scrollTop = feed.scrollHeight;
+  } else {
+    const cerca = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 140;
+    if (cerca) feed.scrollTop = feed.scrollHeight;
+  }
+
+  if (soloEmoji) {
+    pintarMood(lado, 'emoji', texto);
+    if (!sil && inten >= 0.72) invadir(texto, lado);
+  } else {
+    pintarMood(lado, tono);
+  }
+}
+
+function marcarCitado(seq) {
+  const el = document.querySelector('.burbuja[data-seq="' + seq + '"]');
+  if (!el) return;
+  el.classList.remove('respondida');
+  void el.offsetWidth;
+  el.classList.add('respondida');
+  setTimeout(() => el.classList.remove('respondida'), 2400);
+}
+
+function pintarMood(lado, tono, emoji) {
+  const el = lado === 'azul' ? DOM.mood_azul : DOM.mood_rojo;
+  if (!el) return;
+  const nuevo = emoji || MOOD[tono] || '😐';
+  if (el.textContent === nuevo) return;
+  el.textContent = nuevo;
+  el.classList.remove('salta');
+  void el.offsetWidth;
+  el.classList.add('salta');
+}
+
+/* =====================================================================
+   Efectos
+   ===================================================================== */
+function invadir(emoji, lado) {
+  if (REDUCED || !emoji) return;
+  const el = document.createElement('div');
+  el.className = 'emoji-invade ' + lado;
+  el.textContent = emoji;
+  DOM.capa.appendChild(el);
+  setTimeout(() => el.remove(), 1300);
+}
+
+function volarEmojis(agente) {
+  if (REDUCED) return;
+  const origen = agente === 'azul' ? DOM.col_azul : DOM.col_rojo;
+  const destino = agente === 'azul' ? DOM.col_rojo : DOM.col_azul;
+  if (!origen || !destino) return;
+  const a = origen.getBoundingClientRect();
+  const b = destino.getBoundingClientRect();
+  const x0 = a.left + a.width / 2;
+  const y0 = a.top + Math.min(a.height * 0.4, 220);
+  const set = ['💥', '🔥', '💀', '☄️', '🧨', '💣'];
+  for (let i = 0; i < 7; i++) {
+    const s = document.createElement('span');
+    s.className = 'emoji-vuela';
+    s.textContent = set[Math.floor(Math.random() * set.length)];
+    s.style.left = (x0 + (Math.random() - 0.5) * 70) + 'px';
+    s.style.top = (y0 + (Math.random() - 0.5) * 90) + 'px';
+    s.style.fontSize = (18 + Math.random() * 16).toFixed(0) + 'px';
+    s.style.setProperty('--dx', ((b.left + b.width * Math.random()) - x0).toFixed(0) + 'px');
+    s.style.setProperty('--dy', ((b.top + b.height * 0.6 * Math.random()) - y0).toFixed(0) + 'px');
+    s.style.setProperty('--rot', (Math.random() * 720 - 360).toFixed(0) + 'deg');
+    s.style.setProperty('--dur', (0.72 + Math.random() * 0.5).toFixed(2) + 's');
+    document.body.appendChild(s);
+    setTimeout(() => s.remove(), 1500);
+  }
+}
+
+function destello() {
+  if (REDUCED) return;
+  const f = DOM.flash;
+  f.classList.remove('on');
+  void f.offsetWidth;
+  f.classList.add('on');
+}
+
+function impacto(lado) {
+  const col = lado === 'azul' ? DOM.col_azul : DOM.col_rojo;
+  if (!col || REDUCED) return;
+  col.classList.remove('impacto');
+  void col.offsetWidth;
+  col.classList.add('impacto');
+  setTimeout(() => col.classList.remove('impacto'), 520);
+}
+
+function banner(texto) {
+  if (!DOM.banner) return;
+  DOM.banner.textContent = texto;
+  DOM.banner.classList.remove('on');
+  void DOM.banner.offsetWidth;
+  DOM.banner.classList.add('on');
+  clearTimeout(banner._t);
+  banner._t = setTimeout(() => DOM.banner.classList.remove('on'), 1300);
+}
+
+/* =====================================================================
+   Ticker
+   ===================================================================== */
+function ticker(ev, sil) {
+  const agente = String(ev.agente || 'sistema');
+  const clase = agente === 'rojo' ? 'rojo' : agente === 'azul' ? 'azul' : 'sis';
+  const ico = ICONO[String(ev.tipo || 'info')] || '•';
+
+  const el = document.createElement('span');
+  el.className = 'tk ' + clase + (sil ? ' sin-anim' : '');
+  const sIco = document.createElement('span');
+  sIco.className = 'ico';
+  sIco.textContent = ico;
+  const q = document.createElement('b');
+  q.textContent = agente === 'sistema' ? 'SISTEMA' : agente.toUpperCase();
+  const t = document.createElement('span');
+  t.textContent = recortar(String(ev.texto || ''), 120);
+  el.appendChild(sIco);
+  el.appendChild(q);
+  el.appendChild(t);
+  DOM.ticker_items.appendChild(el);
+  while (DOM.ticker_items.children.length > 16) {
+    DOM.ticker_items.removeChild(DOM.ticker_items.firstChild);
+  }
+  DOM.ticker_items.scrollLeft = DOM.ticker_items.scrollWidth;
+}
+
+/* =====================================================================
+   Rondas: marcador, pips, historial, gráfica
+   ===================================================================== */
+function cerrarRonda(ev, sil) {
+  const n = num(ev.ronda, 0);
+  const texto = String(ev.texto || '');
+  const esFin = /^FIN\b/i.test(texto);
+
+  if (n > 0 && n > RONDAS_CERRADAS) {
+    RONDAS_CERRADAS = n;
+    aplicarRonda(n, sil);
+  }
+  ticker(ev, sil);
+
+  if (!sil) {
+    if (esFin) banner('FIN DE LA VELADA');
+    else banner('RONDA ' + n + ' COMPLETADA');
+  }
+}
+
+function aplicarRonda(n, sil) {
+  const r = SHOW.rondas[n - 1];
+  if (r) {
+    if (r.rojo) {
+      SCORE.rojo.u = num(r.rojo.unidades, SCORE.rojo.u);
+      SCORE.rojo.c = num(r.rojo.ciudades, SCORE.rojo.c);
+    }
+    if (r.azul) {
+      SCORE.azul.u = num(r.azul.unidades, SCORE.azul.u);
+      SCORE.azul.c = num(r.azul.ciudades, SCORE.azul.c);
+    }
+    const br = BAJAS_ACUM.rojo[n - 1];
+    const ba = BAJAS_ACUM.azul[n - 1];
+    if (br !== undefined) SCORE.rojo.bajas = br;
+    if (ba !== undefined) SCORE.azul.bajas = ba;
+    pintarMarcador(!sil);
+    pintarPips(n, r.dominio);
+    historial(n, r, sil);
+    pintarGrafica();
+    pintarRonda();
+  } else {
+    pintarRonda();
+  }
+}
+
+function pintarMarcador(anim) {
+  ['rojo', 'azul'].forEach((lado) => {
+    const s = SCORE[lado];
+    const u = document.getElementById('u-' + lado);
+    const c = document.getElementById('c-' + lado);
+    const b = document.getElementById('b-' + lado);
+    if (!u) return;
+    const texto = String(s.u);
+    if (u.textContent !== texto) {
+      u.textContent = texto;
+      if (anim) {
+        u.classList.remove('cambia');
+        void u.offsetWidth;
+        u.classList.add('cambia');
+        setTimeout(() => u.classList.remove('cambia'), 700);
+      }
+    }
+    if (c) c.textContent = String(s.c);
+    if (b) b.textContent = String(s.bajas);
+  });
+
+  const tot = SCORE.rojo.u + SCORE.azul.u || 1;
+  if (DOM.sh_rojo) DOM.sh_rojo.style.width = (SCORE.rojo.u / tot * 100).toFixed(1) + '%';
+  if (DOM.sh_azul) DOM.sh_azul.style.width = (SCORE.azul.u / tot * 100).toFixed(1) + '%';
+}
+
+function pintarPips(n, dominio) {
+  const pips = DOM.pips.children;
+  if (n >= 1 && n <= pips.length) {
+    const pip = pips[n - 1];
+    pip.className = 'pip ' + (dominio === 'rojo' || dominio === 'azul' ? dominio : 'empate');
+    pip.title = 'Ronda ' + n + ' · ' + (dominio ? String(dominio).toUpperCase() : 'EMPATE');
+  }
+}
+
+function pintarRonda() {
+  if (DOM.ronda_n) DOM.ronda_n.textContent = String(RONDA || 0);
+}
+
+function historial(n, r, sil) {
+  if (DOM.hist_vacio && DOM.hist_vacio.parentNode) DOM.hist_vacio.remove();
+  const perR = (lado) => {
+    const arr = BAJAS_ACUM[lado] || [];
+    return num(arr[n - 1]) - num(arr[n - 2]);
+  };
+  const fila = document.createElement('div');
+  fila.className = 'h-row';
+
+  const rr = document.createElement('span');
+  rr.className = 'r';
+  rr.textContent = 'R' + n;
+
+  const dd = document.createElement('i');
+  dd.className = 'd ' + (r.dominio === 'rojo' || r.dominio === 'azul' ? r.dominio : 'empate');
+
+  const dom = document.createElement('span');
+  dom.className = 'dom';
+  dom.textContent = r.dominio === 'rojo' || r.dominio === 'azul' ? String(r.dominio).toUpperCase() : 'EMPATE';
+
+  const nn = document.createElement('span');
+  nn.className = 'n';
+  nn.textContent = perR('rojo') + '–' + perR('azul');
+
+  fila.appendChild(rr);
+  fila.appendChild(dd);
+  fila.appendChild(dom);
+  fila.appendChild(nn);
+  DOM.historial.appendChild(fila);
+  DOM.historial.scrollTop = DOM.historial.scrollHeight;
+  if (DOM.hist_cnt) DOM.hist_cnt.textContent = n + '/' + TOTAL_RONDAS;
+  if (sil) fila.style.animation = 'none';
+}
+
+/* ---------- gráfica SVG de unidades ---------- */
+const SVGNS = 'http://www.w3.org/2000/svg';
+function svg(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  if (attrs) Object.keys(attrs).forEach((k) => el.setAttribute(k, attrs[k]));
+  return el;
+}
+
+function pintarGrafica() {
+  const cont = DOM.grafica;
+  if (!cont) return;
+  cont.textContent = '';
+
+  const ini = SHOW.estado_inicial || {};
+  const serieR = [num(ini.rojo && ini.rojo.unidades)];
+  const serieA = [num(ini.azul && ini.azul.unidades)];
+  SHOW.rondas.forEach((r, i) => {
+    serieR.push(num(r.rojo && r.rojo.unidades, serieR[i]));
+    serieA.push(num(r.azul && r.azul.unidades, serieA[i]));
+  });
+  if (serieR.length < 2) {
+    const p = document.createElement('div');
+    p.className = 'h-vacio';
+    p.textContent = 'Sin datos de unidades.';
+    cont.appendChild(p);
+    return;
+  }
+
+  const W = 260, H = 86, PX = 7, PY = 8;
+  const todos = serieR.concat(serieA);
+  let min = Math.min.apply(null, todos);
+  let max = Math.max.apply(null, todos);
+  if (!Number.isFinite(min) || !Number.isFinite(max)) { min = 0; max = 1; }
+  if (max - min < 1) max = min + 1;
+  const margen = (max - min) * 0.16;
+  min -= margen; max += margen;
+
+  const x = (i) => PX + (W - 2 * PX) * (i / (serieR.length - 1));
+  const y = (v) => H - PY - (H - 2 * PY) * ((v - min) / (max - min));
+
+  const raiz = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Curvas de unidades por ronda' });
+
+  [0.25, 0.5, 0.75].forEach((f) => {
+    const yy = PY + (H - 2 * PY) * f;
+    raiz.appendChild(svg('line', { x1: PX, y1: yy.toFixed(1), x2: W - PX, y2: yy.toFixed(1), class: 'gl' }));
+  });
+
+  const d = (arr) => arr.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+
+  raiz.appendChild(svg('path', { d: d(serieR), class: 'l-ghost', stroke: 'var(--rojo)' }));
+  raiz.appendChild(svg('path', { d: d(serieA), class: 'l-ghost', stroke: 'var(--azul)' }));
+
+  const hasta = clamp(RONDAS_CERRADAS, 0, serieR.length - 1);
+  if (hasta >= 1) {
+    raiz.appendChild(svg('path', { d: d(serieR.slice(0, hasta + 1)), class: 'l-rojo' }));
+    raiz.appendChild(svg('path', { d: d(serieA.slice(0, hasta + 1)), class: 'l-azul' }));
+  }
+  for (let i = 0; i <= hasta; i++) {
+    raiz.appendChild(svg('circle', { cx: x(i).toFixed(1), cy: y(serieR[i]).toFixed(1), r: '2.4', class: 'p-rojo' }));
+    raiz.appendChild(svg('circle', { cx: x(i).toFixed(1), cy: y(serieA[i]).toFixed(1), r: '2.4', class: 'p-azul' }));
+  }
+
+  cont.appendChild(raiz);
+  if (DOM.grafica_cnt) {
+    DOM.grafica_cnt.textContent = hasta === 0 ? 'inicio' : 'ronda ' + hasta;
+  }
+}
+
+/* =====================================================================
+   Tensión
+   ===================================================================== */
+function subirTension(ev) {
+  const inten = Number(ev.intensidad);
+  if (Number.isFinite(inten)) EMA = EMA * 0.72 + clamp(inten, 0, 1) * 0.28;
+  const total = SCORE.rojo.u + SCORE.azul.u || 1;
+  const cerca = 1 - Math.abs(SCORE.rojo.u - SCORE.azul.u) / total;
+  const prog = DUR ? clamp(EST.t / DUR, 0, 1) : 0;
+  /* La tensión arranca baja y se va calentando con la velada. */
+  TENSION_OBJ = clamp(12 + (46 * EMA + 30 * cerca) * (0.42 + 0.58 * prog), 8, 100);
+}
+
+function animarTension() {
+  TENSION += (TENSION_OBJ - TENSION) * 0.075;
+  if (DOM.tension_fill) DOM.tension_fill.style.width = clamp(TENSION, 3, 100).toFixed(1) + '%';
+  if (DOM.tension_n) DOM.tension_n.textContent = Math.round(clamp(TENSION, 3, 100)) + '%';
+}
+
+/* =====================================================================
+   Titular
+   ===================================================================== */
+function ponerTitular(texto, sil) {
+  const el = DOM.titular_tx;
+  if (!el) return;
+  el.textContent = texto || '—';
+  if (sil) return;
+  el.classList.remove('nuevo');
+  void el.offsetWidth;
+  el.classList.add('nuevo');
+}
+
+/* =====================================================================
+   Progreso
+   ===================================================================== */
+function pintarProgreso() {
+  const f = DUR ? clamp(EST.t / DUR, 0, 1) : 0;
+  if (DOM.relleno) DOM.relleno.style.width = (f * 100).toFixed(2) + '%';
+  if (DOM.cabeza) DOM.cabeza.style.left = (f * 100).toFixed(2) + '%';
+  if (DOM.t_actual) DOM.t_actual.textContent = fmtT(EST.t);
+  if (DOM.progreso) DOM.progreso.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+}
+
+/* =====================================================================
+   Reset / seek
+   ===================================================================== */
+function reset() {
+  EST.t = 0;
+  EST.idx = 0;
+  EST.fin = false;
+  EST.ultimo = 0;
+  RONDA = 0;
+  RONDAS_CERRADAS = 0;
+  EMA = 0.5;
+  TENSION = 26;
+  TENSION_OBJ = 30;
+
+  const ini = SHOW.estado_inicial || {};
+  SCORE = {
+    rojo: { u: num(ini.rojo && ini.rojo.unidades), c: num(ini.rojo && ini.rojo.ciudades), bajas: 0 },
+    azul: { u: num(ini.azul && ini.azul.unidades), c: num(ini.azul && ini.azul.ciudades), bajas: 0 }
+  };
+
+  DOM.drama_rojo.textContent = '';
+  DOM.drama_azul.textContent = '';
+  DOM.ticker_items.textContent = '';
+  DOM.historial.textContent = '';
+  const vacio = document.createElement('div');
+  vacio.className = 'h-vacio';
+  vacio.id = 'hist-vacio';
+  vacio.textContent = 'Todavía no ha terminado ninguna ronda.';
+  DOM.historial.appendChild(vacio);
+  DOM.hist_vacio = vacio;
+  DOM.hist_cnt.textContent = '0/' + TOTAL_RONDAS;
+
+  $$('.pip', DOM.pips).forEach((p) => { p.className = 'pip'; p.title = ''; });
+  $$('.emoji-vuela, .emoji-invade', document.body).forEach((e) => e.remove());
+  DOM.capa.textContent = '';
+  DOM.banner.classList.remove('on');
+
+  DOM.mood_rojo.textContent = '😐';
+  DOM.mood_azul.textContent = '😐';
+
+  pintarMarcador(false);
+  pintarRonda();
+  pintarProgreso();
+  pintarGrafica();
+  animarTension();
+  ponerTitular('La velada está a punto de empezar…', true);
+  ocultarVictoria();
+}
+
+function irA(ms) {
+  const destino = clamp(num(ms), 0, DUR);
+  reset();
+  EST.t = destino;
+  avanzarHasta(destino, true);
+  EST.ultimo = 0;
+  pintarProgreso();
+  animarTension();
+  if (destino >= DUR - 1) {
+    EST.fin = true;
+    EST.pausa = true;
+    mostrarVictoria();
+  } else {
+    EST.fin = false;
+    EST.pausa = false;
+  }
+  actualizarBotonPlay();
+}
+
+function reiniciar() {
+  reset();
+  EST.pausa = false;
+  EST.ultimo = 0;
+  actualizarBotonPlay();
+}
+
+function saltarFinal() {
+  irA(DUR);
+}
+
+/* =====================================================================
+   Controles
+   ===================================================================== */
+function togglePausa() {
+  if (EST.fin) { reiniciar(); return; }
+  EST.pausa = !EST.pausa;
+  EST.ultimo = 0;
+  actualizarBotonPlay();
+}
+
+function setVel(v) {
+  EST.vel = v;
+  $$('.btn.vel').forEach((b) => b.classList.toggle('act', Number(b.dataset.vel) === v));
+}
+
+function actualizarBotonPlay() {
+  if (!DOM.btn_play) return;
+  const fin = EST.fin;
+  DOM.btn_play.textContent = fin ? '↻' : (EST.pausa ? '▶' : '⏸');
+  DOM.btn_play.title = fin ? 'Volver a empezar (R)' : (EST.pausa ? 'Reproducir (espacio)' : 'Pausa (espacio)');
+  DOM.btn_play.setAttribute('aria-label', fin ? 'Volver a empezar' : (EST.pausa ? 'Reproducir' : 'Pausa'));
+
+  const chip = DOM.chip_estado;
+  const txt = DOM.estado_txt;
+  if (!chip || !txt) return;
+  chip.classList.remove('live', 'pausa', 'fin');
+  if (fin) { chip.classList.add('fin'); txt.textContent = 'FIN'; }
+  else if (EST.pausa) { chip.classList.add('pausa'); txt.textContent = 'EN PAUSA'; }
+  else { chip.classList.add('live'); txt.textContent = 'REPRODUCIENDO'; }
+}
+
+function engancharControles() {
+  DOM.btn_play.addEventListener('click', togglePausa);
+  DOM.btn_reiniciar.addEventListener('click', reiniciar);
+  DOM.btn_final.addEventListener('click', saltarFinal);
+  $$('.btn.vel').forEach((b) => {
+    b.addEventListener('click', () => setVel(Number(b.dataset.vel) || 1));
+  });
+
+  /* barra de progreso: clic y arrastre */
+  let arrastrando = false;
+  const buscar = (ev) => {
+    const riel = DOM.progreso.querySelector('.riel');
+    const r = riel.getBoundingClientRect();
+    if (!r.width) return;
+    irA(clamp((ev.clientX - r.left) / r.width, 0, 1) * DUR);
+  };
+  DOM.progreso.addEventListener('pointerdown', (ev) => {
+    arrastrando = true;
+    DOM.progreso.classList.add('arrastrando');
+    try { DOM.progreso.setPointerCapture(ev.pointerId); } catch (_) { /* sin captura */ }
+    buscar(ev);
+  });
+  DOM.progreso.addEventListener('pointermove', (ev) => { if (arrastrando) buscar(ev); });
+  const soltar = (ev) => {
+    arrastrando = false;
+    DOM.progreso.classList.remove('arrastrando');
+    try { DOM.progreso.releasePointerCapture(ev.pointerId); } catch (_) { /* ya liberado */ }
+  };
+  DOM.progreso.addEventListener('pointerup', soltar);
+  DOM.progreso.addEventListener('pointercancel', () => {
+    arrastrando = false;
+    DOM.progreso.classList.remove('arrastrando');
+  });
+
+  /* teclado */
+  document.addEventListener('keydown', (ev) => {
+    const t = ev.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    /* Si el foco está en un botón, Espacio/Intro son suyos: no los robamos. */
+    if (t && t.tagName === 'BUTTON' && (ev.code === 'Space' || ev.key === 'Enter')) return;
+    if (ev.code === 'Space') { ev.preventDefault(); togglePausa(); }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); irA(EST.t + 5000); }
+    else if (ev.key === 'ArrowLeft') { ev.preventDefault(); irA(EST.t - 5000); }
+    else if (ev.key === '1') setVel(1);
+    else if (ev.key === '2') setVel(2);
+    else if (ev.key === '4') setVel(4);
+    else if (ev.key === 'r' || ev.key === 'R') reiniciar();
+    else if (ev.key === 'End') { ev.preventDefault(); saltarFinal(); }
+    else if (ev.key === 'Escape') ocultarVictoria();
+  });
+
+  DOM.v_otra.addEventListener('click', reiniciar);
+  DOM.v_cerrar.addEventListener('click', ocultarVictoria);
+  DOM.victoria.addEventListener('click', (ev) => {
+    if (ev.target === DOM.victoria) ocultarVictoria();
+  });
+}
+
+/* =====================================================================
+   Victoria
+   ===================================================================== */
+function ganador() {
+  const g = String((SHOW.meta && SHOW.meta.ganador) || '').toUpperCase();
+  if (g === 'ROJO' || g === 'AZUL' || g === 'EMPATE') return g;
+  const t = (SHOW.resumen && SHOW.resumen.total_bajas) || {};
+  const r = num(t.rojo), a = num(t.azul);
+  if (r > a) return 'ROJO';
+  if (a > r) return 'AZUL';
+  return 'EMPATE';
+}
+
+function ultimaFrase(lado) {
+  for (let i = EV.length - 1; i >= 0; i--) {
+    const e = EV[i];
+    if (e.agente !== lado) continue;
+    if (e.tipo !== 'chat') continue;
+    const txt = String(e.texto || '');
+    if (txt && !esSoloEmoji(txt)) return txt;
+  }
+  return '';
+}
+
+function mostrarVictoria() {
+  if (DOM.victoria.classList.contains('on')) return;
+  const g = ganador();
+  const lado = g === 'AZUL' ? 'azul' : g === 'ROJO' ? 'rojo' : '';
+  const res = SHOW.resumen || {};
+  const reinos = (SHOW.meta && SHOW.meta.reinos) || {};
+  const reino = lado ? (reinos[lado] || {}) : {};
+
+  DOM.v_ganador.textContent = g === 'EMPATE' ? 'EMPATE' : g;
+  DOM.v_ganador.className = 'v-ganador ' + (lado || 'empate');
+  DOM.v_reino.textContent = lado
+    ? ((reino.nombre || '—') + (reino.id !== undefined ? ' · reino ' + reino.id : ''))
+    : 'Nadie suelta el mundo';
+
+  const tb = res.total_bajas || {};
+  DOM.v_br.textContent = String(num(tb.rojo));
+  DOM.v_ba.textContent = String(num(tb.azul));
+
+  const frase = lado ? ultimaFrase(lado) : '';
+  DOM.v_frase.textContent = frase || 'Y aquí se acaba la velada.';
+  DOM.v_frase.style.display = frase ? '' : 'none';
+
+  /* pips de rondas + motivo del desempate */
+  DOM.v_pips.textContent = '';
+  let rr = 0, ra = 0;
+  SHOW.rondas.forEach((r) => {
+    const pip = document.createElement('span');
+    const dom = r.dominio === 'rojo' ? 'rojo' : r.dominio === 'azul' ? 'azul' : 'empate';
+    if (dom === 'rojo') rr++;
+    if (dom === 'azul') ra++;
+    pip.className = 'pip ' + dom;
+    pip.title = 'Ronda ' + num(r.ronda) + ' · ' + dom.toUpperCase();
+    DOM.v_pips.appendChild(pip);
+  });
+  const motivo = [];
+  motivo.push(rr + '–' + ra + ' en rondas');
+  if (lado) motivo.push('desempate por bajas totales (' + num(tb.rojo) + ' – ' + num(tb.azul) + ')');
+  DOM.v_motivo.textContent = motivo.join(' · ');
+
+  /* estadísticas del resumen */
+  const mg = res.mayor_golpe || {};
+  const racha = res.racha || {};
+  const pico = res.pico_bajas || {};
+  const ultima = SHOW.rondas[SHOW.rondas.length - 1] || {};
+  const ciudades = (ultima.rojo ? num(ultima.rojo.ciudades) : num((SHOW.estado_inicial.rojo || {}).ciudades)) +
+    ' – ' +
+    (ultima.azul ? num(ultima.azul.ciudades) : num((SHOW.estado_inicial.azul || {}).ciudades));
+
+  const stats = [
+    { k: 'Duración', v: fmtT(num(res.duracion_s) * 1000) },
+    { k: 'Bajas ROJO', v: String(num(tb.rojo)), c: 'r' },
+    { k: 'Bajas AZUL', v: String(num(tb.azul)), c: 'a' },
+    { k: 'Mayor golpe', v: String(mg.agente || '—').toUpperCase() + ' · ' + num(mg.bajas) + ' (R' + num(mg.ronda) + ')' },
+    { k: 'Racha', v: String(racha.agente || '—').toUpperCase() + ' · ' + num(racha.rondas) + ' rondas' },
+    { k: 'Pico de bajas', v: num(pico.rojo) + ' / ' + num(pico.azul) },
+    { k: 'Ciudades finales', v: ciudades },
+    { k: 'Rondas jugadas', v: String(SHOW.rondas.length) }
+  ];
+  DOM.v_stats.textContent = '';
+  stats.forEach((s) => {
+    const card = document.createElement('div');
+    card.className = 'v-stat';
+    const k = document.createElement('span');
+    k.textContent = s.k;
+    const v = document.createElement('b');
+    if (s.c) v.className = s.c;
+    v.textContent = s.v;
+    card.appendChild(k);
+    card.appendChild(v);
+    DOM.v_stats.appendChild(card);
+  });
+
+  DOM.victoria.classList.add('on');
+  DOM.victoria.setAttribute('aria-hidden', 'false');
+  if (!REDUCED) lluviaEmojis(lado);
+  actualizarBotonPlay();
+  if (DOM.v_otra && typeof DOM.v_otra.focus === 'function') {
+    try { DOM.v_otra.focus({ preventScroll: true }); } catch (_) { /* sin foco */ }
+  }
+}
+
+function ocultarVictoria() {
+  if (!DOM.victoria) return;
+  /* Nunca ocultar (aria-hidden) un contenedor que aún tiene el foco dentro:
+     primero devolvemos el foco al control de reproducción. */
+  if (DOM.victoria.contains(document.activeElement)) {
+    try { document.activeElement.blur(); } catch (_) { /* sin foco */ }
+    if (DOM.btn_play && typeof DOM.btn_play.focus === 'function') {
+      try { DOM.btn_play.focus({ preventScroll: true }); } catch (_) { DOM.btn_play.focus(); }
+    }
+  }
+  DOM.victoria.classList.remove('on');
+  DOM.victoria.setAttribute('aria-hidden', 'true');
+  DOM.v_lluvia.textContent = '';
+}
+
+function lluviaEmojis(lado) {
+  const capa = DOM.v_lluvia;
+  capa.textContent = '';
+  const set = lado === 'azul'
+    ? ['📊', '🤓', '💙', '🥶', '🧊', '💧', '🤖', '🫧']
+    : ['🔥', '💥', '😎', '🧨', '☄️', '🏆', '🩸', '❤️'];
+  const cuantos = 64;
+  for (let i = 0; i < cuantos; i++) {
+    const s = document.createElement('span');
+    s.className = 'emoji-cae';
+    s.textContent = set[i % set.length];
+    s.style.left = (Math.random() * 100).toFixed(2) + '%';
+    s.style.fontSize = (14 + Math.random() * 22).toFixed(0) + 'px';
+    s.style.animationDuration = (1.7 + Math.random() * 2.4).toFixed(2) + 's';
+    s.style.animationDelay = (Math.random() * 1.5).toFixed(2) + 's';
+    capa.appendChild(s);
+  }
+  setTimeout(() => {
+    if (DOM.victoria.classList.contains('on')) capa.textContent = '';
+  }, 7000);
+}
+
+/* =====================================================================
+   Arranque
+   ===================================================================== */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', iniciar);
+} else {
+  iniciar();
+}
+</script>
+</body>
+</html>

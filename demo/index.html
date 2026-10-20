@@ -6352,7 +6352,7 @@ if (document.readyState === 'loading') {
   var tx = document.getElementById('chip-live-tx');
   if (!chip || !tx) return;
 
-  var urlDirecto = null;
+  var hayDirecto = false;
   var aviso = document.getElementById('aviso');
   var tAviso = 0;
 
@@ -6371,8 +6371,8 @@ if (document.readyState === 'loading') {
     chip.classList.add(clase);
   }
 
-  function activo(url) {
-    urlDirecto = url;
+  function activo() {
+    hayDirecto = true;
     estado('activo');
     tx.textContent = 'EN VIVO AHORA';
     chip.title = 'El show se está emitiendo: abre la página en vivo';
@@ -6381,7 +6381,7 @@ if (document.readyState === 'loading') {
   }
 
   function apagado() {
-    urlDirecto = null;
+    hayDirecto = false;
     estado('apagado');
     tx.textContent = 'Sin directo';
     chip.title = 'Ahora mismo no hay directo';
@@ -6390,16 +6390,14 @@ if (document.readyState === 'loading') {
   }
 
   chip.addEventListener('click', function () {
-    if (urlDirecto) {
-      window.open(urlDirecto, '_blank', 'noopener');
+    if (hayDirecto) {
+      /* Se abre la página /live/ del propio sitio (no el túnel): esa página
+         lee ../live.json y conecta con el túnel por su cuenta. */
+      window.open('./live/', '_blank', 'noopener');
     } else {
       avisar('Ahora mismo no hay directo.');
     }
   });
-
-  function urlValida(u) {
-    return typeof u === 'string' && /^(https?:\/\/|\/|\.\/)/i.test(u.trim());
-  }
 
   function pedir(ruta) {
     return new Promise(function (resolver, rechazar) {
@@ -6431,7 +6429,7 @@ if (document.readyState === 'loading') {
     var rutas = rutasPosibles();
     if (i >= rutas.length) { apagado(); return; }
     pedir(rutas[i]).then(function (d) {
-      if (d && d.en_vivo === true && urlValida(d.url)) activo(String(d.url).trim());
+      if (d && d.en_vivo === true) activo();
       else apagado();
     }).catch(function () { cargar(i + 1); });
   }

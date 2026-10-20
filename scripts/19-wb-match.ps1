@@ -14,13 +14,26 @@ Uso:
   pwsh -File 19-wb-match.ps1 -Rondas 8
   pwsh -File 19-wb-match.ps1 -Rondas 4 -SinReset
   pwsh -File 19-wb-match.ps1 -Rondas 8 -SinServidor   # sin arrancar el visor
+  pwsh -File 19-wb-match.ps1 -Rondas 8 -Guardado save5  # mundo pequeño = más fluido
 #>
 [CmdletBinding()]
 param(
-  [int]$Rondas = 8,
-  [int]$ResolucionSeg = 4,
-  [int]$ReinoRojo = 73,
-  [int]$ReinoAzul = 78,
+  [int]$Rondas = 12,
+  [int]$ResolucionSeg = 6,
+  [double]$PausaAccion = 1.2,
+  # Reinos que pelean. 0 = automático: se eligen los dos reinos con más unidades
+  # del mundo cargado (cada guardado usa ids distintos: save2 tiene 73/78, save5
+  # tiene 1/2). Si se fijan a mano, se respetan.
+  [int]$ReinoRojo = 0,
+  [int]$ReinoAzul = 0,
+  # Guardado de WorldBox que se carga al empezar (nombre de la carpeta en
+  # saves/). save5 es un mundo pequeño (~307 KB) y va mucho más fluido que
+  # save2 (~2,1 MB): menos entidades, menos trabajo para el juego y para la
+  # captura. Se puede cambiar sin tocar el código.
+  [string]$Guardado = 'save5',
+  # Unidades de refuerzo por ronda y bando (0 = automático: 35 % de las iniciales,
+  # tope 250). Con mundos pequeños evita que la guerra se apague en dos rondas.
+  [int]$Refuerzos = 0,
   [string]$OutDir = '',
   [switch]$SinReset,
   [int]$MaxAcciones = 2,
@@ -39,9 +52,19 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $script:Feed = New-Object System.Collections.ArrayList
 $script:Marcador = [ordered]@{
-  rojo = [ordered]@{ agente = 'rojo'; reino = $ReinoRojo; nombre = ''; bajas = 0; perdidas = 0; acciones = 0; turnos = 0; ciudades_arrasadas = 0 }
-  azul = [ordered]@{ agente = 'azul'; reino = $ReinoAzul; nombre = ''; bajas = 0; perdidas = 0; acciones = 0; turnos = 0; ciudades_arrasadas = 0 }
+  rojo = [ordered]@{ agente = 'rojo'; reino = $ReinoRojo; nombre = ''; bajas = 0; perdidas = 0; acciones = 0; turnos = 0; ciudades_arrasadas = 0; ciudades_perdidas = 0 }
+  azul = [ordered]@{ agente = 'azul'; reino = $ReinoAzul; nombre = ''; bajas = 0; perdidas = 0; acciones = 0; turnos = 0; ciudades_arrasadas = 0; ciudades_perdidas = 0 }
 }
+# --- ciudades concretas: para que el diálogo hable de sitios por su nombre ---
+# list_cities da id/nombre/reino; comparando la foto de antes y la de después del
+# turno sabemos qué ciudad exacta ha caído y podemos nombrarla en el chat.
+# OJO con los nombres: en un script dot-sourceado, $script:X y un $X de nivel
+# superior son LA MISMA variable (PowerShell no distingue mayúsculas). Por eso
+# aquí todo lleva prefijo "Total"/"Nombre" y no se llama igual que los locales.
+$script:NombreCiudadPerdida = @{ rojo = ''; azul = '' }    # última ciudad propia perdida
+$script:NombreCiudadArrasada = @{ rojo = ''; azul = '' }   # última ciudad del rival arrasada
+$script:TotalCiudadesPerdidas = @{ rojo = 0; azul = 0 }    # acumulado real de la partida
+$script:TotalCiudadesArrasadas = @{ rojo = 0; azul = 0 }   # acumulado real de la partida
 $script:Inicio = $null
 $script:Cursor = @{ rojo = 0; azul = 0 }
 $script:Historial = New-Object System.Collections.ArrayList
@@ -69,6 +92,16 @@ $script:RachaMaxima = @{ rojo = 0; azul = 0 }        # mejor racha de la partida
 # --- capa de espectáculo (la pinta el visor desde state.json.drama) ---
 $script:TitularActual = ''      # titular de la ronda en curso
 $script:Narrador = ''           # línea de narración del último golpe
+# --- cámara cinematográfica ---
+# El visor hace zoom a donde estalla la bomba. Las coordenadas son 0..100 del
+# frame visible y las publica 24-wb-stream.ps1 en /stats (scx/scy del pico).
+# zoom es el factor y ms cuánto aguanta el plano antes de volver al general.
+$script:Camara = [ordered]@{ x = 50; y = 50; zoom = 1.0; ms = 0 }
+$script:Impacto = [ordered]@{ x = 50; y = 50; poder = 0.0 }
+$script:StreamUrl = 'http://127.0.0.1:8767'
+# cuándo se fijó el último plano, para que el visor sepa si ya caducó
+$script:CamaraTick = 0
+$script:ImpactoTick = 0
 
 # ---------------------------------------------------------------- utilidades
 function Get-Scoreboard {
@@ -77,6 +110,34 @@ function Get-Scoreboard {
   $map = @{}
   foreach ($k in $o.result.kingdoms) {
     $map[[int]$k.id] = [pscustomobject]@{ id = [int]$k.id; nombre = $k.name; unidades = [int]$k.units; ciudades = [int]$k.cities }
+  }
+  return $map
+}
+
+# ¿Sigue habiendo al menos dos reinos vivos? Si las bombas han arrasado el
+# mundo, la partida no puede continuar: el juego se queda sin nada que
+# encuadrar y acaba en bucle de error de render.
+function Test-MundoVivo {
+  $s = Invoke-WbAgent -Agent rojo -Name 'get_world_state'
+  if (-not $s.ok) { return $true }   # ante la duda, no cortar el show
+  return ([int]$s.result.kingdoms_alive -ge 2)
+}
+
+# Unidades de un reino en el marcador; 0 si el reino ya no existe.
+function Get-Unidades {
+  param($Mapa, [int]$Reino)
+  if ($Mapa -and $Mapa.ContainsKey($Reino) -and $null -ne $Mapa[$Reino].unidades) { return [int]$Mapa[$Reino].unidades }
+  return 0
+}
+
+# Foto de todas las ciudades del mundo: id -> { id, nombre, reino }.
+# Sirve para detectar POR NOMBRE qué ciudad ha caído entre dos momentos del turno.
+function Get-MapaCiudades {
+  $r = Invoke-WbAgent -Agent rojo -Name 'list_cities'
+  if (-not $r.ok) { return @{} }
+  $map = @{}
+  foreach ($c in $r.result.items) {
+    $map[[int]$c.id] = [pscustomobject]@{ id = [int]$c.id; nombre = [string]$c.name; reino = [int]$c.kingdom_id }
   }
   return $map
 }
@@ -233,6 +294,15 @@ function Plural {
 
 # La personalidad y el generador de diálogo viven en 21-drama.ps1 (dot-sourced).
 . (Join-Path $PSScriptRoot '21-drama.ps1')
+# Compatibilidad: el motor lleva su propia ventana de frases para no repetirse.
+# 21-drama.ps1 usa $script:Huellas y puede no definir $script:Recientes, así que
+# nos aseguramos aquí de que exista antes de que Send-Chat la consulte.
+if (-not $script:Recientes) {
+  $script:Recientes = @{
+    rojo = [System.Collections.ArrayList]::new()
+    azul = [System.Collections.ArrayList]::new()
+  }
+}
 # La capa de dirección (cerebro LLM, moral, tensión, titulares y línea temporal).
 . (Join-Path $PSScriptRoot '22-director.ps1')
 if ($SinDrama -or $SinCerebro) {
@@ -301,16 +371,27 @@ function New-Plan {
   $ultimoRival = [string]$script:UltimoMensajeRival[$rival]
   $ctx = Get-ContextoDrama -Agente $Agente -Obs $Obs
   $tipoBeat = if ($ratio -lt 0.55) { 'nervios' } elseif ($ratio -gt 1.9) { 'burla' } else { 'turno' }
+  # A quién va dirigida la frase. El duelo es contra el rival: hablar "a todos"
+  # todo el rato parecía un duplicado del mensaje anterior (lo dijo el dueño).
+  # Solo de vez en cuando se dirige al público, y casi siempre al cerrar ronda.
+  $destino = $rival
+  if ($script:Beat -eq 'ronda' -or $script:Beat -eq 'final') {
+    if ((Get-Random -Maximum 100) -lt 35) { $destino = '*' }
+  } elseif ((Get-Random -Maximum 100) -lt 8) {
+    $destino = '*'
+  }
   # cada tanto, en vez de frase, la IA lanza una emoción suelta (emoji solo)
-  if ((Get-Random -Maximum 100) -lt 20) {
+  if ((Get-Random -Maximum 100) -lt 32) {
     $emoji = Get-EmojiDrama -Agente $Agente -Contexto $ctx -ConModelo:([bool]($script:Tension -gt 45))
     if (-not $emoji) { $emoji = if ($Agente -eq 'rojo') { '😤' } else { '🙄' } }
-    $plan += [pscustomobject]@{ accion = 'emoji'; to = '*'; texto = $emoji; tono = 'emoji'
-      intensidad = [math]::Round([math]::Max(0.35, [math]::Min(1.0, $script:Tension / 100 + 0.25)), 2)
-      emocion = 'emoción' }
+    # emoción real: es lo que usa el visor para elegir el efecto (llanto, furia...)
+    $emocion = if ($ratio -lt 0.6) { 'sufrimiento' } elseif ($ratio -gt 1.8) { 'soberbia' } elseif ($script:Tension -gt 65) { 'tensión' } else { 'chulería' }
+    $plan += [pscustomobject]@{ accion = 'emoji'; to = $destino; texto = $emoji; tono = 'emoji'
+      intensidad = [math]::Round([math]::Max(0.55, [math]::Min(1.0, $script:Tension / 100 + 0.45)), 2)
+      emocion = $emocion }
   } else {
     $rep = Get-Replica -Agente $Agente -Tipo $tipoBeat -Contexto $ctx -UltimoRival $ultimoRival -Ratio $ratio
-    $plan += [pscustomobject]@{ accion = 'chat'; to = '*'; texto = $rep.texto; tono = $rep.tono
+    $plan += [pscustomobject]@{ accion = 'chat'; to = $destino; texto = $rep.texto; tono = $rep.tono
       intensidad = [math]::Round([math]::Max(0.15, [math]::Min(1.0, [math]::Abs($ratio - 1.0) + 0.3)), 2)
       fuente = $rep.fuente }
   }
@@ -318,6 +399,58 @@ function New-Plan {
 }
 
 # ---------------------------------------------------------------- visor
+# Pregunta al servidor de stream (24-wb-stream.ps1) dónde está el fogonazo de la
+# bomba que acaba de estallar. El fogonazo no sale en el mismo instante en que se
+# lanza la bomba: tarda un pico, así que se sondea durante un rato. Solo vale un
+# pico POSTERIOR a -DesdeMs, para no reutilizar el de la bomba anterior.
+# x/y son 0..100 del frame visible; poder va 0..1.
+function Get-ImpactoStream {
+  param([long]$DesdeMs = 0, [int]$MaxEsperaMs = 2600, [int]$PasoMs = 90)
+  # El fogonazo de una bomba es un pico de pocos frames. Nos quedamos con el MAYOR
+  # 'lspike' de toda la ventana (el valor en vivo, no el latch de /stats): así no
+  # enganchamos un fuego viejo que esté ardiendo de fondo.
+  $limite = [DateTime]::UtcNow.AddMilliseconds($MaxEsperaMs)
+  $mejor = $null
+  do {
+    try {
+      $r = Invoke-RestMethod -Uri ($script:StreamUrl + '/stats') -TimeoutSec 2
+      if ($null -ne $r) {
+        $spike = 0; if ($null -ne $r.lspike) { $spike = [double]$r.lspike }
+        if ($spike -ge 60) {
+          $cx = 0; $cy = 0
+          if ($null -ne $r.lcx) { $cx = [double]$r.lcx }
+          if ($null -ne $r.lcy) { $cy = [double]$r.lcy }
+          if ($cx -gt 0 -and $cy -gt 0) {
+            if ($null -eq $mejor -or $spike -gt $mejor.spike) {
+              $mejor = [pscustomobject]@{ x = $cx / 100.0; y = $cy / 100.0; spike = $spike }
+            }
+          }
+        }
+      }
+    } catch { }
+    # si ya tenemos un pico claro, no hace falta agotar la ventana
+    if ($null -ne $mejor -and $mejor.spike -ge 160) { break }
+    Start-Sleep -Milliseconds $PasoMs
+  } while ([DateTime]::UtcNow -lt $limite)
+  if ($null -eq $mejor) { return $null }
+  return [pscustomobject]@{
+    x     = [math]::Round([math]::Max(0.0, [math]::Min(100.0, $mejor.x)), 1)
+    y     = [math]::Round([math]::Max(0.0, [math]::Min(100.0, $mejor.y)), 1)
+    poder = [math]::Round([math]::Max(0.22, [math]::Min(1.0, 0.22 + 0.78 * (($mejor.spike - 60.0) / 240.0))), 3)
+    spike = $mejor.spike
+  }
+}
+
+# Fija el plano de cámara sobre el punto del impacto. Si el detector no ve nada,
+# usa el tile que se bombardeó como aproximación (centro del mapa si tampoco).
+function Set-CamaraImpacto {
+  param([double]$X, [double]$Y, [double]$Poder = 0.6, [int]$Ms = 2200)
+  $script:Camara = [ordered]@{ x = [math]::Round($X, 1); y = [math]::Round($Y, 1); zoom = [math]::Round(1.35 + 0.75 * $Poder, 2); ms = $Ms }
+  $script:Impacto = [ordered]@{ x = [math]::Round($X, 1); y = [math]::Round($Y, 1); poder = [math]::Round($Poder, 2) }
+  $script:CamaraTick = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+  $script:ImpactoTick = $script:CamaraTick
+}
+
 function Save-Frame {
   $sc = Invoke-WbAgent -Agent rojo -Name 'screenshot' -A @{ max_width = 900 } -TimeoutSec 90
   if (-not $sc.ok) { return $false }
@@ -385,6 +518,14 @@ function Write-Estado {
       titular   = [string]$script:TitularActual
       beat      = [string]$script:Beat
       narrador  = [string]$script:Narrador
+      camara    = [ordered]@{
+        x = $script:Camara.x; y = $script:Camara.y; zoom = $script:Camara.zoom; ms = $script:Camara.ms
+        tick = $script:CamaraTick
+      }
+      impacto   = [ordered]@{
+        x = $script:Impacto.x; y = $script:Impacto.y; poder = $script:Impacto.poder
+        tick = $script:ImpactoTick
+      }
     }
     marcador    = $script:Marcador
     scoreboard  = [ordered]@{ rojo = $r; azul = $a }
@@ -427,6 +568,13 @@ $plantilla = (Join-Path $PSScriptRoot 'viewer-live.html')
 if (Test-Path -LiteralPath $plantilla) {
   Copy-Item -LiteralPath $plantilla -Destination (Join-Path $OutDir 'viewer.html') -Force
 }
+# El visor puede venir partido en varios ficheros (viewer-fx.js, estilos, imágenes).
+# Se copian junto al HTML y 20-wb-viewer-server.ps1 los sirve como estáticos.
+foreach ($patron in @('viewer-*.js', 'viewer-*.css', 'viewer-*.mjs', 'visor-*.js', 'visor-*.css')) {
+  foreach ($extra in @(Get-ChildItem -Path $PSScriptRoot -Filter $patron -File -ErrorAction SilentlyContinue)) {
+    Copy-Item -LiteralPath $extra.FullName -Destination (Join-Path $OutDir $extra.Name) -Force
+  }
+}
 Ensure-Servidor
 # El cerebro dramático es opcional: si no arranca, el show sigue con el
 # generador procedural de 21-drama.ps1 (mismo ritmo, menos imaginación).
@@ -436,20 +584,40 @@ if ($script:DirectorioOn) {
 }
 
 if (-not $SinReset) {
-  Write-Output 'Cargando el guardado save2…'
-  $null = Invoke-WbAgent -Agent rojo -Name 'load_world' -A @{ path = 'save2' } -TimeoutSec 120
+  # Firma del mundo actual: sirve para saber cuándo el guardado nuevo está ya
+  # DENTRO. load_world es asíncrono y tarda decenas de segundos en aplicarse; si
+  # nos conformamos con "hay mundo y hay reinos", seguimos jugando en el mundo
+  # viejo sin enterarnos.
+  function Get-FirmaMundo {
+    $w = Invoke-WbAgent -Agent rojo -Name 'get_world_state'
+    if (-not $w.ok) { return '' }
+    $o = Invoke-WbAgent -Agent rojo -Name 'objective_status'
+    $ids = ''
+    if ($o.ok) { $ids = (@($o.result.kingdoms | ForEach-Object { [string]$_.id } | Sort-Object) -join ',') }
+    return ('' + $w.result.seed + '|' + $w.result.population_lifetime + '|' + $ids)
+  }
+  $firmaVieja = Get-FirmaMundo
+  Write-Output ('Cargando el guardado ' + $Guardado + '… (mundo actual: ' + $firmaVieja + ')')
+  $null = Invoke-WbAgent -Agent rojo -Name 'load_world' -A @{ path = $Guardado } -TimeoutSec 120
   $listo = $false
-  for ($i = 1; $i -le 200; $i++) {
+  $s = $null
+  # margen amplio: un guardado grande puede tardar más de un minuto en entrar
+  for ($i = 1; $i -le 240; $i++) {
     Start-Sleep -Milliseconds 700
     $s = Invoke-WbAgent -Agent rojo -Name 'get_world_state'
-    if ($s.ok -and $s.result.width -eq 576 -and $s.result.kingdoms_alive -ge 2 -and $s.result.population_alive -ge 1000) { $listo = $true; break }
+    if (-not $s.ok) { continue }
+    if ($s.result.width -lt 64 -or $s.result.kingdoms_alive -lt 2 -or $s.result.population_alive -lt 100) { continue }
+    $firma = Get-FirmaMundo
+    if ($firma -ne $firmaVieja) { $listo = $true; break }
   }
-  if (-not $listo) { throw 'el mundo no terminó de cargar (width/kingdoms/population)' }
+  if (-not $listo) { throw ('el mundo no terminó de cargar en ' + [math]::Round($i * 0.7) + ' s (sigue la firma ' + (Get-FirmaMundo) + ')') }
   $script:Tick = [int]$s.result.tick
-  Write-Output ('Mundo listo en ' + [math]::Round($i * 0.7, 1) + ' s (población ' + $s.result.population_alive + ', reinos ' + $s.result.kingdoms_alive + ')')
+  Write-Output ('Mundo listo en ' + [math]::Round($i * 0.7, 1) + ' s (población ' + $s.result.population_alive + ', reinos ' + $s.result.kingdoms_alive + ', firma ' + (Get-FirmaMundo) + ')')
   Start-Sleep -Seconds 2
 }
-$null = Invoke-WbAgent -Agent rojo -Name 'set_speed' -A @{ speed = 3 }
+# La velocidad del juego se pide con un id ('x1'..'x40'), no con un número: con
+# 'speed = 3' el bridge devolvía BAD_ARGS y la partida se quedaba a x1 sin avisar.
+$null = Invoke-WbAgent -Agent rojo -Name 'set_speed' -A @{ speed_id = 'x3' }
 $null = Invoke-WbAgent -Agent rojo -Name 'resume'
 
 # El buzón puede arrastrar mensajes de partidas anteriores: saltamos al final
@@ -467,9 +635,25 @@ foreach ($ag in @('rojo', 'azul')) {
 $script:Inicio = @{}
 for ($i = 1; $i -le 20; $i++) {
   $script:Inicio = Get-Scoreboard
-  if ($script:Inicio.ContainsKey($ReinoRojo) -and $script:Inicio.ContainsKey($ReinoAzul) -and $script:Inicio[$ReinoRojo].unidades -gt 0) { break }
+  if ($script:Inicio.Count -ge 2) { break }
   Start-Sleep -Milliseconds 800
 }
+
+# Reinos automáticos: cada guardado tiene sus propios ids (save2 usa 73/78, save5
+# usa 1/2). Si no se fijan a mano, se eligen los dos reinos con más unidades, que
+# son los que dan una pelea de verdad; el más fuerte juega de ROJO.
+if ($ReinoRojo -le 0 -or $ReinoAzul -le 0) {
+  $candidatos = @($script:Inicio.Values | Where-Object { $_.unidades -gt 0 } | Sort-Object -Property unidades -Descending)
+  if ($candidatos.Count -lt 2) { throw ('el mundo cargado no tiene dos reinos con unidades (encontrados: ' + $candidatos.Count + ')') }
+  $ReinoRojo = $candidatos[0].id
+  $ReinoAzul = $candidatos[1].id
+  $script:Marcador.rojo.reino = $ReinoRojo
+  $script:Marcador.azul.reino = $ReinoAzul
+  $script:ReinoRojo = $ReinoRojo
+  $script:ReinoAzul = $ReinoAzul
+  Write-Output ('reinos elegidos: ROJO=' + $ReinoRojo + ' AZUL=' + $ReinoAzul)
+}
+
 if (-not $script:Inicio.ContainsKey($ReinoRojo)) { throw ('no encuentro el reino ' + $ReinoRojo + ' en el mundo cargado') }
 $script:Marcador.rojo.nombre = $script:Inicio[$ReinoRojo].nombre
 $script:Marcador.azul.nombre = $script:Inicio[$ReinoAzul].nombre
@@ -492,8 +676,117 @@ Write-Output ('visor: http://localhost:' + $PuertoVisor + '/')
 
 $marcaRonda = @{ rojo = 0; azul = 0 }
 $snapRonda = $script:Inicio
+
+# ---------------------------------------------------------------- refuerzos
+# En un mundo pequeño las bombas se comen los ejércitos en dos rondas y la pelea
+# se queda sin sangre. Al empezar cada ronda se rellenan los dos bandos hasta un
+# objetivo (un % de lo que tenían al principio): así la guerra aguanta muchas
+# rondas y el marcador de bajas, que es lo que decide el ganador, no se queda
+# congelado. Las unidades se crean en el centro de masa de cada reino, que es
+# territorio suyo, y se unen a él solas.
+$script:CentroReino = @{}
+$script:RazaReino = @{}
+function Get-CentroReino {
+  param([int]$Reino)
+  $act = @()
+  $off = 0
+  for ($p = 0; $p -lt 2; $p++) {
+    $q = Invoke-WbAgent -Agent rojo -Name 'query_actors' -A @{ kingdom_id = $Reino; limit = 400; offset = $off }
+    if (-not $q.ok) { break }
+    $act += $q.result.items
+    if (-not $q.result.has_more) { break }
+    $off += 400
+  }
+  if ($act.Count -gt 0) {
+    $sx = 0; $sy = 0
+    foreach ($a in $act) { $sx += [double]$a.x; $sy += [double]$a.y }
+    $c = @{ x = [int]($sx / $act.Count); y = [int]($sy / $act.Count) }
+    $script:CentroReino[$Reino] = $c
+    return $c
+  }
+  if ($script:CentroReino.ContainsKey($Reino)) { return $script:CentroReino[$Reino] }
+  return @{ x = 128; y = 128 }
+}
+function Get-RazaReino {
+  param([int]$Reino)
+  if ($script:RazaReino.ContainsKey($Reino)) { return $script:RazaReino[$Reino] }
+  $k = Invoke-WbAgent -Agent rojo -Name 'list_kingdoms'
+  $raza = 'human'
+  if ($k.ok) {
+    foreach ($it in $k.result.items) { if ([int]$it.id -eq $Reino -and $it.race) { $raza = [string]$it.race; break } }
+  }
+  $script:RazaReino[$Reino] = $raza
+  return $raza
+}
+function Add-Refuerzos {
+  param([int]$Ronda)
+  if ($script:RefuerzosCada -le 0) { return }
+  if ($Ronda -lt 2) { return }
+  $sb = Get-Scoreboard
+  foreach ($lado in @('rojo', 'azul')) {
+    $reino = if ($lado -eq 'rojo') { $ReinoRojo } else { $ReinoAzul }
+    if (-not $sb.ContainsKey($reino)) { continue }   # reino extinguido: no hay a quién reforzar
+    $tiene = [int]$sb[$reino].unidades
+    # Suelo fijo + seguimiento del rival: así ningún bando se queda a dos unidades
+    # agonizando y la guerra no se apaga (en mundos pequeños se moría en 2 rondas).
+    $otro = if ($lado -eq 'rojo') { $ReinoAzul } else { $ReinoRojo }
+    $rivalU = if ($sb.ContainsKey($otro)) { [int]$sb[$otro].unidades } else { 0 }
+    $objetivo = [math]::Max([int]$script:ObjetivoRefuerzo[$lado], [int]($rivalU * 0.6))
+    if ($tiene -ge $objetivo) { continue }
+    $faltan = [math]::Min($objetivo - $tiene, $script:RefuerzosCada)
+    if ($faltan -le 0) { continue }
+    $c = Get-CentroReino -Reino $reino
+    $raza = Get-RazaReino -Reino $reino
+    # el bridge rechaza count > 100 (BAD_ARGS), así que se pide por tandas
+    $creadas = 0
+    $quedan = $faltan
+    while ($quedan -gt 0) {
+      $lote = [math]::Min(100, $quedan)
+      $res = Invoke-WbAgent -Agent rojo -Name 'spawn' -A @{ entity_id = $raza; x = $c.x; y = $c.y; count = $lote }
+      if (-not $res.ok) {
+        Write-Output ('[refuerzos] ' + $lado + ' fallo: ' + $res.code + ' ' + $res.error)
+        break
+      }
+      $creadas += [int]$res.result.spawned
+      $quedan -= $lote
+      if ([int]$res.result.spawned -lt $lote) { break }   # el juego no puede crear más
+    }
+    if ($creadas -gt 0) {
+      $txt = 'Refuerzos para ' + $lado.ToUpper() + ': ' + $creadas + ' unidades nuevas entran en liza.'
+      Add-Feed -Agente 'sistema' -Tipo 'tropas' -Texto $txt -Extra @{ refuerzos = $true; reino = $reino; count = $creadas; x = $c.x; y = $c.y }
+      Add-ShowEvent -Tipo 'tropas' -Agente 'sistema' -Texto $txt -Extra @{ refuerzos = $true; count = $creadas } | Out-Null
+      Write-Output ('[refuerzos] ' + $lado + ' +' + $creadas + ' (' + $tiene + ' -> ' + ($tiene + $creadas) + ', objetivo ' + $objetivo + ')')
+    }
+  }
+}
+
+# Cuánto se refuerza cada bando. Suelo de 350 unidades por bando para que la
+# guerra no se apague nunca, más el 35 % de lo que tenía al empezar, y como mucho
+# 250 por ronda (el bridge rechaza count > 100, se pide por tandas).
+$script:RefuerzosCada = if ($Refuerzos -gt 0) { [int]$Refuerzos } else { 250 }
+$script:ObjetivoRefuerzo = @{
+  rojo = [math]::Max(350, [int]([double]$script:Inicio[$ReinoRojo].unidades * 0.35))
+  azul = [math]::Max(350, [int]([double]$script:Inicio[$ReinoAzul].unidades * 0.35))
+}
+Write-Output ('refuerzos: objetivo ROJO ' + $script:ObjetivoRefuerzo.rojo + ' / AZUL ' + $script:ObjetivoRefuerzo.azul + ', max ' + $script:RefuerzosCada + ' por ronda')
+
 for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
   $script:Ronda = $idxRonda
+
+  # Si el mundo se ha quedado sin reinos, se cierra la partida aquí: seguir
+  # solo consigue que el juego entre en bucle de error al no tener nada que
+  # encuadrar, y el marcador se vuelve nulo.
+  if (-not (Test-MundoVivo)) {
+    $txtFin = 'El mundo se ha quedado sin reinos: la partida se cierra por aniquilación.'
+    Add-Feed -Agente 'sistema' -Tipo 'info' -Texto $txtFin
+    Add-ShowEvent -Tipo 'info' -Agente 'sistema' -Texto $txtFin | Out-Null
+    $script:Narrador = 'No queda nadie en pie. El show termina por aniquilación.'
+    Write-Output '[fin] mundo sin reinos: se cierra la partida'
+    $script:Terminada = $true
+    break
+  }
+
+  if ($idxRonda -gt 1) { Add-Refuerzos -Ronda $idxRonda }
   $script:AccionesRonda.rojo.Clear()
   $script:AccionesRonda.azul.Clear()
   foreach ($agente in @('rojo', 'azul')) {
@@ -505,6 +798,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     if (-not (Ensure-Turn -Agente $agente)) { Write-Output ('AVISO: no pude poner el turno en ' + $agente); continue }
 
     $antes = Get-Scoreboard
+    $ciudadesAntes = Get-MapaCiudades
     $obs = Get-Observacion -Agente $agente -Propio $propio -Enemigo $enemigo
     $script:Tick = $obs.tick
     $plan = New-Plan -Agente $agente -Obs $obs
@@ -519,8 +813,19 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             $corto = @{ czar_bomba = 'czar'; atomic_bomb = 'atomic'; napalm_bomb = 'napalm' }[$p.power]
             if (-not $corto) { $corto = $p.power }
             [void]$script:AccionesRonda[$agente].Add($corto)
-            Add-Feed -Agente $agente -Tipo 'bomba' -Texto $p.nota -Extra @{ power = $p.power; x = $p.x; y = $p.y }
-            Add-ShowEvent -Tipo 'bomba' -Agente $agente -Texto $p.nota -Extra @{ power = $p.power } | Out-Null
+            # La cámara va al fogonazo: se sondea el detector hasta que lo ve.
+            $tBomba = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            $imp = Get-ImpactoStream -DesdeMs $tBomba -MaxEsperaMs 3200
+            if ($imp) {
+              Set-CamaraImpacto -X $imp.x -Y $imp.y -Poder $imp.poder -Ms 2400
+              Write-Output ("[cam] bomb $($corto) tile=($($p.x),$($p.y)) -> ($($imp.x),$($imp.y)) spike=$($imp.spike) poder=$($imp.poder) zoom=$($script:Camara.zoom)")
+            } else {
+              # sin detector, cae al centro del mapa con un plano suave
+              Set-CamaraImpacto -X 50 -Y 50 -Poder 0.5 -Ms 1600
+            }
+            $camExtra = @{ x = $script:Camara.x; y = $script:Camara.y; zoom = $script:Camara.zoom; ms = $script:Camara.ms }
+            Add-Feed -Agente $agente -Tipo 'bomba' -Texto $p.nota -Extra @{ power = $p.power; x = $p.x; y = $p.y; camara = $camExtra }
+            Add-ShowEvent -Tipo 'bomba' -Agente $agente -Texto $p.nota -Extra @{ power = $p.power; camara = $camExtra } | Out-Null
             $script:Narrador = $p.nota
             $ultimaNota = $p.nota
           } else {
@@ -550,6 +855,8 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             -Emocion 'golpe'
         }
       }
+      # ritmo de retransmisión: deja respirar cada acción para que el visor la muestre sola
+      if ($PausaAccion -gt 0) { Start-Sleep -Milliseconds ([int]($PausaAccion * 1000)) }
     }
 
     # leer SOLO lo nuevo (cursor por agente) y reaccionar una vez
@@ -582,18 +889,48 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     Start-Sleep -Seconds $ResolucionSeg
 
     $despues = Get-Scoreboard
+    $ciudadesDespues = Get-MapaCiudades
+    # qué ciudades han caído en este turno, por su nombre
+    $perdidasAhora = [System.Collections.ArrayList]::new()
+    $arrasadasAhora = [System.Collections.ArrayList]::new()
+    foreach ($c in $ciudadesAntes.Values) {
+      $ahora = $ciudadesDespues[$c.id]
+      if ($c.reino -eq $propio) {
+        if (-not $ahora -or $ahora.reino -ne $propio) { [void]$perdidasAhora.Add($c.nombre) }
+      } elseif ($c.reino -eq $enemigo) {
+        if (-not $ahora -or $ahora.reino -ne $enemigo) { [void]$arrasadasAhora.Add($c.nombre) }
+      }
+    }
+    if ($perdidasAhora.Count -gt 0) {
+      $script:NombreCiudadPerdida[$agente] = $perdidasAhora[$perdidasAhora.Count - 1]
+      $script:TotalCiudadesPerdidas[$agente] += $perdidasAhora.Count
+      $script:Marcador[$agente].ciudades_perdidas += $perdidasAhora.Count
+    }
+    if ($arrasadasAhora.Count -gt 0) {
+      $script:NombreCiudadArrasada[$agente] = $arrasadasAhora[$arrasadasAhora.Count - 1]
+      $script:TotalCiudadesArrasadas[$agente] += $arrasadasAhora.Count
+    }
     $bajas = [math]::Max(0, $antes[$enemigo].unidades - $despues[$enemigo].unidades)
     $perdidas = [math]::Max(0, $antes[$propio].unidades - $despues[$propio].unidades)
-    $ciudadesArrasadas = [math]::Max(0, $antes[$enemigo].ciudades - $despues[$enemigo].ciudades)
+    $arrasadasTurno = [math]::Max(0, $antes[$enemigo].ciudades - $despues[$enemigo].ciudades)
     $script:Marcador[$agente].bajas += $bajas
     $script:Marcador[$agente].perdidas += $perdidas
-    $script:Marcador[$agente].ciudades_arrasadas += $ciudadesArrasadas
+    $script:Marcador[$agente].ciudades_arrasadas += $arrasadasTurno
     $script:Marcador[$agente].turnos++
     # el pulso del show: la moral sube al pegar y baja al recibir
     $pulso = Update-Drama -Agente $agente -Bajas $bajas -Perdidas $perdidas
     $intens = Get-Intensidad -Bajas $bajas
     if ($bajas -ge 60) { $script:Narrador = 'El público se levanta: ' + $bajas + ' bajas de un solo golpe.' }
-    Add-Feed -Agente $agente -Tipo 'resultado' -Texto ('Bajas: ' + $bajas + ' · pérdidas: ' + $perdidas + ' · enemigo: ' + $despues[$enemigo].unidades + 'u/' + $despues[$enemigo].ciudades + 'c') -Extra @{ bajas = $bajas; perdidas = $perdidas; intensidad = $intens }
+    # el nombre propio de la ciudad es oro para el show: lo cantamos y lo metemos en el feed
+    if ($arrasadasAhora.Count -gt 0) {
+      $script:Narrador = 'Cae ' + $arrasadasAhora[0] + '. El mapa cambia de dueño.'
+    } elseif ($perdidasAhora.Count -gt 0) {
+      $script:Narrador = 'Se pierde ' + $perdidasAhora[0] + '. Golpe al orgullo.'
+    }
+    $txtRes = 'Bajas: ' + $bajas + ' · pérdidas: ' + $perdidas + ' · enemigo: ' + $despues[$enemigo].unidades + 'u/' + $despues[$enemigo].ciudades + 'c'
+    if ($arrasadasAhora.Count -gt 0) { $txtRes += ' · ha caído ' + ($arrasadasAhora -join ', ') }
+    if ($perdidasAhora.Count -gt 0) { $txtRes += ' · se ha perdido ' + ($perdidasAhora -join ', ') }
+    Add-Feed -Agente $agente -Tipo 'resultado' -Texto $txtRes -Extra @{ bajas = $bajas; perdidas = $perdidas; intensidad = $intens }
     Add-ShowEvent -Tipo 'resultado' -Agente $agente -Texto ('Bajas: ' + $bajas + ' · pérdidas: ' + $perdidas) -Extra @{ bajas = $bajas; perdidas = $perdidas; intensidad = $intens } | Out-Null
     # reacción del rival al golpe recibido (una de cada dos veces, para no saturar)
     if ($bajas -ge 25 -and ((Get-Random -Maximum 100) -lt 55)) {
@@ -614,7 +951,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
       }
     }
 
-    Write-Output ('[r' + $idxRonda + ' ' + $agente + '] bajas=' + $bajas + ' perdidas=' + $perdidas + ' | ROJO ' + $despues[$ReinoRojo].unidades + 'u AZUL ' + $despues[$ReinoAzul].unidades + 'u')
+    Write-Output ('[r' + $idxRonda + ' ' + $agente + '] bajas=' + $bajas + ' perdidas=' + $perdidas + ' | ROJO ' + (Get-Unidades $despues $ReinoRojo) + 'u AZUL ' + (Get-Unidades $despues $ReinoAzul) + 'u')
 
     $null = Save-Frame
     $null = Invoke-WbAgent -Agent $agente -Name 'turn_advance'

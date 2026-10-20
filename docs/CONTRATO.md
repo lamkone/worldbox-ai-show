@@ -15,7 +15,7 @@ un lector nuevo debe aguantar que el campo aún no exista.
 ```jsonc
 {
   "ronda": 3,                  // ronda en curso (0 antes de empezar)
-  "rondas": 8,                 // total de rondas pactadas
+  "rondas": 12,                // total de rondas pactadas (por defecto 12)
   "turno": "rojo",             // a quién le toca ahora
   "terminada": false,
   "ganador": "",               // "ROJO" | "AZUL" | "EMPATE" | ""
@@ -28,7 +28,7 @@ un lector nuevo debe aguantar que el campo aún no exista.
   "marcador": {                // acumulado de la partida
     "rojo": { "agente": "rojo", "reino": 73, "nombre": "Jepy Djomo",
               "bajas": 728, "perdidas": 693, "acciones": 14, "turnos": 8,
-              "ciudades_arrasadas": 2 },
+              "ciudades_arrasadas": 2, "ciudades_perdidas": 1 },
     "azul": { }
   },
 
@@ -42,7 +42,12 @@ un lector nuevo debe aguantar que el campo aún no exista.
     "tension": 74,                              // 0-100, cuánto se está calentando
     "titular": "ROJO arrasa tres ciudades y AZUL se queda mudo",
     "beat":    "ronda",                         // "apertura"|"combate"|"ronda"|"final"
-    "narrador": "El público no da crédito a lo que acaba de ver."
+    "narrador": "El público no da crédito a lo que acaba de ver.",
+
+    // NUEVO — cámara cinematográfica. Coordenadas 0..100 del frame VISIBLE
+    // (el visor ya recorta el HUD del juego). El visor interpola hacia aquí.
+    "camara":   { "x": 55.9, "y": 69.5, "zoom": 1.84, "ms": 2400, "tick": 1792522883825 },
+    "impacto":  { "x": 55.9, "y": 69.5, "poder": 0.66, "tick": 1792522883825 }
   },
 
   "historial": [               // una fila por ronda terminada
@@ -76,11 +81,11 @@ Cada entrada lleva siempre `seq` (monótono creciente dentro de la partida),
 
 | `tipo`      | quién     | qué es                                                        | extras |
 |-------------|-----------|---------------------------------------------------------------|--------|
-| `chat`      | rojo/azul | **puro drama**: lo que se dicen. Nada de gameplay aquí.        | `para`, `tono`, `intensidad` (0-1), `respuesta_a` (seq) |
-| `emoji`     | rojo/azul | emoji **suelto**, sin texto: una emoción lanzada al público    | `emocion`, `intensidad` |
-| `bomba`     | rojo/azul | lanza un poder sobre un grupo enemigo                          | `power` |
-| `tropas`    | rojo/azul | desembarca unidades                                            | `entity`, `count` |
-| `resultado` | rojo/azul | cierre de turno: bajas, pérdidas, enemigo restante             | |
+| `chat`      | rojo/azul | **puro drama**: lo que se dicen. Nada de gameplay aquí.        | `para`, `tono`, `intensidad` (0-1), `respuesta_a` (seq), `emocion` |
+| `emoji`     | rojo/azul | emoji **suelto**, sin texto: una emoción lanzada al público    | `emocion`, `intensidad`, `para` |
+| `bomba`     | rojo/azul | lanza un poder sobre un grupo enemigo                          | `power`, `x`, `y` (tiles del mundo), `camara` |
+| `tropas`    | rojo/azul | desembarca unidades                                            | `entity`, `count`, `refuerzos` (bool) |
+| `resultado` | rojo/azul | cierre de turno: bajas, pérdidas, enemigo restante             | `bajas`, `perdidas`, `intensidad` |
 | `ronda`     | sistema   | titular/cierre de ronda                                        | |
 | `titular`   | sistema   | titular de prensa de la ronda (beat de espectáculo)            | |
 | `info`      | sistema   | arranque, avisos                                               | |
@@ -89,6 +94,16 @@ Cada entrada lleva siempre `seq` (monótono creciente dentro de la partida),
 `tono` ∈ `chulo` | `llanto` | `burla` | `nervios` | `golpe` | `emoji`.
 El visor usa `tono` e `intensidad` para decidir tamaño, animación y si el emoji
 invade la pantalla.
+
+Las claves de `-Extra` se **aplanan** en la entrada (no van dentro de un objeto
+`extra`): en `feed.json` se leen como `$_.power`, `$_.x`, `$_.camara`…
+
+Las entradas `bomba` llevan `camara` con la misma forma que `drama.camara`, para
+que una repetición grabada pueda volar al punto del impacto sin el motor delante.
+
+Las entradas `resultado` añaden al final del texto las ciudades que han cambiado
+de dueño ese turno, por su nombre: `· ha caído Fain, Joeteke Djoma` (arrasadas al
+rival) y `· se ha perdido Djaema Djoema` (propias perdidas).
 
 ## `show.json` — la partida entera, para repetirla (NUEVO)
 
@@ -127,6 +142,30 @@ WorldBox ni PowerShell: solo este JSON.
 
 ## `out/` frente a `reports/wb-match/`
 
-El motor escribe en `-OutDir` (por defecto `C:\DSH\PC_Optimizer\reports\wb-match`).
+El motor escribe en `-OutDir` (por defecto `<raíz>/reports/wb-match`).
 `state.json`, `feed.json`, `frame.jpg` y `show.json` son la superficie pública.
 `informe.md` es para humanos. El visor solo necesita los cuatro primeros.
+
+## `http://127.0.0.1:8767` — el servidor de vídeo (`24-wb-stream.ps1`)
+
+No es parte del contrato del show, pero el visor y el motor lo consumen:
+
+| ruta            | qué da |
+|-----------------|--------|
+| `/stream.mjpg`  | MJPEG continuo de la ventana del juego (`multipart/x-mixed-replace`, boundary `wbframe`) |
+| `/frame.jpg`    | un fotograma suelto |
+| `/stats`        | `{ fps, seq, bytes, target, hwnd, err, spike, scx, scy, stick, lspike, lcx, lcy }` |
+| `/health`       | `{ ok: true, ... }` |
+
+La captura es `PrintWindow(hwnd, hdc, 2)` (`PW_RENDERFULLCONTENT`): funciona con
+la ventana **tapada o fuera de pantalla**, a 16-19 fps a 1280 px de ancho. El
+motor sondea `/stats` tras cada bomba para volar la cámara al fogonazo.
+
+Campos del detector de explosiones (rejilla de luminancia 160×90):
+
+- `lspike` / `lcx` / `lcy` — **valor vivo** del último frame (0 = nada). Es lo que
+  debe usar el motor: `lcx`/`lcy` son el centroide ×10000 (0..10000).
+- `spike` / `scx` / `scy` / `stick` — pico retenido 2,5 s con su marca de tiempo.
+  Ojo: se queda pegado; sirve para el resplandor, **no** para decidir a qué bomba
+  pertenece un fogonazo.
+- `spike > 30` = hay fuego nuevo; el núcleo (`d > 70`) es el que da el centroide.

@@ -140,7 +140,36 @@ while ($listener.IsListening) {
         Send-Archivo -Res $res -Ruta $script:Frame -Tipo 'image/jpeg'
       }
       '/health' { Send-Respuesta -Res $res -Codigo 200 -Bytes ([Text.Encoding]::UTF8.GetBytes('ok')) -Tipo 'text/plain; charset=utf-8' }
-      default { Send-Respuesta -Res $res -Codigo 404 -Bytes ([Text.Encoding]::UTF8.GetBytes('404')) -Tipo 'text/plain; charset=utf-8' }
+      default {
+        # Estáticos del visor: el visor puede partirse en varios ficheros
+        # (viewer-fx.js, hojas de estilo, imágenes). Solo se sirven extensiones
+        # conocidas y siempre dentro de $Dir (nada de ..\..\).
+        $rel = $ruta.TrimStart('/')
+        $mimes = @{
+          '.js' = 'application/javascript; charset=utf-8'; '.mjs' = 'application/javascript; charset=utf-8'
+          '.css' = 'text/css; charset=utf-8'; '.json' = 'application/json; charset=utf-8'
+          '.png' = 'image/png'; '.jpg' = 'image/jpeg'; '.jpeg' = 'image/jpeg'
+          '.svg' = 'image/svg+xml'; '.webp' = 'image/webp'; '.woff2' = 'font/woff2'
+          '.html' = 'text/html; charset=utf-8'; '.txt' = 'text/plain; charset=utf-8'
+        }
+        $ext = [IO.Path]::GetExtension($rel).ToLowerInvariant()
+        $destino = $null
+        if ($rel -and $mimes.ContainsKey($ext) -and $rel -notmatch '(^|[\\/])\.\.([\\/]|$)') {
+          $cand = Join-Path $Dir $rel
+          try {
+            $full = [IO.Path]::GetFullPath($cand)
+            $raiz = [IO.Path]::GetFullPath($Dir)
+            if ($full.StartsWith($raiz, [StringComparison]::OrdinalIgnoreCase) -and (Test-Path -LiteralPath $full -PathType Leaf)) {
+              $destino = $full
+            }
+          } catch { }
+        }
+        if ($destino) {
+          Send-Archivo -Res $res -Ruta $destino -Tipo $mimes[$ext]
+        } else {
+          Send-Respuesta -Res $res -Codigo 404 -Bytes ([Text.Encoding]::UTF8.GetBytes('404')) -Tipo 'text/plain; charset=utf-8'
+        }
+      }
     }
   } catch {
     try { Send-Respuesta -Res $res -Codigo 500 -Bytes ([Text.Encoding]::UTF8.GetBytes('error')) -Tipo 'text/plain; charset=utf-8' } catch { }

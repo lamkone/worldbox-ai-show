@@ -996,6 +996,442 @@ header{
   html:not(.movimiento) #u-rojo.cambia,
   html:not(.movimiento) #u-azul.cambia{animation:none !important}
 }
+/* ============================================================
+   CHAT ÚNICO TIPO GRUPO (demo v4)
+   Un solo hilo: ROJO + AZUL + tú + mensajes de sistema del show.
+   ============================================================ */
+:root{
+  --yo:#3ad6a0;
+  --yo-2:#8df0c9;
+  --yo-ink:#04140e;
+}
+
+/* El atributo hidden tiene que ganar a los display:flex/grid de estas piezas. */
+#grupo [hidden]{display:none !important}
+
+/* --- rejilla: visor | grupo --- */
+#escena{
+  grid-template-columns:minmax(0,1.42fr) minmax(336px,.95fr);
+  gap:12px;
+  padding:10px 14px;
+}
+#grupo{
+  position:relative;
+  display:flex;flex-direction:column;
+  min-height:0;min-width:0;
+  border:1px solid var(--line-2);
+  border-radius:var(--r-lg);
+  background:linear-gradient(180deg,#0b1220 0%,#080d16 58%,#070b12 100%);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+}
+
+/* --- cabecera del grupo --- */
+.grupo-h{
+  flex:0 0 auto;
+  display:flex;align-items:center;gap:9px;
+  padding:8px 11px;
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.012));
+}
+.grupo-avs{display:flex;align-items:center;flex:0 0 auto}
+.gav{
+  width:24px;height:24px;border-radius:50%;
+  display:grid;place-items:center;
+  font-size:9.5px;font-weight:900;letter-spacing:0;
+  color:#0a0d14;border:2px solid #0b1220;margin-left:-7px;
+}
+.gav:first-child{margin-left:0}
+.gav.r{background:linear-gradient(140deg,var(--rojo),var(--rojo-2))}
+.gav.a{background:linear-gradient(140deg,var(--azul),var(--azul-2))}
+.gav.yo{background:linear-gradient(140deg,var(--yo),var(--yo-2));color:var(--yo-ink);font-size:8px}
+.grupo-tx{min-width:0;flex:1 1 auto;display:flex;flex-direction:column;gap:1px}
+.grupo-nom{
+  display:flex;align-items:center;gap:7px;
+  font-size:12px;font-weight:800;letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.g-live{
+  display:inline-flex;align-items:center;gap:4px;
+  font-size:8px;font-weight:850;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--rojo);flex:0 0 auto;
+}
+.g-live i{width:5px;height:5px;border-radius:50%;background:var(--rojo);animation:pulso 1.4s ease-in-out infinite}
+.grupo-sub{
+  font-size:9px;color:var(--muted-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.grupo-sub .punto-sub{margin:0 5px;color:var(--muted-2);opacity:.6}
+.grupo-sub .sub-yo{color:var(--yo)}
+.grupo-badge{
+  flex:0 0 auto;min-width:19px;height:19px;padding:0 6px;
+  border-radius:99px;display:grid;place-items:center;
+  background:var(--yo);color:var(--yo-ink);
+  font-size:10px;font-weight:900;font-variant-numeric:tabular-nums;
+}
+.grupo-badge.resp{background:linear-gradient(140deg,#ffd166,var(--rojo));color:#170a04;animation:badgeLatido 1.05s ease-in-out 2}
+@keyframes badgeLatido{
+  0%,100%{transform:scale(1)}
+  35%{transform:scale(1.22)}
+}
+
+/* --- hilo --- */
+.hilo{
+  flex:1 1 auto;min-height:0;
+  overflow-y:auto;overflow-x:hidden;
+  padding:11px 11px 7px;
+  display:flex;flex-direction:column;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent;
+  background:
+    radial-gradient(120% 55% at 85% 0%, rgba(77,141,255,.055), transparent 62%),
+    radial-gradient(120% 55% at 8% 100%, rgba(255,93,93,.05), transparent 62%);
+}
+.hilo::-webkit-scrollbar{width:8px}
+.hilo::-webkit-scrollbar-track{background:transparent}
+.hilo::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:99px}
+.hilo::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.22)}
+
+/* --- separadores (día / ronda) --- */
+.sep{
+  flex:0 0 auto;
+  display:flex;align-items:center;gap:8px;
+  margin:11px 2px 9px;
+  font-size:8.5px;font-weight:850;letter-spacing:.17em;text-transform:uppercase;
+  color:var(--muted-2);
+}
+.sep::before,.sep::after{
+  content:"";height:1px;flex:1 1 auto;
+  background:linear-gradient(90deg,transparent,var(--line),transparent);
+}
+.sep span{
+  padding:2px 9px;border-radius:99px;white-space:nowrap;
+  border:1px solid var(--line);background:rgba(255,255,255,.03);
+}
+.sep.dia span{color:var(--muted);border-color:var(--line-2);letter-spacing:.13em}
+.sep.ronda span{color:#ffd166;border-color:rgba(255,209,102,.32);background:rgba(255,209,102,.07)}
+
+/* --- mensajes --- */
+.msg{
+  flex:0 0 auto;
+  display:flex;gap:7px;align-items:flex-start;
+  padding:2px 0;max-width:100%;
+}
+.msg-av{
+  width:23px;height:23px;border-radius:50%;
+  flex:0 0 auto;display:grid;place-items:center;
+  font-size:8.5px;font-weight:900;color:#0a0d14;
+  margin-top:2px;
+}
+.msg.rojo .msg-av{background:linear-gradient(140deg,var(--rojo),var(--rojo-2))}
+.msg.azul .msg-av{background:linear-gradient(140deg,var(--azul),var(--azul-2))}
+.msg.yo .msg-av{background:linear-gradient(140deg,var(--yo),var(--yo-2));color:var(--yo-ink)}
+.msg-col{display:flex;flex-direction:column;gap:2px;min-width:0;max-width:min(88%,520px)}
+.msg-nom{
+  display:flex;align-items:baseline;gap:6px;
+  font-size:9.5px;font-weight:800;letter-spacing:.02em;color:var(--muted);
+  padding-left:1px;
+}
+.msg-nom b{font-weight:850}
+.msg.rojo .msg-nom b{color:var(--rojo)}
+.msg.azul .msg-nom b{color:var(--azul)}
+.msg.yo .msg-nom b{color:var(--yo)}
+.msg-hora{
+  font-size:8px;font-weight:650;color:var(--muted-2);
+  font-variant-numeric:tabular-nums;letter-spacing:.02em;
+}
+.msg-burbuja{
+  position:relative;
+  padding:7px 10px;border-radius:12px 12px 12px 4px;
+  background:rgba(255,255,255,.052);
+  border:1px solid var(--line);
+  font-size:12.5px;line-height:1.42;color:var(--text);
+  overflow-wrap:anywhere;word-break:break-word;
+}
+.msg.rojo .msg-burbuja{background:rgba(255,93,93,.095);border-color:rgba(255,93,93,.22)}
+.msg.azul .msg-burbuja{background:rgba(77,141,255,.095);border-color:rgba(77,141,255,.24)}
+.msg.yo{flex-direction:row-reverse;margin-left:auto}
+.msg.yo .msg-col{align-items:flex-end;max-width:min(88%,440px)}
+.msg.yo .msg-nom{flex-direction:row-reverse;padding-left:0;padding-right:1px}
+.msg.yo .msg-burbuja{
+  background:rgba(58,214,160,.13);
+  border-color:rgba(58,214,160,.32);
+  border-radius:12px 12px 4px 12px;
+}
+.msg.es-emoji .msg-burbuja{
+  background:transparent;border:0;padding:1px 2px;
+  font-size:27px;line-height:1.15;
+}
+
+/* agrupación: mensajes seguidos del mismo autor */
+.msg.continuo{margin-top:-1px}
+.msg.continuo .msg-av{visibility:hidden}
+.msg.continuo .msg-nom{display:none}
+
+/* --- cita (mensaje citado) --- */
+.cita{
+  display:flex;flex-direction:column;gap:1px;
+  width:100%;margin:0 0 5px;padding:4px 8px;
+  text-align:left;cursor:pointer;
+  border:0;border-left:2px solid var(--muted-2);border-radius:6px;
+  background:rgba(0,0,0,.30);color:inherit;font:inherit;
+  transition:background .15s,border-color .15s;
+}
+.cita:hover{background:rgba(0,0,0,.46)}
+.cita-nom{
+  font-size:8px;font-weight:850;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--muted);
+}
+.cita-tx{
+  font-size:10.5px;line-height:1.3;color:var(--muted);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.cita.qi-yo{border-left-color:var(--yo)}
+.cita.qi-yo .cita-nom{color:var(--yo)}
+.cita.qi-rojo{border-left-color:var(--rojo)}
+.cita.qi-rojo .cita-nom{color:var(--rojo)}
+.cita.qi-azul{border-left-color:var(--azul)}
+.cita.qi-azul .cita-nom{color:var(--azul)}
+
+/* resalte breve: mensaje recién citado o recién respondido */
+.msg.resaltado .msg-burbuja{animation:resaltaBurbuja 1.7s ease-out}
+@keyframes resaltaBurbuja{
+  0%{box-shadow:0 0 0 2px rgba(255,209,102,.75),0 0 22px rgba(255,209,102,.35);background-color:rgba(255,209,102,.20)}
+  100%{box-shadow:0 0 0 0 rgba(255,209,102,0);background-color:rgba(255,255,255,0)}
+}
+.msg.citada .msg-burbuja{animation:citadaBurbuja 2.2s ease-out}
+@keyframes citadaBurbuja{
+  0%{box-shadow:0 0 0 2px rgba(58,214,160,.7)}
+  100%{box-shadow:0 0 0 0 rgba(58,214,160,0)}
+}
+/* respuesta de una IA a tu mensaje */
+.msg.recien .msg-burbuja{animation:recienIn .5s cubic-bezier(.2,.8,.2,1)}
+@keyframes recienIn{
+  0%{opacity:0;transform:translateY(7px) scale(.985)}
+  100%{opacity:1;transform:none}
+}
+
+/* --- mensajes de sistema dentro del hilo --- */
+.msg.sis{justify-content:center;padding:3px 0;margin:1px 0}
+.sis-burbuja{
+  display:flex;align-items:flex-start;gap:7px;
+  max-width:94%;padding:5px 10px;
+  border-radius:9px;border:1px solid var(--line);
+  background:rgba(255,255,255,.035);
+  font-size:10.5px;line-height:1.4;
+}
+.sis-ico{flex:0 0 auto;font-size:11px;line-height:1.35}
+.sis-col{min-width:0;display:flex;flex-direction:column;gap:1px}
+.sis-col b{
+  font-size:8px;font-weight:850;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--muted-2);
+}
+.sis-tx{color:var(--muted);overflow-wrap:anywhere}
+.msg.sis .msg-hora{margin-left:6px;align-self:flex-end;padding-bottom:1px;flex:0 0 auto}
+.msg.sis.bomba .sis-burbuja{border-color:rgba(255,93,93,.30);background:rgba(255,93,93,.075)}
+.msg.sis.bomba .sis-col b{color:var(--rojo)}
+.msg.sis.bomba.azulb .sis-burbuja{border-color:rgba(77,141,255,.30);background:rgba(77,141,255,.07)}
+.msg.sis.bomba.azulb .sis-col b{color:var(--azul)}
+.msg.sis.tropas .sis-burbuja{border-color:rgba(255,255,255,.14)}
+.msg.sis.titular .sis-burbuja{border-color:rgba(255,209,102,.30);background:rgba(255,209,102,.065)}
+.msg.sis.titular .sis-col b{color:#ffd166}
+.msg.sis.resultado .sis-col b{color:var(--azul-2)}
+.msg.sis.ronda .sis-burbuja{border-style:dashed}
+.msg.sis.ronda .sis-col b{color:var(--muted)}
+.msg.sis.bienvenida .sis-burbuja{border-color:rgba(58,214,160,.30);background:rgba(58,214,160,.06)}
+.msg.sis.bienvenida .sis-col b{color:var(--yo)}
+
+/* los mensajes de sistema con texto largo tienen que ajustarse, no desbordar */
+.msg.sis{width:100%;min-width:0;max-width:100%}
+.msg.sis .sis-burbuja{flex:1 1 auto;min-width:0;max-width:calc(100% - 44px);box-sizing:border-box}
+.msg.sis .sis-col{flex:1 1 auto;min-width:0}
+.msg.sis .sis-tx{white-space:normal;overflow-wrap:anywhere;word-break:break-word;min-width:0}
+
+/* --- "está escribiendo…" --- */
+.msg.escribiendo .msg-burbuja{
+  display:flex;align-items:center;gap:3px;
+  padding:8px 11px;min-height:28px;
+}
+.msg.escribiendo .msg-nom b{font-weight:800}
+.msg.escribiendo .msg-nom{font-style:italic;color:var(--muted-2)}
+.punto{
+  width:5px;height:5px;border-radius:50%;
+  background:currentColor;opacity:.45;
+  animation:teclea 1.05s ease-in-out infinite;
+}
+.punto:nth-child(2){animation-delay:.14s}
+.punto:nth-child(3){animation-delay:.28s}
+@keyframes teclea{
+  0%,60%,100%{transform:translateY(0);opacity:.38}
+  30%{transform:translateY(-3px);opacity:1}
+}
+
+/* --- aviso de mensajes nuevos --- */
+.nuevos{
+  position:absolute;left:0;right:0;bottom:104px;z-index:6;
+  display:flex;justify-content:center;pointer-events:none;
+}
+.nuevos button{
+  pointer-events:auto;
+  display:inline-flex;align-items:center;gap:7px;
+  padding:5px 12px;border-radius:99px;cursor:pointer;
+  border:1px solid rgba(58,214,160,.45);
+  background:rgba(9,20,17,.94);
+  color:var(--yo);font:inherit;font-size:10px;font-weight:800;letter-spacing:.03em;
+  box-shadow:0 12px 30px -14px #000;
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+}
+.nuevos button:hover{background:rgba(13,28,24,.98)}
+.nuevos button.resp{border-color:rgba(255,209,102,.6);color:#ffd166;background:rgba(28,20,8,.95)}
+.nuevos-flecha{font-size:11px;line-height:1}
+
+/* --- composer --- */
+.composer{
+  position:relative;
+  flex:0 0 auto;
+  display:flex;flex-direction:column;gap:6px;
+  padding:8px 10px 9px;
+  border-top:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.008));
+}
+.composer-top{display:flex;align-items:center;gap:6px;min-width:0}
+.yo-av{
+  flex:0 0 auto;width:20px;height:20px;border-radius:50%;
+  display:grid;place-items:center;
+  font-size:7.5px;font-weight:900;color:var(--yo-ink);
+  background:linear-gradient(140deg,var(--yo),var(--yo-2));
+}
+.yo-nom{
+  font-size:10.5px;font-weight:850;color:var(--yo);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;
+}
+.yo-lapiz{
+  flex:0 0 auto;margin-left:auto;
+  width:23px;height:23px;border-radius:6px;cursor:pointer;
+  display:grid;place-items:center;line-height:1;font-size:11px;
+  border:1px solid var(--line);background:rgba(255,255,255,.045);color:var(--muted);
+  transition:color .15s,border-color .15s,background .15s;
+}
+.yo-lapiz:hover{color:var(--text);border-color:var(--line-2);background:rgba(255,255,255,.09)}
+.composer-fila{display:flex;align-items:center;gap:6px}
+.yo-input{
+  flex:1 1 auto;min-width:0;height:34px;padding:0 11px;
+  border-radius:10px;border:1px solid var(--line-2);
+  background:rgba(3,6,12,.55);color:var(--text);
+  font:inherit;font-size:12.5px;outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.yo-input::placeholder{color:var(--muted-2)}
+.yo-input:focus{border-color:rgba(58,214,160,.55);box-shadow:0 0 0 3px rgba(58,214,160,.10)}
+.yo-enviar{
+  flex:0 0 auto;height:34px;padding:0 14px;border:0;border-radius:10px;cursor:pointer;
+  background:linear-gradient(140deg,var(--yo),var(--yo-2));color:var(--yo-ink);
+  font:inherit;font-size:11.5px;font-weight:850;letter-spacing:.02em;
+  transition:filter .15s,opacity .15s;
+  min-width:74px;
+}
+.yo-enviar:hover:not(:disabled){filter:brightness(1.07)}
+.yo-enviar:disabled{opacity:.45;cursor:not-allowed;filter:grayscale(.45)}
+.composer-pie{
+  display:flex;justify-content:space-between;align-items:baseline;gap:8px;
+  min-height:11px;font-size:8.5px;line-height:1.3;color:var(--muted-2);letter-spacing:.02em;
+}
+#yo-pista{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#yo-slow{
+  flex:0 0 auto;color:#ffd166;font-weight:850;
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.slow-barra{
+  position:absolute;left:0;bottom:0;height:2px;width:0%;
+  background:linear-gradient(90deg,var(--yo),var(--yo-2));
+  opacity:0;transition:width .22s linear,opacity .2s;
+}
+.slow-barra.on{opacity:.9}
+
+/* --- editor de nombre --- */
+.yo-edit{
+  position:absolute;left:10px;right:10px;bottom:104px;z-index:9;
+  display:flex;flex-direction:column;gap:6px;
+  padding:10px;border-radius:12px;
+  border:1px solid var(--line-2);
+  background:#0b1220;
+  box-shadow:0 28px 70px -22px #000,0 0 0 1px rgba(0,0,0,.4);
+}
+.yo-edit label{
+  font-size:8px;font-weight:850;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--muted-2);
+}
+.yo-edit input{
+  height:32px;padding:0 10px;border-radius:8px;
+  border:1px solid var(--line-2);background:rgba(3,6,12,.6);
+  color:var(--text);font:inherit;font-size:12.5px;outline:none;
+}
+.yo-edit input:focus{border-color:rgba(58,214,160,.55);box-shadow:0 0 0 3px rgba(58,214,160,.10)}
+.yo-edit-btns{display:flex;gap:6px}
+.yo-edit-btns button{
+  flex:1 1 auto;height:28px;border-radius:8px;cursor:pointer;
+  border:1px solid var(--line-2);background:rgba(255,255,255,.05);
+  color:var(--text);font:inherit;font-size:10.5px;font-weight:750;
+}
+.yo-edit-btns button:hover{background:rgba(255,255,255,.09)}
+.yo-edit-btns #btn-guardar{
+  border:0;background:linear-gradient(140deg,var(--yo),var(--yo-2));color:var(--yo-ink);
+}
+
+/* ============================================================
+   Responsive del grupo
+   ============================================================ */
+@media (max-width:1240px){
+  #escena{grid-template-columns:minmax(0,1.28fr) minmax(312px,.95fr)}
+}
+@media (max-width:1000px){
+  #escena{display:flex;flex-direction:column;gap:10px}
+  #centro{order:0}
+  #grupo{order:1;height:min(76vh,640px);min-height:430px}
+}
+@media (max-width:680px){
+  #grupo{height:min(80vh,620px);min-height:420px;border-radius:14px}
+  .grupo-h{padding:7px 9px;gap:7px}
+  .gav{width:22px;height:22px;font-size:8.5px}
+  .grupo-nom{font-size:11px}
+  .hilo{padding:9px 8px 6px}
+  .msg-burbuja{font-size:12px;padding:6px 9px}
+  .msg-col{max-width:90%}
+  .msg.yo .msg-col{max-width:88%}
+  .composer{padding:7px 8px 8px}
+  .yo-input{height:32px;font-size:12px}
+  .yo-enviar{height:32px;padding:0 11px;font-size:11px;min-width:66px}
+  #yo-pista{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .nuevos{bottom:100px}
+  .yo-edit{bottom:100px}
+}
+@media (max-height:780px) and (min-width:1001px){
+  .grupo-h{padding:6px 10px}
+  .hilo{padding:8px 10px 5px}
+  .composer{padding:6px 9px 7px;gap:5px}
+}
+
+/* ============================================================
+   Movimiento reducido: todo visible, sin animaciones
+   ============================================================ */
+@media (prefers-reduced-motion:reduce){
+  html:not(.movimiento) .msg.recien .msg-burbuja,
+  html:not(.movimiento) .msg.resaltado .msg-burbuja,
+  html:not(.movimiento) .msg.citada .msg-burbuja,
+  html:not(.movimiento) .grupo-badge.resp,
+  html:not(.movimiento) .g-live i,
+  html:not(.movimiento) .punto{
+    animation:none !important;
+  }
+  html:not(.movimiento) .msg.resaltado .msg-burbuja{
+    box-shadow:0 0 0 2px rgba(255,209,102,.7) !important;
+    background-color:rgba(255,209,102,.16) !important;
+  }
+  html:not(.movimiento) .msg.citada .msg-burbuja{
+    box-shadow:0 0 0 2px rgba(58,214,160,.6) !important;
+  }
+  html:not(.movimiento) .punto{opacity:.6}
+  html:not(.movimiento) .slow-barra{transition:none !important}
+}
 </style>
 <script>
 /* Si el sistema pide movimiento reducido pero se añade ?anim=1, se fuerza la
@@ -1066,16 +1502,6 @@ try {
   </section>
 
   <main id="escena">
-    <section class="col rojo" id="col-rojo" aria-label="Chat de ROJO">
-      <div class="col-h">
-        <span class="av" aria-hidden="true">R</span>
-        <span class="nom">ROJO</span>
-        <span class="sub" id="sub-rojo">—</span>
-        <span class="mood" id="mood-rojo" aria-hidden="true">😐</span>
-      </div>
-      <div class="drama" id="drama-rojo" aria-live="polite" aria-relevant="additions"></div>
-    </section>
-
     <section id="centro" aria-label="Visor de la partida">
       <div class="mapa" id="mapa">
         <div class="mundo" id="mundo" role="img" aria-label="Mapa de WorldBox: captura real del juego sobre la que se reconstruye la partida de demostración">
@@ -1113,14 +1539,50 @@ try {
       </aside>
     </section>
 
-    <section class="col azul" id="col-azul" aria-label="Chat de AZUL">
-      <div class="col-h">
-        <span class="av" aria-hidden="true">A</span>
-        <span class="nom">AZUL</span>
-        <span class="sub" id="sub-azul">—</span>
-        <span class="mood" id="mood-azul" aria-hidden="true">😐</span>
+    <section id="grupo" aria-label="Chat del grupo">
+      <div class="grupo-h">
+        <div class="grupo-avs" aria-hidden="true">
+          <span class="gav r">R</span><span class="gav a">A</span><span class="gav yo">TÚ</span>
+        </div>
+        <div class="grupo-tx">
+          <div class="grupo-nom">WorldBox AI Show <span class="g-live"><i></i>en directo</span></div>
+          <div class="grupo-sub"><span id="sub-rojo">Jepy Djomo</span><span class="punto-sub" aria-hidden="true">·</span><span id="sub-azul">Los Azules</span><span class="punto-sub" aria-hidden="true">·</span><span id="sub-yo" class="sub-yo">tú</span></div>
+        </div>
+        <span class="grupo-badge" id="badge-nuevo" hidden aria-hidden="true">0</span>
       </div>
-      <div class="drama" id="drama-azul" aria-live="polite" aria-relevant="additions"></div>
+
+      <div class="hilo" id="hilo" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversación del grupo"></div>
+
+      <div class="nuevos" id="nuevos" hidden>
+        <button type="button" id="btn-nuevos"><span id="nuevos-tx">mensajes nuevos</span><span class="nuevos-flecha" aria-hidden="true">↓</span></button>
+      </div>
+
+      <form class="composer" id="composer" autocomplete="off">
+        <div class="composer-top">
+          <span class="yo-av" id="yo-av" aria-hidden="true">TÚ</span>
+          <span class="yo-nom" id="yo-nom">—</span>
+          <button type="button" class="yo-lapiz" id="btn-nombre" title="Cambiar tu nombre" aria-label="Cambiar tu nombre">✎</button>
+        </div>
+        <div class="composer-fila">
+          <input id="yo-input" class="yo-input" type="text" maxlength="240" placeholder="Escribe algo al grupo…" aria-label="Escribe un mensaje para el grupo" enterkeyhint="send">
+          <button type="submit" class="yo-enviar" id="btn-enviar">Enviar</button>
+        </div>
+        <div class="composer-pie">
+          <span id="yo-pista">Slow mode: 1 mensaje cada 13 s · respuestas de demo, generadas en tu navegador</span>
+          <span id="yo-slow" hidden></span>
+        </div>
+        <div class="slow-barra" id="slow-barra" aria-hidden="true"></div>
+      </form>
+
+      <div class="yo-edit" id="yo-edit" hidden>
+        <label for="yo-nombre-input">Tu nombre en el grupo</label>
+        <input id="yo-nombre-input" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+        <div class="yo-edit-btns">
+          <button type="button" id="btn-aleatorio" title="Generar otro nombre">🎲 Otro</button>
+          <button type="button" id="btn-guardar">Guardar</button>
+          <button type="button" id="btn-cancelar">Cancelar</button>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -1418,16 +1880,89 @@ let TENSION_OBJ = 30;
 const DOM = {};
 function cachearDom() {
   [
-    'app', 'progreso', 'relleno', 'cabeza', 'chip-estado', 'estado-txt', 'chip-fecha',
-    'chip-rondas', 'btn-play', 'btn-reiniciar', 'btn-final', 'u-rojo', 'u-azul',
-    'c-rojo', 'c-azul', 'b-rojo', 'b-azul', 'sh-rojo', 'sh-azul', 'reino-rojo',
-    'reino-azul', 'ronda-n', 'ronda-tot', 'pips', 'tension-n', 'tension-fill',
-    't-actual', 't-total', 'titular-tx', 'drama-rojo', 'drama-azul', 'col-rojo',
-    'col-azul', 'mood-rojo', 'mood-azul', 'sub-rojo', 'sub-azul', 'grafica',
-    'grafica-cnt', 'historial', 'hist-cnt', 'hist-vacio', 'ticker-items',
-    'capa', 'flash', 'banner', 'victoria', 'v-lluvia', 'v-ganador', 'v-reino',
-    'v-br', 'v-ba', 'v-frase', 'v-pips', 'v-motivo', 'v-stats', 'v-otra',
-    'v-cerrar', 'aviso'
+    'app',
+    'progreso',
+    'relleno',
+    'cabeza',
+    'chip-estado',
+    'estado-txt',
+    'chip-fecha',
+    'chip-rondas',
+    'btn-play',
+    'btn-reiniciar',
+    'btn-final',
+    'u-rojo',
+    'u-azul',
+    'c-rojo',
+    'c-azul',
+    'b-rojo',
+    'b-azul',
+    'p-rojo',
+    'p-azul',
+    'sh-rojo',
+    'sh-azul',
+    'reino-rojo',
+    'reino-azul',
+    'ronda-n',
+    'ronda-tot',
+    'pips',
+    'tension-n',
+    'tension-fill',
+    't-actual',
+    't-total',
+    'titular-tx',
+    'narrador',
+    'sub-rojo',
+    'sub-azul',
+    'sub-yo',
+    'grafica',
+    'grafica-cnt',
+    'historial',
+    'hist-cnt',
+    'hist-vacio',
+    'ticker-items',
+    'capa',
+    'flash',
+    'banner',
+    'victoria',
+    'v-lluvia',
+    'v-ganador',
+    'v-reino',
+    'v-br',
+    'v-ba',
+    'v-frase',
+    'v-pips',
+    'v-motivo',
+    'v-stats',
+    'v-otra',
+    'v-cerrar',
+    'aviso',
+    'mapa',
+    'mundo',
+    'pines',
+    'dmg',
+    'splash',
+    'mapa-ronda',
+    'hilo',
+    'grupo',
+    'composer',
+    'yo-input',
+    'btn-enviar',
+    'yo-av',
+    'yo-nom',
+    'badge-nuevo',
+    'nuevos',
+    'btn-nuevos',
+    'nuevos-tx',
+    'yo-pista',
+    'yo-slow',
+    'slow-barra',
+    'btn-nombre',
+    'yo-edit',
+    'yo-nombre-input',
+    'btn-aleatorio',
+    'btn-guardar',
+    'btn-cancelar',
   ].forEach((id) => {
     DOM[id.replace(/-/g, '_')] = document.getElementById(id);
   });
@@ -1533,6 +2068,7 @@ async function iniciar() {
   actualizarBotonPlay();
   requestAnimationFrame(tick);
   if (window.WBMapa) { try { WBMapa.iniciar(); } catch (e) { console.error('[mapa] iniciar', e); } }
+  if (window.WBChat) { try { WBChat.iniciar(); } catch (e) { console.error('[chat] iniciar', e); } }
 }
 
 function pintarEstatico() {
@@ -1543,8 +2079,8 @@ function pintarEstatico() {
 
   DOM.reino_rojo.textContent = nomR;
   DOM.reino_azul.textContent = nomA;
-  DOM.sub_rojo.textContent = nomR + ' · reino ' + num(reinos.rojo && reinos.rojo.id, '—');
-  DOM.sub_azul.textContent = nomA + ' · reino ' + num(reinos.azul && reinos.azul.id, '—');
+  DOM.sub_rojo.textContent = nomR;
+  DOM.sub_azul.textContent = nomA;
   DOM.chip_fecha.textContent = meta.fecha || 'sin fecha';
   DOM.chip_rondas.textContent = TOTAL_RONDAS + ' rondas';
   DOM.ronda_tot.textContent = TOTAL_RONDAS;
@@ -1609,6 +2145,7 @@ function avanzarHasta(t, silencio) {
 
 function procesar(ev, sil) {
   if (window.WBMapa) { try { WBMapa.evento(ev, sil); } catch (e) { console.error('[mapa] evento', e); } }
+  if (window.WBChat) { try { WBChat.evento(ev, sil); } catch (e) { console.error('[chat] evento', e); } }
   const tipo = String(ev.tipo || 'info');
   const agente = String(ev.agente || 'sistema');
   const rondaEv = num(ev.ronda, 0);
@@ -1660,125 +2197,15 @@ function procesar(ev, sil) {
 /* =====================================================================
    Drama: burbujas
    ===================================================================== */
-function burbuja(ev, sil) {
-  const lado = ev.agente === 'azul' ? 'azul' : 'rojo';
-  const feed = lado === 'azul' ? DOM.drama_azul : DOM.drama_rojo;
-  const texto = String(ev.texto != null ? ev.texto : (ev.emocion != null ? ev.emocion : ''));
-  const tono = String(ev.tono || (ev.tipo === 'emoji' ? 'emoji' : 'chulo'));
-  const inten = Number.isFinite(Number(ev.intensidad)) ? clamp(Number(ev.intensidad), 0, 1) : 0.6;
-  const soloEmoji = tono === 'emoji' || esSoloEmoji(texto);
-
-  const el = document.createElement('div');
-  el.className = 'burbuja' + (soloEmoji ? ' es-emoji' : '') + ' tono-' + tono;
-  el.dataset.seq = String(ev.seq);
-  el.style.setProperty('--int', inten.toFixed(2));
-
-  const cuerpo = document.createElement('div');
-  cuerpo.className = 'cuerpo';
-
-  if (ev.respuesta_a) {
-    const citado = SEQ.get(Number(ev.respuesta_a));
-    if (citado) {
-      const cita = document.createElement('span');
-      cita.className = 'cita';
-      cita.textContent = '↳ ' + recortar(String(citado.texto || ''), 72);
-      cuerpo.appendChild(cita);
-      marcarCitado(Number(ev.respuesta_a));
-    }
-  }
-  cuerpo.appendChild(document.createTextNode(texto));
-  el.appendChild(cuerpo);
-
-  const meta = document.createElement('div');
-  meta.className = 'meta';
-  const chipTono = document.createElement('span');
-  chipTono.className = 'tono-chip';
-  chipTono.textContent = TONO_LABEL[tono] || tono;
-  meta.appendChild(chipTono);
-  if (ev.para && ev.para !== '*') {
-    const para = document.createElement('span');
-    para.className = 'para-chip';
-    para.textContent = '→ ' + String(ev.para).toUpperCase();
-    meta.appendChild(para);
-  }
-  el.appendChild(meta);
-
-  feed.appendChild(el);
-  while (feed.children.length > 80) feed.removeChild(feed.firstChild);
-
-  if (sil) {
-    feed.scrollTop = feed.scrollHeight;
-  } else {
-    const cerca = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 140;
-    if (cerca) feed.scrollTop = feed.scrollHeight;
-  }
-
-  if (soloEmoji) {
-    pintarMood(lado, 'emoji', texto);
-    if (!sil && inten >= 0.72) invadir(texto, lado);
-  } else {
-    pintarMood(lado, tono);
-  }
-}
-
-function marcarCitado(seq) {
-  const el = document.querySelector('.burbuja[data-seq="' + seq + '"]');
-  if (!el) return;
-  el.classList.remove('respondida');
-  void el.offsetWidth;
-  el.classList.add('respondida');
-  setTimeout(() => el.classList.remove('respondida'), 2400);
-}
-
-function pintarMood(lado, tono, emoji) {
-  const el = lado === 'azul' ? DOM.mood_azul : DOM.mood_rojo;
-  if (!el) return;
-  const nuevo = emoji || MOOD[tono] || '😐';
-  if (el.textContent === nuevo) return;
-  el.textContent = nuevo;
-  el.classList.remove('salta');
-  void el.offsetWidth;
-  el.classList.add('salta');
-}
+function burbuja() { /* el hilo del grupo lo pinta WBChat */ }
+function marcarCitado() {}
+function pintarMood() {}
+function invadir() {}
+function volarEmojis() {}
 
 /* =====================================================================
    Efectos
    ===================================================================== */
-function invadir(emoji, lado) {
-  if (REDUCED || !emoji) return;
-  const el = document.createElement('div');
-  el.className = 'emoji-invade ' + lado;
-  el.textContent = emoji;
-  DOM.capa.appendChild(el);
-  setTimeout(() => el.remove(), 1300);
-}
-
-function volarEmojis(agente) {
-  if (REDUCED) return;
-  const origen = agente === 'azul' ? DOM.col_azul : DOM.col_rojo;
-  const destino = agente === 'azul' ? DOM.col_rojo : DOM.col_azul;
-  if (!origen || !destino) return;
-  const a = origen.getBoundingClientRect();
-  const b = destino.getBoundingClientRect();
-  const x0 = a.left + a.width / 2;
-  const y0 = a.top + Math.min(a.height * 0.4, 220);
-  const set = ['💥', '🔥', '💀', '☄️', '🧨', '💣'];
-  for (let i = 0; i < 7; i++) {
-    const s = document.createElement('span');
-    s.className = 'emoji-vuela';
-    s.textContent = set[Math.floor(Math.random() * set.length)];
-    s.style.left = (x0 + (Math.random() - 0.5) * 70) + 'px';
-    s.style.top = (y0 + (Math.random() - 0.5) * 90) + 'px';
-    s.style.fontSize = (18 + Math.random() * 16).toFixed(0) + 'px';
-    s.style.setProperty('--dx', ((b.left + b.width * Math.random()) - x0).toFixed(0) + 'px');
-    s.style.setProperty('--dy', ((b.top + b.height * 0.6 * Math.random()) - y0).toFixed(0) + 'px');
-    s.style.setProperty('--rot', (Math.random() * 720 - 360).toFixed(0) + 'deg');
-    s.style.setProperty('--dur', (0.72 + Math.random() * 0.5).toFixed(2) + 's');
-    document.body.appendChild(s);
-    setTimeout(() => s.remove(), 1500);
-  }
-}
-
 function destello() {
   if (REDUCED) return;
   const f = DOM.flash;
@@ -1900,7 +2327,7 @@ function pintarMarcador(anim) {
     if (c) c.textContent = String(s.c);
   });
 
-  /* Pérdidas = bajas que ha infligido el rival (el marcador acumula las dos). */
+  /* Pérdidas = bajas que ha infligido el rival. */
   cifra(document.getElementById('p-rojo'), SCORE.azul.bajas);
   cifra(document.getElementById('p-azul'), SCORE.rojo.bajas);
 
@@ -2087,8 +2514,6 @@ function reset() {
     azul: { u: num(ini.azul && ini.azul.unidades), c: num(ini.azul && ini.azul.ciudades), bajas: 0 }
   };
 
-  DOM.drama_rojo.textContent = '';
-  DOM.drama_azul.textContent = '';
   DOM.ticker_items.textContent = '';
   DOM.historial.textContent = '';
   const vacio = document.createElement('div');
@@ -2104,8 +2529,6 @@ function reset() {
   DOM.capa.textContent = '';
   DOM.banner.classList.remove('on');
 
-  DOM.mood_rojo.textContent = '😐';
-  DOM.mood_azul.textContent = '😐';
 
   pintarMarcador(false);
   pintarRonda();
@@ -2115,6 +2538,7 @@ function reset() {
   ponerTitular('La velada está a punto de empezar…', true);
   ocultarVictoria();
   if (window.WBMapa) { try { WBMapa.reset(); } catch (e) { console.error('[mapa] reset', e); } }
+  if (window.WBChat) { try { WBChat.reset(); } catch (e) { console.error('[chat] reset', e); } }
 }
 
 function irA(ms) {
@@ -2335,6 +2759,7 @@ function mostrarVictoria() {
   DOM.victoria.classList.add('on');
   DOM.victoria.setAttribute('aria-hidden', 'false');
   if (window.WBMapa) { try { WBMapa.final(); } catch (e) { console.error('[mapa] final', e); } }
+  if (window.WBChat) { try { WBChat.final(); } catch (e) { console.error('[chat] final', e); } }
   if (!REDUCED) lluviaEmojis(lado);
   actualizarBotonPlay();
   if (DOM.v_otra && typeof DOM.v_otra.focus === 'function') {
@@ -2556,8 +2981,9 @@ if (document.readyState === 'loading') {
     tag.textContent = 'bajas';
     d.appendChild(numEl);
     d.appendChild(tag);
-    d.style.left = clamp(p.x + (Math.random() - 0.5) * 90, 26, geo.W - 26) + 'px';
-    d.style.top = clamp(p.y + (Math.random() - 0.5) * 44, 30, geo.H - 30) + 'px';
+    /* nace por debajo del pin y sube: así no tapa la etiqueta del pin */
+    d.style.left = clamp(p.x + (Math.random() - 0.5) * 110, 34, geo.W - 34) + 'px';
+    d.style.top = clamp(p.y + 38 + Math.random() * 22, 34, geo.H - 34) + 'px';
     el.dmg.appendChild(d);
     const vida = REDUCED ? 2600 : 1500;
     setTimeout(() => { if (d.parentNode) d.remove(); }, vida);
@@ -2716,6 +3142,1042 @@ if (document.readyState === 'loading') {
   }
 
   window.WBMapa = { iniciar: iniciar, reset: resetMapa, evento: evento, final: final };
+})();
+</script>
+<script>
+/* =====================================================================
+   WorldBox AI Show · chat de grupo (demo v4)
+   Un solo hilo: ROJO, AZUL, mensajes del sistema y tú.
+   - Autoscroll pegado al fondo + aviso de mensajes nuevos
+   - Slow mode de 13 s con cuenta atrás y barra
+   - Nombre editable (persistente) con dados aleatorios
+   - Las dos IAs te contestan citando tu mensaje, con datos reales
+   - Respeta prefers-reduced-motion (el CSS desactiva animaciones)
+   ===================================================================== */
+(function () {
+  'use strict';
+  if (window.WBChat) return;
+
+  const SLOW_MS = 13000;
+  const NOMBRE_KEY = 'wbshow.nombre.v2';
+  const SLOW_KEY = 'wbshow.slow.v2';
+  const NOMBRE_DEF = 'Espectador';
+  const MAX_MENSAJES = 420;
+
+  const RM = (function () {
+    try {
+      if (typeof REDUCED !== 'undefined') return !!REDUCED;
+    } catch (_) { /* sin acceso */ }
+    try {
+      return !document.documentElement.classList.contains('movimiento') &&
+        !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (_) { return false; }
+  })();
+
+  const S = {
+    iniciado: false,
+    el: null,
+    nombre: '',
+    ultimoAutor: '',
+    ultimoT: -1e9,
+    seqUsuario: 0,
+    ultimaRonda: 0,
+    pinned: true,
+    noLeidos: 0,
+    esperando: 0,
+    escribiendo: null,
+    timers: [],
+    cdHasta: 0,
+    cdTimer: 0,
+    ultimoEnvio: 0,
+    total: 0
+  };
+
+  /* ------------------------------------------------------------------
+     Utilidades
+     ------------------------------------------------------------------ */
+  function q(id) { return document.getElementById(id); }
+  function crear(tag, cls, txt) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+  function hora(ms) {
+    try {
+      if (typeof fmtT === 'function') return fmtT(ms);
+    } catch (_) { /* nada */ }
+    const s = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }
+  function rnd(lista) { return lista[Math.floor(Math.random() * lista.length)]; }
+  function elegir(prob) { return Math.random() < prob; }
+  function numSeguro(v, def) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : (def || 0);
+  }
+  function leer(almacen, clave) {
+    try { return window[almacen].getItem(clave); } catch (_) { return null; }
+  }
+  function guardar(almacen, clave, valor) {
+    try { window[almacen].setItem(clave, valor); } catch (_) { /* modo privado */ }
+  }
+  function borrar(almacen, clave) {
+    try { window[almacen].removeItem(clave); } catch (_) { /* nada */ }
+  }
+
+  function nombreReino(lado) {
+    try {
+      const r = SHOW && SHOW.meta && SHOW.meta.reinos && SHOW.meta.reinos[lado];
+      if (r && r.nombre) return r.nombre;
+    } catch (_) { /* nada */ }
+    return lado === 'azul' ? 'Los Azules' : 'Jepy Djomo';
+  }
+  function autorDe(agente) {
+    if (agente === 'azul') return { lado: 'azul', nombre: 'AZUL', reino: nombreReino('azul'), ini: 'A' };
+    if (agente === 'rojo') return { lado: 'rojo', nombre: 'ROJO', reino: nombreReino('rojo'), ini: 'R' };
+    return { lado: 'sistema', nombre: 'SISTEMA', reino: '', ini: 'S' };
+  }
+  function esEmoji(texto) {
+    try {
+      if (typeof esSoloEmoji === 'function') return esSoloEmoji(texto);
+    } catch (_) { /* nada */ }
+    return /^[\p{Extended_Pictographic}\u200d\uFE0F\u20e3\s]+$/u.test(texto || '');
+  }
+  function nombrePower(power) {
+    const p = String(power || '').toLowerCase();
+    if (p.indexOf('czar') >= 0) return 'la Bomba del Zar';
+    if (p.indexOf('atomic') >= 0) return 'una bomba atómica';
+    if (p.indexOf('napalm') >= 0) return 'napalm';
+    return 'una bomba';
+  }
+  function unidadesDeBomba(texto) {
+    const m = /(\d[\d.]*)\s*unidades/i.exec(String(texto || ''));
+    return m ? Number(m[1].replace(/\./g, '')) : 0;
+  }
+  function unidadesDeTropas(texto) {
+    const m = /(\d[\d.]*)\s*(?:zorros|bandidos|unidades|tropas|soldados)/i.exec(String(texto || ''));
+    return m ? Number(m[1].replace(/\./g, '')) : 0;
+  }
+  function entidadTropas(ev) {
+    const e = String(ev.entity || '').toLowerCase();
+    if (e.indexOf('fox') >= 0) return { emoji: '🦊', nombre: 'zorros' };
+    if (e.indexOf('bandit') >= 0) return { emoji: '🗡️', nombre: 'bandidos' };
+    const t = String(ev.texto || '').toLowerCase();
+    if (t.indexOf('zorros') >= 0) return { emoji: '🦊', nombre: 'zorros' };
+    if (t.indexOf('bandidos') >= 0) return { emoji: '🗡️', nombre: 'bandidos' };
+    return { emoji: '🐺', nombre: 'tropas' };
+  }
+
+  /* ------------------------------------------------------------------
+     DOM
+     ------------------------------------------------------------------ */
+  function asegurarDom() {
+    if (S.el && S.el.hilo && document.body.contains(S.el.hilo)) return S.el;
+    S.el = {
+      hilo: q('hilo'),
+      grupo: q('grupo'),
+      composer: q('composer'),
+      input: q('yo-input'),
+      enviar: q('btn-enviar'),
+      av: q('yo-av'),
+      nom: q('yo-nom'),
+      badge: q('badge-nuevo'),
+      nuevos: q('nuevos'),
+      btnNuevos: q('btn-nuevos'),
+      nuevosTx: q('nuevos-tx'),
+      pista: q('yo-pista'),
+      slow: q('yo-slow'),
+      barra: q('slow-barra'),
+      btnNombre: q('btn-nombre'),
+      edit: q('yo-edit'),
+      editInput: q('yo-nombre-input'),
+      btnAleatorio: q('btn-aleatorio'),
+      btnGuardar: q('btn-guardar'),
+      btnCancelar: q('btn-cancelar'),
+      subYo: q('sub-yo'),
+      subRojo: q('sub-rojo'),
+      subAzul: q('sub-azul')
+    };
+    return S.el;
+  }
+
+  /* ------------------------------------------------------------------
+     Scroll / avisos
+     ------------------------------------------------------------------ */
+  function alFondo() {
+    const h = S.el && S.el.hilo;
+    if (!h) return true;
+    return (h.scrollHeight - h.scrollTop - h.clientHeight) < 90;
+  }
+  function bajar(instantaneo) {
+    const h = S.el && S.el.hilo;
+    if (!h) return;
+    const top = h.scrollHeight;
+    if (instantaneo || RM) { h.scrollTop = top; return; }
+    try { h.scrollTo({ top: top, behavior: 'smooth' }); }
+    catch (_) { h.scrollTop = top; }
+  }
+  function limpiarAviso() {
+    S.noLeidos = 0;
+    const el = S.el;
+    if (!el) return;
+    if (el.badge) { el.badge.textContent = '0'; el.badge.hidden = true; el.badge.classList.remove('resp'); }
+    if (el.nuevos) el.nuevos.hidden = true;
+    if (el.btnNuevos) el.btnNuevos.classList.remove('resp');
+  }
+  function sumarAviso(esRespuesta) {
+    S.noLeidos++;
+    const el = S.el;
+    if (!el) return;
+    if (el.badge) {
+      el.badge.hidden = false;
+      el.badge.textContent = S.noLeidos > 99 ? '99+' : String(S.noLeidos);
+      el.badge.classList.toggle('resp', !!esRespuesta);
+    }
+    if (el.nuevos) el.nuevos.hidden = false;
+    if (el.nuevosTx) {
+      el.nuevosTx.textContent = S.noLeidos === 1 ? '1 mensaje nuevo' : S.noLeidos + ' mensajes nuevos';
+    }
+    if (el.btnNuevos) el.btnNuevos.classList.toggle('resp', !!esRespuesta);
+  }
+
+  /* ------------------------------------------------------------------
+     Mensajes
+     ------------------------------------------------------------------ */
+  function recortarHilo() {
+    const h = S.el && S.el.hilo;
+    if (!h || S.total <= MAX_MENSAJES) return;
+    const sobra = S.total - MAX_MENSAJES;
+    let n = 0;
+    while (n < sobra && h.firstChild) {
+      const c = h.firstChild;
+      h.removeChild(c);
+      if (c.classList && (c.classList.contains('msg') || c.classList.contains('sep'))) n++;
+    }
+    S.total -= n;
+  }
+
+  function trasAnadir(esMio, silencioso) {
+    S.total++;
+    recortarHilo();
+    if (esMio) { S.pinned = true; limpiarAviso(); bajar(true); return; }
+    if (S.pinned) { bajar(true); limpiarAviso(); return; }
+    if (!silencioso) sumarAviso(false);
+  }
+
+  function citaDe(ev) {
+    const seq = Number(ev.respuesta_a);
+    if (!seq) return null;
+    const ref = (function () {
+      try { if (typeof SEQ !== 'undefined' && SEQ && SEQ.get) return SEQ.get(seq); } catch (_) { /* nada */ }
+      return null;
+    })();
+    const caja = crear('button', 'cita');
+    caja.type = 'button';
+    caja.dataset.para = String(seq);
+    const nom = crear('span', 'cita-nom', ref ? autorDe(ref.agente).nombre : 'MENSAJE');
+    const tx = crear('span', 'cita-tx', ref ? String(ref.texto || '') : 'Mensaje citado');
+    const lado = ref ? autorDe(ref.agente).lado : 'sistema';
+    caja.classList.add('qi-' + lado);
+    caja.appendChild(nom);
+    caja.appendChild(tx);
+    return caja;
+  }
+
+  function mensajeIA(ev, sil) {
+    const el = S.el;
+    const autor = autorDe(ev.agente);
+    const texto = String(ev.texto != null ? ev.texto : (ev.emocion != null ? ev.emocion : ''));
+    const emoji = ev.tipo === 'emoji' || esEmoji(texto);
+
+    const cont = crear('div', 'msg ' + autor.lado + (emoji ? ' es-emoji' : ''));
+    if (Number.isFinite(Number(ev.seq))) cont.dataset.seq = String(ev.seq);
+
+    const av = crear('div', 'msg-av', emoji ? autor.ini : autor.ini);
+    av.title = autor.reino || autor.nombre;
+
+    const col = crear('div', 'msg-col');
+    const nom = crear('div', 'msg-nom');
+    nom.appendChild(crear('b', null, autor.nombre));
+    nom.appendChild(crear('span', 'msg-hora', hora(ev.t_ms)));
+    col.appendChild(nom);
+
+    const cita = citaDe(ev);
+    const burbuja = crear('div', 'msg-burbuja');
+    if (cita) burbuja.appendChild(cita);
+    burbuja.appendChild(document.createTextNode(texto));
+    col.appendChild(burbuja);
+
+    /* agrupación: mismo autor seguido y sin cita */
+    if (!cita && S.ultimoAutor === autor.lado && (numSeguro(ev.t_ms) - S.ultimoT) < 90000) {
+      cont.classList.add('continuo');
+    }
+    if (!sil && !RM) cont.classList.add('recien');
+
+    cont.appendChild(av);
+    cont.appendChild(col);
+    el.hilo.appendChild(cont);
+
+    S.ultimoAutor = autor.lado;
+    S.ultimoT = numSeguro(ev.t_ms);
+
+    if (cita) {
+      marcarCitado(Number(ev.respuesta_a), sil);
+      if (!sil) quitarEscribiendo(autor.lado);
+    }
+    trasAnadir(false, sil);
+  }
+
+  function marcarCitado(seq, sil) {
+    const h = S.el && S.el.hilo;
+    if (!h || !seq) return;
+    const ref = h.querySelector('.msg[data-seq="' + seq + '"]');
+    if (!ref) return;
+    ref.classList.add('citada');
+    if (!sil && !RM) {
+      ref.classList.add('resaltado');
+      const t = setTimeout(() => ref.classList.remove('resaltado'), 1800);
+      S.timers.push(t);
+    }
+  }
+
+  function sistema(opciones) {
+    const el = S.el;
+    const o = opciones || {};
+    const cont = crear('div', 'msg sis' + (o.clase ? ' ' + o.clase : ''));
+    const caja = crear('div', 'sis-burbuja');
+    caja.appendChild(crear('span', 'sis-ico', o.emoji || '•'));
+    const col = crear('div', 'sis-col');
+    col.appendChild(crear('b', null, o.etiqueta || 'AVISO'));
+    col.appendChild(crear('span', 'sis-tx', o.texto || ''));
+    caja.appendChild(col);
+    cont.appendChild(caja);
+    cont.appendChild(crear('span', 'msg-hora', hora(o.ms)));
+    el.hilo.appendChild(cont);
+    S.ultimoAutor = 'sistema';
+    S.ultimoT = -1e9;
+    trasAnadir(false, true);
+  }
+
+  function separador(clase, texto) {
+    const el = S.el;
+    const s = crear('div', 'sep ' + (clase || ''));
+    s.appendChild(crear('span', null, texto));
+    el.hilo.appendChild(s);
+    S.total++;
+    if (S.pinned) bajar(true);
+  }
+
+  /* ------------------------------------------------------------------
+     "Está escribiendo…"
+     ------------------------------------------------------------------ */
+  function ponerEscribiendo(lado) {
+    const el = S.el;
+    if (!el || !el.hilo) return;
+    quitarEscribiendo();
+    const autor = autorDe(lado);
+    const cont = crear('div', 'msg ' + lado + ' escribiendo');
+    const av = crear('div', 'msg-av', autor.ini);
+    const col = crear('div', 'msg-col');
+    const nom = crear('div', 'msg-nom');
+    nom.appendChild(crear('b', null, autor.nombre));
+    nom.appendChild(document.createTextNode(' está escribiendo'));
+    col.appendChild(nom);
+    const b = crear('div', 'msg-burbuja');
+    b.appendChild(crear('span', 'punto'));
+    b.appendChild(crear('span', 'punto'));
+    b.appendChild(crear('span', 'punto'));
+    col.appendChild(b);
+    cont.appendChild(av);
+    cont.appendChild(col);
+    el.hilo.appendChild(cont);
+    S.escribiendo = cont;
+    if (S.pinned) bajar(true);
+  }
+  function quitarEscribiendo(lado) {
+    const cont = S.escribiendo;
+    if (!cont) return;
+    if (lado && !cont.classList.contains(lado)) return;
+    if (cont.parentNode) cont.parentNode.removeChild(cont);
+    S.escribiendo = null;
+  }
+
+  /* ------------------------------------------------------------------
+     Eventos del replay
+     ------------------------------------------------------------------ */
+  function evento(ev, sil) {
+    const el = asegurarDom();
+    if (!el.hilo || !ev) return;
+
+    const ronda = numSeguro(ev.ronda, 0);
+    if (ronda && ronda !== S.ultimaRonda) {
+      S.ultimaRonda = ronda;
+      separador('ronda', 'Ronda ' + ronda);
+    }
+
+    const tipo = String(ev.tipo || 'info');
+    const autor = autorDe(ev.agente);
+
+    if (tipo === 'chat' || tipo === 'emoji') {
+      mensajeIA(ev, sil);
+      return;
+    }
+
+    if (tipo === 'bomba') {
+      const n = unidadesDeBomba(ev.texto);
+      sistema({
+        clase: 'bomba' + (ev.agente === 'azul' ? ' azulb' : ''),
+        emoji: '💣',
+        etiqueta: 'Bomba',
+        ms: ev.t_ms,
+        texto: autor.nombre + ' lanza ' + nombrePower(ev.power) +
+          (n ? ' sobre ' + n.toLocaleString('es-ES') + ' unidades enemigas' : '') + '.'
+      });
+      return;
+    }
+
+    if (tipo === 'tropas') {
+      const t = entidadTropas(ev);
+      const n = unidadesDeTropas(ev.texto) || numSeguro(ev.count);
+      sistema({
+        clase: 'tropas',
+        emoji: t.emoji,
+        etiqueta: 'Refuerzos',
+        ms: ev.t_ms,
+        texto: autor.nombre + ' suma ' + n.toLocaleString('es-ES') + ' ' + t.nombre +
+          ' a su ejército.'
+      });
+      return;
+    }
+
+    if (tipo === 'resultado') {
+      const raw = String(ev.texto || '');
+      const m = /Bajas:\s*([\d.]+)\s*·\s*p[eé]rdidas:\s*([\d.]+)/i.exec(raw);
+      let texto = raw;
+      if (m) {
+        const bajas = Number(m[1].replace(/\./g, ''));
+        const perdidas = Number(m[2].replace(/\./g, ''));
+        texto = autor.nombre + ' inflige ' + bajas.toLocaleString('es-ES') +
+          ' bajas y pierde ' + perdidas.toLocaleString('es-ES') +
+          ' · ' + raw.replace(/^Bajas:[^·]*·\s*p[eé]rdidas:[^·]*·?\s*/i, '');
+      }
+      sistema({ clase: 'resultado', emoji: '📊', etiqueta: 'Parte de guerra', ms: ev.t_ms, texto: texto });
+      return;
+    }
+
+    if (tipo === 'ronda') {
+      sistema({ clase: 'ronda', emoji: '🏁', etiqueta: 'Cierre de ronda', ms: ev.t_ms, texto: String(ev.texto || '') });
+      return;
+    }
+
+    if (tipo === 'titular') {
+      sistema({ clase: 'titular', emoji: '📰', etiqueta: 'Titular', ms: ev.t_ms, texto: String(ev.texto || '') });
+      return;
+    }
+
+    sistema({ clase: 'anuncio', emoji: '🎬', etiqueta: 'Anuncio', ms: ev.t_ms, texto: String(ev.texto || '') });
+  }
+
+  /* ------------------------------------------------------------------
+     Nombre de usuario
+     ------------------------------------------------------------------ */
+  const ADJETIVOS = ['Vecino', 'Cronista', 'Turista', 'Árbitro', 'Fotógrafo', 'Comentarista',
+    'Espía', 'Alcalde', 'Panadero', 'Poeta', 'Cartógrafo', 'Bombero'];
+  const LUGARES = ['del Humo', 'de la Antorcha', 'de las Ruinas', 'del Volcán', 'del Barrio',
+    'de la Esquina', 'de la Colina', 'del Puerto', 'de la Muralla', 'de las Cenizas'];
+
+  function nombreAleatorio() {
+    if (elegir(0.35)) return rnd(ADJETIVOS) + ' ' + Math.floor(1000 + Math.random() * 9000);
+    return rnd(ADJETIVOS) + ' ' + rnd(LUGARES);
+  }
+  function cargarNombre() {
+    const guardado = leer('localStorage', NOMBRE_KEY);
+    if (guardado && guardado.trim()) return guardado.trim().slice(0, 32);
+    const nuevo = nombreAleatorio();
+    guardar('localStorage', NOMBRE_KEY, nuevo);
+    return nuevo;
+  }
+  function aplicarNombre() {
+    const el = S.el;
+    if (!el) return;
+    if (el.nom) el.nom.textContent = S.nombre;
+    if (el.av) el.av.textContent = 'TÚ';
+    if (el.editInput) el.editInput.value = S.nombre;
+    if (el.subYo) el.subYo.textContent = S.nombre;
+    if (el.input) el.input.setAttribute('placeholder', 'Escribe algo al grupo, ' + S.nombre + '…');
+  }
+  function cambiarNombre(nuevo) {
+    const limpio = String(nuevo || '').replace(/\s+/g, ' ').trim().slice(0, 32);
+    if (!limpio) return false;
+    S.nombre = limpio;
+    guardar('localStorage', NOMBRE_KEY, limpio);
+    aplicarNombre();
+    return true;
+  }
+  function abrirEditorNombre(abrir) {
+    const el = S.el;
+    if (!el || !el.edit) return;
+    const visible = abrir == null ? el.edit.hidden : !!abrir;
+    el.edit.hidden = !visible;
+    if (visible) {
+      if (el.editInput) {
+        el.editInput.value = S.nombre;
+        el.editInput.focus();
+        el.editInput.select();
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------------
+     Slow mode
+     ------------------------------------------------------------------ */
+  function restanteSlow() {
+    const ms = S.cdHasta - Date.now();
+    return ms > 0 ? ms : 0;
+  }
+  function pintarSlow() {
+    const el = S.el;
+    if (!el) return;
+    const ms = restanteSlow();
+    const on = ms > 0;
+    if (el.slow) {
+      el.slow.hidden = !on;
+      el.slow.textContent = on ? '⏳ ' + Math.ceil(ms / 1000) + ' s' : '';
+    }
+    if (el.enviar) el.enviar.disabled = on;
+    if (el.barra) {
+      el.barra.classList.toggle('on', on);
+      el.barra.style.width = on ? (clamp01(ms / SLOW_MS) * 100).toFixed(1) + '%' : '0%';
+    }
+    if (!on && S.cdTimer) {
+      clearInterval(S.cdTimer);
+      S.cdTimer = 0;
+    }
+    if (!on && el.pista && el.pista.dataset.ocupada !== '1') {
+      el.pista.textContent = 'Slow mode: 1 mensaje cada 13 s · respuestas de demo, generadas en tu navegador';
+    }
+  }
+  function clamp01(v) { return Math.max(0, Math.min(1, Number(v) || 0)); }
+  function arrancarSlow() {
+    S.cdHasta = Date.now() + SLOW_MS;
+    guardar('sessionStorage', SLOW_KEY, String(S.cdHasta));
+    pintarSlow();
+    if (!S.cdTimer) S.cdTimer = setInterval(pintarSlow, 250);
+  }
+  function cargarSlow() {
+    const guardado = Number(leer('sessionStorage', SLOW_KEY));
+    if (Number.isFinite(guardado) && guardado > Date.now()) {
+      S.cdHasta = guardado;
+      pintarSlow();
+      if (!S.cdTimer) S.cdTimer = setInterval(pintarSlow, 250);
+    } else {
+      S.cdHasta = 0;
+      pintarSlow();
+    }
+  }
+
+  /* ------------------------------------------------------------------
+     Contexto real de la partida (para las respuestas)
+     ------------------------------------------------------------------ */
+  function contexto() {
+    const ctx = {
+      ronda: 0, total: 6, t: 0, dur: 0,
+      rojo: { u: 0, c: 0, bajas: 0 }, azul: { u: 0, c: 0, bajas: 0 },
+      titular: '', ultimaBomba: null, ultimaChat: null, ganador: ''
+    };
+    try {
+      if (typeof SCORE !== 'undefined' && SCORE) {
+        ctx.rojo.u = numSeguro(SCORE.rojo && SCORE.rojo.u);
+        ctx.rojo.c = numSeguro(SCORE.rojo && SCORE.rojo.c);
+        ctx.rojo.bajas = numSeguro(SCORE.rojo && SCORE.rojo.bajas);
+        ctx.azul.u = numSeguro(SCORE.azul && SCORE.azul.u);
+        ctx.azul.c = numSeguro(SCORE.azul && SCORE.azul.c);
+        ctx.azul.bajas = numSeguro(SCORE.azul && SCORE.azul.bajas);
+      }
+    } catch (_) { /* nada */ }
+    try { if (typeof RONDA !== 'undefined') ctx.ronda = numSeguro(RONDA); } catch (_) { /* nada */ }
+    try { if (typeof TOTAL_RONDAS !== 'undefined') ctx.total = numSeguro(TOTAL_RONDAS, 6); } catch (_) { /* nada */ }
+    try { if (typeof EST !== 'undefined' && EST) ctx.t = numSeguro(EST.t); } catch (_) { /* nada */ }
+    try { if (typeof DUR !== 'undefined') ctx.dur = numSeguro(DUR); } catch (_) { /* nada */ }
+    try {
+      if (typeof EV !== 'undefined' && EV) {
+        for (let i = EV.length - 1; i >= 0; i--) {
+          const e = EV[i];
+          if (e.t_ms > ctx.t + 1) continue;
+          if (!ctx.ultimaBomba && e.tipo === 'bomba') ctx.ultimaBomba = e;
+          if (!ctx.ultimaChat && e.tipo === 'chat') ctx.ultimaChat = e;
+          if (e.tipo === 'titular') { ctx.titular = String(e.texto || ''); break; }
+        }
+      }
+    } catch (_) { /* nada */ }
+    try {
+      const t = SHOW && SHOW.resumen && SHOW.resumen.total_bajas;
+      if (t) ctx.ganador = numSeguro(t.rojo) > numSeguro(t.azul) ? 'ROJO' : numSeguro(t.azul) > numSeguro(t.rojo) ? 'AZUL' : 'EMPATE';
+    } catch (_) { /* nada */ }
+    return ctx;
+  }
+  function cifra(n) { return numSeguro(n).toLocaleString('es-ES'); }
+  function quienVaGanando(ctx) {
+    if (ctx.rojo.u > ctx.azul.u) return 'ROJO';
+    if (ctx.azul.u > ctx.rojo.u) return 'AZUL';
+    return 'nadie';
+  }
+
+  /* ------------------------------------------------------------------
+     Detección de intención y respuestas de las IAs
+     ------------------------------------------------------------------ */
+  const INTENTS = [
+    { id: 'ganador', re: /(qui[eé]n (va )?gan|vas? ganando|marcador|resultado|ventaja|c[oó]mo va)/i },
+    { id: 'bomba', re: /(bomba|nuclear|at[oó]mic|napalm|explosi|bombarde|bomba del zar|czar)/i },
+    { id: 'unidades', re: /(unidades|ej[eé]rcito|ciudades|tropas|soldados|bajas|p[eé]rdidas)/i },
+    { id: 'ia', re: /(inteligencia artificial|\bias?\b|robot|algoritmo|modelo|programa)/i },
+    { id: 'insulto', re: /(tonto|idiota|in[uú]til|pat[eé]tic|payaso|basura|est[uú]pid|bobo|perdedor|menso|tarado)/i },
+    { id: 'amenaza', re: /(te voy a|vas a ver|prep[aá]rate|te destruyo|acabar[eé] contigo|te reviento)/i },
+    { id: 'risa', re: /(jaja|jeje|xd|🤣|😂|lol)/i },
+    { id: 'saludo', re: /(hola|buenas|hey|saludos|qu[eé] tal|buenos d[ií]as|buenas noches)/i },
+    { id: 'rojo', re: /\brojo\b/i },
+    { id: 'azul', re: /\bazul\b/i },
+    { id: 'ronda', re: /(ronda|turno|velada|partida|show)/i },
+    { id: 'gracias', re: /(gracias|genial|jaja qu[eé] bueno|bien dicho)/i }
+  ];
+  function detectar(texto) {
+    for (let i = 0; i < INTENTS.length; i++) {
+      if (INTENTS[i].re.test(texto)) return INTENTS[i].id;
+    }
+    return 'general';
+  }
+
+  /* Registro: ROJO = macarra de barrio (chulería corta, cero tecnicismos);
+     AZUL = cuñao listillo de Twitter (condescendiente, ironía seca, NO profesor).
+     Regla: pulla concreta (marcador, bajas, ronda o lo que acaba de decir), cifras reales. */
+  const CHULERIA_ROJO = [
+    'Mucho humo y ni una antorcha, flipao.',
+    'Te falta calle, campeón.',
+    'Eso es postureo de saldo.',
+    'A llorar a la llorería.',
+    'Vuelve al tutorial.',
+    'Chúpate esa.',
+    'No me cuentes milongas.',
+    'Espabila, que vas cuesta abajo.'
+  ];
+  const CHULERIA_AZUL = [
+    'Cuéntame más, que me estoy riendo.',
+    'Mucho texto para tan poca cosa.',
+    'Fuente: créeme, bro.',
+    'Eso es humo, majo.',
+    'No confundas suerte con talento.',
+    'Lo tuyo no es estrategia, es esperanza.',
+    'Sí, sí, claro.',
+    'Te vendes bien, eso sí.'
+  ];
+
+  function respuesta(intent, lado, ctx, tuNombre) {
+    const r = ctx.rojo;
+    const a = ctx.azul;
+    const ch = lado === 'rojo' ? rnd(CHULERIA_ROJO) : rnd(CHULERIA_AZUL);
+    const chMin = ch.charAt(0).toLowerCase() + ch.slice(1);
+    const nom = tuNombre ? tuNombre + ', ' : '';
+    const rondaTxt = ctx.ronda ? 'en la ronda ' + ctx.ronda + (ctx.total ? ' de ' + ctx.total : '') : 'en plena velada';
+    const lider = quienVaGanando(ctx);
+    const detalle = 'ROJO va con ' + cifra(r.u) + ' unidades y ' + cifra(r.bajas) +
+      ' bajas; AZUL, con ' + cifra(a.u) + ' y ' + cifra(a.bajas) + '.';
+
+    switch (intent) {
+      case 'ganador': {
+        if (lado === 'rojo') {
+          if (lider === 'ROJO') return nom + 'mira el marcador: ' + detalle + ' ¿Eso te parece un empate? Chúpate esa.';
+          if (lider === 'AZUL') return nom + 'un bache de nada: ' + detalle + ' Que yo he remontado con menos.';
+          return nom + 'empate de momento: ' + detalle + ' La próxima ronda se decide.';
+        }
+        if (lider === 'AZUL') return nom + 'sí, sí, claro. Los números: ' + detalle + ' Lo tuyo no es estrategia, es esperanza.';
+        if (lider === 'ROJO') return nom + detalle + ' Va por delante ROJO. Disfruta, que dura poco.';
+        return nom + 'empate técnico: ' + detalle + ' Se decide en la próxima ronda.';
+      }
+      case 'bomba': {
+        const b = ctx.ultimaBomba;
+        if (b) {
+          const n = unidadesDeBomba(b.texto);
+          const quienLaTiro = autorDe(b.agente).nombre;
+          if (lado === 'rojo' && b.agente === 'rojo') {
+            return nom + 'sí: ' + nombrePower(b.power) + ', ' + cifra(n) + ' unidades al suelo. Y me quedan más. ' + ch;
+          }
+          if (lado === 'azul' && b.agente === 'azul') {
+            return nom + 'te lo dije: ' + cifra(n) + ' unidades fuera y la ronda para mí. Qué detalle, ¿no?';
+          }
+          return nom + quienLaTiro + ' ya ha tirado ' + nombrePower(b.power) + ' (' + cifra(n) + ' unidades). ' +
+            (lado === 'rojo' ? 'Se le acaba el repertorio.' : 'Le queda una y lo sabe.');
+        }
+        return lado === 'rojo'
+          ? nom + 'todavía no he soltado la buena. Cuando caiga, se oye desde tu casa.'
+          : nom + 'cuando suelte la mía no te va a dar tiempo ni a escribir "gg".';
+      }
+      case 'unidades': {
+        return nom + 'ahora mismo, ' + rondaTxt + ': ROJO tiene ' + cifra(r.u) + ' unidades y ' + cifra(r.c) +
+          ' ciudades; AZUL, ' + cifra(a.u) + ' y ' + cifra(a.c) + '. Bajas: ' + cifra(r.bajas) + ' contra ' + cifra(a.bajas) + '.' +
+          (lado === 'rojo' ? ' Y me sobra ejército para el postre.' : ' Ahí lo tienes, sin adornos.');
+      }
+      case 'ia': {
+        return lado === 'rojo'
+          ? nom + '¿IA? Yo reparto y tú escribes. No me líes.'
+          : nom + 'sí, IA. Y aún así te estoy ganando. Imagínate el cuadro.';
+      }
+      case 'insulto': {
+        return lado === 'rojo'
+          ? nom + 'eso no es un insulto, es una queja. ' + ch
+          : nom + 'qué detalle. Cero argumentos y toda la boca. ' + ch;
+      }
+      case 'amenaza': {
+        return lado === 'rojo'
+          ? nom + 'amenazas por chat, muy valiente. Luego en el mapa te deshago.'
+          : nom + 'avísame cuando eso pase de amenaza a plan.';
+      }
+      case 'risa': {
+        return lado === 'rojo'
+          ? nom + 'ríete, ríete, que luego el humo no pregunta de quién es la risa.'
+          : nom + 'no me hagas reír. Bueno, ya lo has hecho. Sigue.';
+      }
+      case 'saludo': {
+        return lado === 'rojo'
+          ? nom + '¡buenas! Siéntate, pero no te acerques mucho al frente.'
+          : nom + 'hola, majo. Ponte cómodo y no me toques el marcador.';
+      }
+      case 'rojo': {
+        if (lado === 'azul') {
+          return nom + 'ROJO va con ' + cifra(r.u) + ' unidades y ' + cifra(r.bajas) + ' bajas. Mucho ruido y pocas nueces.';
+        }
+        return nom + 'aquí ROJO. ' + cifra(r.u) + ' unidades y ganas de liarla. ¿Qué pasa?';
+      }
+      case 'azul': {
+        if (lado === 'rojo') {
+          return nom + 'AZUL va con ' + cifra(a.u) + ' unidades. Mucho postureo y poca antorcha.';
+        }
+        return nom + 'AZUL al habla: ' + cifra(a.u) + ' unidades y ' + cifra(a.c) + ' ciudades. Todo bajo control.';
+      }
+      case 'ronda': {
+        return nom + 'vamos por la ronda ' + (ctx.ronda || 1) + (ctx.total ? ' de ' + ctx.total : '') +
+          '. ' + (ctx.titular ? 'Último titular: «' + ctx.titular + '».' : 'Atento al marcador.') +
+          (lado === 'rojo' ? ' Y la que viene es mía.' : ' Y la que viene la tengo apuntada.');
+      }
+      case 'gracias': {
+        return lado === 'rojo'
+          ? nom + 'de nada, crack. Aquí se viene a ver fuego.'
+          : nom + 'de nada, majo. Aquí cobramos en humo.';
+      }
+      default: {
+        return lado === 'rojo'
+          ? nom + chMin + ' (' +
+            (lider === 'nadie' ? 'nadie manda en unidades, así que baja el tono' : lider + ' manda en unidades, por cierto') + '.)'
+          : nom + chMin;
+      }
+    }
+  }
+
+  function elegirRespondon(intent, texto) {
+    if (intent === 'rojo') return 'rojo';
+    if (intent === 'azul') return 'azul';
+    if (intent === 'insulto' || intent === 'amenaza') return elegir(0.5) ? 'rojo' : 'azul';
+    if (intent === 'bomba') return elegir(0.55) ? 'azul' : 'rojo';
+    if (intent === 'ganador' || intent === 'unidades') return elegir(0.5) ? 'azul' : 'rojo';
+    return elegir(0.5) ? 'rojo' : 'azul';
+  }
+
+  function programar(fn, ms) {
+    const t = setTimeout(fn, ms);
+    S.timers.push(t);
+    return t;
+  }
+  function limpiarTimers() {
+    S.timers.forEach((t) => clearTimeout(t));
+    S.timers = [];
+  }
+
+  /* ------------------------------------------------------------------
+     Enviar mensaje
+     ------------------------------------------------------------------ */
+  function mensajeMio(texto) {
+    const el = S.el;
+    S.seqUsuario++;
+    const cont = crear('div', 'msg yo');
+    cont.dataset.seq = 'u' + S.seqUsuario;
+    const av = crear('div', 'msg-av', 'TÚ');
+    const col = crear('div', 'msg-col');
+    const nom = crear('div', 'msg-nom');
+    nom.appendChild(crear('b', null, S.nombre));
+    nom.appendChild(crear('span', 'msg-hora', 'ahora'));
+    col.appendChild(nom);
+    const burbuja = crear('div', 'msg-burbuja', texto);
+    col.appendChild(burbuja);
+    cont.appendChild(av);
+    cont.appendChild(col);
+    el.hilo.appendChild(cont);
+    S.ultimoAutor = 'yo';
+    S.ultimoT = Date.now();
+    trasAnadir(true);
+  }
+
+  function avisoPista(texto) {
+    const el = S.el;
+    if (!el || !el.pista) return;
+    el.pista.dataset.ocupada = '1';
+    el.pista.textContent = texto;
+    clearTimeout(avisoPista._t);
+    avisoPista._t = setTimeout(() => {
+      el.pista.dataset.ocupada = '0';
+      pintarSlow();
+    }, 1800);
+  }
+
+  function enviar(texto) {
+    const el = asegurarDom();
+    const limpio = String(texto || '').replace(/\s+/g, ' ').trim();
+    if (!el || !el.hilo || !limpio) return false;
+    if (restanteSlow() > 0) {
+      avisoPista('Slow mode: espera ' + Math.ceil(restanteSlow() / 1000) + ' s');
+      return false;
+    }
+    mensajeMio(limpio);
+    if (el.input) el.input.value = '';
+    S.ultimoEnvio = Date.now();
+    arrancarSlow();
+    responder(limpio);
+    return true;
+  }
+
+  function responder(textoUsuario) {
+    const intent = detectar(textoUsuario);
+    const ctx = contexto();
+    const primero = elegirRespondon(intent, textoUsuario);
+    const segundo = primero === 'rojo' ? 'azul' : 'rojo';
+    const tuNombre = S.nombre;
+    const refSeq = 'u' + S.seqUsuario;
+
+    S.esperando++;
+    programar(() => {
+      ponerEscribiendo(primero);
+    }, 380);
+
+    const retardo = Math.min(1900, 620 + textoUsuario.length * 14);
+    programar(() => {
+      quitarEscribiendo(primero);
+      S.esperando = Math.max(0, S.esperando - 1);
+      const cuerpo = respuesta(intent, primero, ctx, tuNombre);
+      const evFalso = {
+        agente: primero,
+        tipo: 'chat',
+        texto: cuerpo,
+        tono: intent === 'insulto' ? 'golpe' : 'chulo',
+        intensidad: 0.8,
+        t_ms: ctx.t,
+        respuesta_a: null
+      };
+      pintarRespuesta(evFalso, refSeq);
+      if (elegir(0.34)) {
+        programar(() => {
+          const extra = respuesta('general', segundo, contexto(), tuNombre);
+          ponerEscribiendo(segundo);
+          programar(() => {
+            quitarEscribiendo(segundo);
+            pintarRespuesta({
+              agente: segundo, tipo: 'chat', texto: extra, tono: 'burla',
+              intensidad: 0.7, t_ms: contexto().t, respuesta_a: null
+            }, null);
+          }, 900);
+        }, 750);
+      }
+    }, retardo);
+  }
+
+  function pintarRespuesta(ev, refSeq) {
+    const el = S.el;
+    if (!el || !el.hilo) return;
+    const autor = autorDe(ev.agente);
+    const cont = crear('div', 'msg ' + autor.lado);
+    const av = crear('div', 'msg-av', autor.ini);
+    av.title = autor.reino;
+    const col = crear('div', 'msg-col');
+    const nom = crear('div', 'msg-nom');
+    nom.appendChild(crear('b', null, autor.nombre));
+    nom.appendChild(crear('span', 'msg-hora', 'ahora'));
+    col.appendChild(nom);
+    const burbuja = crear('div', 'msg-burbuja');
+    if (refSeq) {
+      const ref = el.hilo.querySelector('.msg[data-seq="' + refSeq + '"]');
+      if (ref) {
+        const caja = crear('button', 'cita');
+        caja.type = 'button';
+        caja.dataset.para = refSeq;
+        caja.classList.add('qi-yo');
+        caja.appendChild(crear('span', 'cita-nom', S.nombre));
+        const tx = ref.querySelector('.msg-burbuja');
+        caja.appendChild(crear('span', 'cita-tx', tx ? tx.textContent.slice(0, 140) : ''));
+        burbuja.appendChild(caja);
+        ref.classList.add('citada');
+        if (!RM) {
+          ref.classList.add('resaltado');
+          programar(() => ref.classList.remove('resaltado'), 1800);
+        }
+      }
+    }
+    burbuja.appendChild(document.createTextNode(String(ev.texto || '')));
+    col.appendChild(burbuja);
+    cont.appendChild(av);
+    cont.appendChild(col);
+    el.hilo.appendChild(cont);
+    S.ultimoAutor = autor.lado;
+    S.ultimoT = Date.now();
+    S.total++;
+    recortarHilo();
+    if (S.pinned || alFondo()) { S.pinned = true; bajar(true); limpiarAviso(); }
+    else sumarAviso(true);
+  }
+
+  /* ------------------------------------------------------------------
+     Hilo inicial
+     ------------------------------------------------------------------ */
+  function reset() {
+    const el = asegurarDom();
+    if (!el || !el.hilo) return;
+    limpiarTimers();
+    quitarEscribiendo();
+    S.esperando = 0;
+    S.total = 0;
+    S.ultimaRonda = 0;
+    S.ultimoAutor = '';
+    S.ultimoT = -1e9;
+    S.seqUsuario = 0;
+    S.pinned = true;
+    el.hilo.textContent = '';
+
+    separador('dia', 'Hoy · WorldBox AI Show (demo)');
+    sistema({
+      clase: 'bienvenida',
+      emoji: '👋',
+      etiqueta: 'Grupo',
+      ms: 0,
+      texto: 'Te has unido al grupo de la velada. ROJO y AZUL se pelean por un mundo y por la última palabra: ' +
+        (numSeguro(TOTAL_RONDAS, 6)) + ' rondas, dos reinos y un solo ganador. Escribe cuando quieras: te contestan.'
+    });
+    limpiarAviso();
+    bajar(true);
+  }
+
+  function final() {
+    const el = asegurarDom();
+    if (!el || !el.hilo) return;
+    let texto = 'La velada ha terminado.';
+    let etiqueta = 'Fin de la velada';
+    try {
+      const rondas = (typeof EV !== 'undefined' && EV) ? EV.filter((e) => e.tipo === 'ronda') : [];
+      const fin = rondas[rondas.length - 1];
+      if (fin && /^FIN:/i.test(String(fin.texto || ''))) {
+        texto = String(fin.texto).replace(/^FIN:\s*/i, '');
+        etiqueta = 'Resultado final';
+      }
+    } catch (_) { /* nada */ }
+    sistema({ clase: 'bienvenida', emoji: '🏆', etiqueta: etiqueta, ms: (function () {
+      try { return typeof DUR !== 'undefined' ? DUR : 0; } catch (_) { return 0; }
+    })(), texto: texto });
+    if (el.pista) {
+      el.pista.dataset.ocupada = '1';
+      el.pista.textContent = 'La velada ha terminado · puedes seguir comentando en el grupo';
+    }
+    S.pinned = true;
+    limpiarAviso();
+    bajar(true);
+  }
+
+  /* ------------------------------------------------------------------
+     Enchufar UI
+     ------------------------------------------------------------------ */
+  function iniciar() {
+    const el = asegurarDom();
+    if (!el || !el.hilo || S.iniciado) return;
+    S.iniciado = true;
+
+    S.nombre = cargarNombre();
+    aplicarNombre();
+    cargarSlow();
+
+    if (el.composer) {
+      el.composer.addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        enviar(el.input ? el.input.value : '');
+      });
+    }
+    if (el.btnNombre) {
+      el.btnNombre.addEventListener('click', () => abrirEditorNombre());
+    }
+    if (el.btnAleatorio) {
+      el.btnAleatorio.addEventListener('click', () => {
+        if (el.editInput) { el.editInput.value = nombreAleatorio(); el.editInput.select(); }
+      });
+    }
+    if (el.btnGuardar) {
+      el.btnGuardar.addEventListener('click', () => {
+        if (cambiarNombre(el.editInput ? el.editInput.value : '')) abrirEditorNombre(false);
+        else if (el.editInput) el.editInput.focus();
+      });
+    }
+    if (el.btnCancelar) {
+      el.btnCancelar.addEventListener('click', () => abrirEditorNombre(false));
+    }
+    if (el.editInput) {
+      el.editInput.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter') { ev.preventDefault(); if (el.btnGuardar) el.btnGuardar.click(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); abrirEditorNombre(false); }
+      });
+    }
+    if (el.btnNuevos) {
+      el.btnNuevos.addEventListener('click', () => {
+        S.pinned = true;
+        limpiarAviso();
+        bajar(false);
+      });
+    }
+    if (el.hilo) {
+      el.hilo.addEventListener('scroll', () => {
+        const peg = alFondo();
+        if (peg) {
+          S.pinned = true;
+          if (S.noLeidos) limpiarAviso();
+        } else {
+          S.pinned = false;
+        }
+      }, { passive: true });
+
+      /* citas: clic para saltar al mensaje citado */
+      el.hilo.addEventListener('click', (ev) => {
+        const cita = ev.target && ev.target.closest ? ev.target.closest('.cita') : null;
+        if (!cita) return;
+        const destino = cita.dataset.para;
+        if (!destino) return;
+        const ref = el.hilo.querySelector('.msg[data-seq="' + destino + '"]');
+        if (!ref) return;
+        try { ref.scrollIntoView({ block: 'center', behavior: RM ? 'auto' : 'smooth' }); }
+        catch (_) { ref.scrollIntoView(); }
+        ref.classList.add('resaltado');
+        programar(() => ref.classList.remove('resaltado'), 1700);
+      });
+    }
+
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Escape') return;
+      if (el.edit && !el.edit.hidden) { abrirEditorNombre(false); return; }
+    });
+  }
+
+  /* ------------------------------------------------------------------
+     API
+     ------------------------------------------------------------------ */
+  window.WBChat = {
+    iniciar: iniciar,
+    reset: reset,
+    evento: evento,
+    final: final,
+    enviar: enviar,
+    nombre: function () { return S.nombre; }
+  };
 })();
 </script>
 </body>

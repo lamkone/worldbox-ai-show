@@ -171,8 +171,10 @@ function Get-ContextoDrama {
     perdidasTurno    = $PerdidasTurno
     ultimoGolpe      = $UltimoGolpe
     golpeRival       = $GolpeRival
-    ciudadesPerdidas = 0
-    ciudadesArrasadas = 0
+    ciudadesPerdidas = if ($script:TotalCiudadesPerdidas) { [int]$script:TotalCiudadesPerdidas[$Agente] } else { 0 }
+    ciudadesArrasadas = if ($script:TotalCiudadesArrasadas) { [int]$script:TotalCiudadesArrasadas[$Agente] } else { 0 }
+    ciudadPerdida = if ($script:NombreCiudadPerdida) { [string]$script:NombreCiudadPerdida[$Agente] } else { '' }
+    ciudadArrasada = if ($script:NombreCiudadArrasada) { [string]$script:NombreCiudadArrasada[$Agente] } else { '' }
     moral            = [int][math]::Round($script:Moral[$Agente])
     tension          = [int][math]::Round($script:Tension)
     esFinal          = [bool]$script:Terminada

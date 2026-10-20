@@ -850,7 +850,6 @@ function nodoFila(e) {
       d.className = 'ev chat ' + (esAzul ? 'a' : 'r') + ' tono-' + tono;
       d.innerHTML = '<span class="av">' + (esAzul ? 'A' : 'R') + '</span>' +
         '<div class="bub"><div class="tx">' + esc(texto) +
-        (e.para === '*' ? ' <span class="to">a todos</span>' : '') +
         '</div><div class="mt">' + esc(e.t) + '</div></div>';
     }
   } else if (tipo === 'bomba' || tipo === 'tropas') {
@@ -884,35 +883,32 @@ function pintarFeed(items, sel) {
     cont.innerHTML = '';
     st = null;
   }
-  if (!st) { st = { ultimo: -1, ronda: null, primero: null }; feeds.set(sel, st); }
-  const vis = items.slice(-200).reverse();            // más nuevo primero
-  const nuevos = vis.filter(e => Number(e.seq) > st.ultimo);
+  if (!st) { st = { ultimo: -1, ronda: null }; feeds.set(sel, st); }
+  // el chat va del más viejo al más nuevo: lo último que se dice queda ABAJO,
+  // como en cualquier chat, y la vista baja sola si el usuario ya estaba abajo
+  const nuevos = items.slice(-200).filter(e => Number(e.seq) > st.ultimo);
   if (!nuevos.length) return;
   const animar = st.ultimo >= 0;                      // la carga inicial no anima
-  const grupos = [];
+  const pegado = cont.scrollHeight - cont.scrollTop - cont.clientHeight < 80;
   for (const e of nuevos) {
-    const g = grupos[grupos.length - 1];
-    if (!g || String(g.ronda) !== String(e.ronda)) grupos.push({ ronda: e.ronda, items: [e] });
-    else g.items.push(e);
-  }
-  for (let i = grupos.length - 1; i >= 0; i--) {      // del grupo más viejo al más nuevo
-    const g = grupos[i];
-    const mismo = st.primero && String(st.ronda) === String(g.ronda);
-    const frag = document.createDocumentFragment();
-    if (!mismo) frag.appendChild(nodoDivisor(g.ronda));
-    for (const e of g.items) {
-      const n = nodoFila(e);
-      if (animar) n.classList.add('entra');
-      frag.appendChild(n);
+    if (String(st.ronda) !== String(e.ronda)) {
+      cont.appendChild(nodoDivisor(e.ronda));
+      st.ronda = e.ronda;
     }
-    if (mismo) cont.insertBefore(frag, st.primero);
-    else { cont.insertBefore(frag, cont.firstChild); st.ronda = g.ronda; }
-    st.primero = cont.querySelector('.ev');
+    const n = nodoFila(e);
+    if (animar) n.classList.add('entra');
+    cont.appendChild(n);
   }
   st.ultimo = Math.max(st.ultimo, ...nuevos.map(e => Number(e.seq)));
-  const evs = cont.querySelectorAll('.ev');
-  for (let i = 200; i < evs.length; i++) evs[i].remove();
-  while (cont.lastElementChild && !cont.lastElementChild.classList.contains('ev')) cont.lastElementChild.remove();
+  // techo de 200 mensajes: se van los más viejos, que están arriba
+  const evs = Array.from(cont.querySelectorAll('.ev'));
+  for (let i = 0; i < evs.length - 200; i++) evs[i].remove();
+  while (cont.firstElementChild && cont.firstElementChild.classList.contains('div') &&
+    (!cont.firstElementChild.nextElementSibling ||
+      cont.firstElementChild.nextElementSibling.classList.contains('div'))) {
+    cont.firstElementChild.remove();
+  }
+  if (pegado || !animar) cont.scrollTop = cont.scrollHeight;
 }
 function renderFeed(items, st) {
   // partida nueva: la ronda vuelve a 0/1 y el histórico está vacío, pero el feed
@@ -1149,33 +1145,97 @@ async function ciclo() {
 /* ---------------- mapa en vídeo ---------------- */
 const cv = $('#frame'), ctx = cv.getContext('2d'), fondo = $('#fondo');
 let frames = 0, framesUlt = 0, frameOK = false;
-function anchoCaptura() {
-  const c = $('#centro');
-  const w = Math.round(c.clientWidth * Math.min(2, window.devicePixelRatio || 1));
-  return Math.max(480, Math.min(1600, w));
+/* Stream MJPEG nativo: la ventana de WorldBox servida por 24-wb-stream.ps1.
+   Se pinta en el canvas para poder mover la cámara (zoom/paneo) por encima.
+   En localhost se va directo al 8767 (menos latencia). Si la página se sirve
+   desde cualquier otro sitio —por ejemplo a través de la pasarela del directo
+   (25-live-gateway.mjs) publicada con un túnel— se usa el MISMO origen, porque
+   la pasarela ya enruta /stream.mjpg y /stats al 8767. */
+const esLocal = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(location.hostname || '');
+const STREAM_BASE = (location.protocol === 'file:')
+  ? 'http://localhost:8767'
+  : (esLocal ? 'http://' + location.hostname + ':8767' : '');
+// recorta el vacío del mapa y el HUD del juego (fracciones de la ventana capturada)
+const RECORTE = { x0: 0.25, y0: 0.16, x1: 0.79, y1: 0.79 };
+const camActual = { z: 1, x: 0.5, y: 0.5 };
+const camObjetivo = { z: 1, x: 0.5, y: 0.5 };
+let camHold = 0;
+
+const imgStream = new Image();
+imgStream.alt = '';
+imgStream.style.cssText = 'position:absolute;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+document.body.appendChild(imgStream);
+imgStream.onload = () => {
+  if (!frameOK) {
+    cv.style.display = 'block'; fondo.style.display = 'block';
+    $('#noframe').style.display = 'none'; frameOK = true;
+  }
+};
+imgStream.onerror = () => {
+  frameOK = false;
+  cv.style.display = 'none'; fondo.style.display = 'none';
+  $('#noframe').style.display = 'block';
+  setTimeout(() => { imgStream.src = STREAM_BASE + '/stream.mjpg?r=' + Date.now(); }, 1500);
+};
+imgStream.src = STREAM_BASE + '/stream.mjpg?t=' + Date.now();
+
+let fondoUlt = 0;
+function refrescarFondo() {
+  const ahora = Date.now();
+  if (ahora - fondoUlt < 4000) return;
+  fondoUlt = ahora;
+  fondo.src = STREAM_BASE + '/frame.jpg?t=' + ahora;
 }
+
+async function seguirAccion() {
+  try {
+    const r = await fetch(STREAM_BASE + '/stats', { cache: 'no-store' });
+    const s = await r.json();
+    if (s && typeof s.fps === 'number') window.__wbFps = s.fps;
+    if (s && s.power > 900 && s.cx > 0 && s.cy > 0) {
+      const rx = RECORTE.x1 - RECORTE.x0, ry = RECORTE.y1 - RECORTE.y0;
+      camObjetivo.x = Math.min(1, Math.max(0, (s.cx / 10000 - RECORTE.x0) / rx));
+      camObjetivo.y = Math.min(1, Math.max(0, (s.cy / 10000 - RECORTE.y0) / ry));
+      camObjetivo.z = 1.85;
+      camHold = Date.now() + 2800;
+      // avisa a la capa de efectos: la cámara ya está volando al punto, así que
+      // el impacto se pinta en el centro del mapa (que es donde cae la bomba)
+      if (Date.now() - (window.__wbUltimoImpacto || 0) > 1400) {
+        window.__wbUltimoImpacto = Date.now();
+        window.dispatchEvent(new CustomEvent('wb:impacto', {
+          detail: { power: Number(s.power) || 0, x: s.cx / 10000, y: s.cy / 10000 }
+        }));
+      }
+    }
+  } catch (e) { /* el stream puede no estar levantado */ }
+}
+setInterval(seguirAccion, 260);
+
 function cargarFrame() {
   return new Promise(res => {
-    const src = BASE + '/frame.jpg?live=1&w=' + anchoCaptura() + '&t=' + Date.now();
-    const probe = new Image();
-    probe.onload = () => {
-      const iw = probe.naturalWidth, ih = probe.naturalHeight;
-      const alto = Math.round(ih * 0.93);   // recorta la barra de herramientas del juego
-      if (cv.width !== iw || cv.height !== alto) { cv.width = iw; cv.height = alto; }
-      ctx.drawImage(probe, 0, 0, iw, alto, 0, 0, iw, alto);
-      fondo.src = src;
-      if (!frameOK) {
-        cv.style.display = 'block'; fondo.style.display = 'block';
-        $('#noframe').style.display = 'none'; frameOK = true;
-      }
-      frames++;
-      res();
-    };
-    probe.onerror = () => {
-      if (!frameOK) { cv.style.display = 'none'; fondo.style.display = 'none'; $('#noframe').style.display = 'block'; }
-      res();
-    };
-    probe.src = src;
+    const iw = imgStream.naturalWidth, ih = imgStream.naturalHeight;
+    if (!imgStream.complete || !iw) { res(); return; }
+    if (Date.now() > camHold) { camObjetivo.z = 1; camObjetivo.x = 0.5; camObjetivo.y = 0.5; }
+    camActual.z += (camObjetivo.z - camActual.z) * 0.06;
+    camActual.x += (camObjetivo.x - camActual.x) * 0.06;
+    camActual.y += (camObjetivo.y - camActual.y) * 0.06;
+
+    const rx = Math.round((RECORTE.x1 - RECORTE.x0) * iw);
+    const ry = Math.round((RECORTE.y1 - RECORTE.y0) * ih);
+    const ox = Math.round(RECORTE.x0 * iw), oy = Math.round(RECORTE.y0 * ih);
+    if (cv.width !== rx || cv.height !== ry) { cv.width = rx; cv.height = ry; }
+
+    const sw = Math.max(8, rx / camActual.z), sh = Math.max(8, ry / camActual.z);
+    let sx = ox + camActual.x * rx - sw / 2;
+    let sy = oy + camActual.y * ry - sh / 2;
+    sx = Math.max(ox, Math.min(ox + rx - sw, sx));
+    sy = Math.max(oy, Math.min(oy + ry - sh, sy));
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(imgStream, sx, sy, sw, sh, 0, 0, rx, ry);
+    refrescarFondo();
+    frames++;
+    res();
   });
 }
 async function bucleVideo() {
@@ -1185,7 +1245,7 @@ async function bucleVideo() {
 setInterval(() => {
   const f = frames - framesUlt;
   framesUlt = frames;
-  $('#c-fps').textContent = f + ' fps';
+  $('#c-fps').textContent = Math.round(window.__wbFps || f) + ' fps';
 }, 1000);
 
 /* ---------------- arranque ---------------- */
@@ -1423,6 +1483,102 @@ ciclo();
       } catch (e) { console.error('[show] victoria extra', e); }
     };
   }
+})();
+</script>
+<script src="viewer-fx.js"></script>
+<script>
+/* ============================================================
+   Capa de efectos (ViewerFX). Se monta encima de todo lo anterior:
+   emojis que salen del chat y estallan en el mapa, impactos donde
+   cae la bomba, números de daño, destellos y sacudidas.
+   Si viewer-fx.js no está (por ejemplo abriendo el HTML con file://),
+   todo esto se desactiva sin romper el visor.
+   ============================================================ */
+(function () {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const mapa = $('#centro .mapa');
+  if (!mapa) return;
+
+  function arrancar() {
+    const FX = window.ViewerFX;
+    if (!FX || !FX.init || mapa.__fxListo) return;
+    mapa.__fxListo = true;
+    try {
+      FX.init({ map: mapa, chat: null, motion: 'full', maxEffects: 16, autoFly: false });
+    } catch (e) { console.error('[fx] init', e); return; }
+
+    const dentro = () => ({ xPct: 24 + Math.random() * 52, yPct: 20 + Math.random() * 55 });
+
+    /* --- emoji suelto: sale volando y estalla en el mapa --- */
+    const _renderFeed = window.renderFeed;
+    let ultSeqFx = -1;
+    if (typeof _renderFeed === 'function') {
+      window.renderFeed = function (items, st) {
+        try { _renderFeed(items, st); } catch (e) { console.error('[fx] renderFeed', e); }
+        try {
+          const arr = Array.isArray(items) ? items : [];
+          const nuevos = arr.filter(e => (Number(e.seq) || 0) > ultSeqFx);
+          if (!nuevos.length) return;
+          ultSeqFx = Math.max(ultSeqFx, ...nuevos.map(e => Number(e.seq) || 0));
+          const lado = a => String(a).toLowerCase() === 'azul' ? 'azul' : 'rojo';
+          for (const e of nuevos.slice(-4)) {
+            const tipo = String(e.tipo || '');
+            const texto = String(e.texto || '').trim();
+            const soloEmoji = /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u.test(texto);
+            if ((tipo === 'emoji' || tipo === 'chat') && soloEmoji && texto) {
+              const desde = $('#feed-' + lado(e.agente)) || mapa;
+              const destino = dentro();
+              try {
+                FX.flyEmoji(texto, {
+                  fromEl: desde, to: destino, duration: 1500,
+                  size: 110, power: 1.2, color: lado(e.agente) === 'azul' ? '#38bdf8' : '#f87171'
+                });
+              } catch (err) { /* el efecto es opcional */ }
+              continue;
+            }
+            if (tipo === 'bomba') {
+              const d = dentro();
+              try { FX.spawnImpact(d.xPct, d.yPct, 1.6, { emoji: '💥' }); } catch (err) { }
+            }
+            if (tipo === 'resultado') {
+              const n = Number(e.bajas) || 0;
+              const i = Number(e.intensidad) || 0;
+              const d = dentro();
+              if (n > 0) { try { FX.spawnDamage(n, d.xPct, d.yPct, lado(e.agente) === 'rojo' ? 'azul' : 'rojo'); } catch (err) { } }
+              if (i >= 0.62) { try { FX.shake(Math.min(1, i)); FX.flash('#ef4444', { opacity: 0.22, duration: 420 }); } catch (err) { } }
+            }
+          }
+        } catch (e) { console.error('[fx] feed', e); }
+      };
+    }
+
+    /* --- la bomba: impacto en el centro (la cámara ya está volando ahí) --- */
+    window.addEventListener('wb:impacto', ev => {
+      try {
+        const p = Number(ev && ev.detail && ev.detail.power) || 0;
+        FX.spawnImpact(50, 50, Math.min(3, 1 + p / 900), { emoji: '💥' });
+        if (p > 2200) FX.shake(0.85);
+      } catch (e) { console.error('[fx] impacto', e); }
+    });
+
+    /* --- victoria: destello del color del ganador --- */
+    const _victoria = window.mostrarVictoria;
+    if (typeof _victoria === 'function') {
+      window.mostrarVictoria = function (st, hist) {
+        try { _victoria(st, hist); } catch (e) { console.error('[fx] victoria', e); }
+        try {
+          if (!st || !st.terminada) return;
+          const g = String((st.resumen && st.resumen.ganador) || st.ganador || '').toLowerCase();
+          FX.flash(g === 'azul' ? '#38bdf8' : '#f87171', { opacity: 0.35, duration: 900 });
+        } catch (e) { }
+      };
+    }
+    window.__fxActivo = true;
+  }
+
+  if (window.ViewerFX) arrancar();
+  else window.addEventListener('load', arrancar);
 })();
 </script>
 </body>

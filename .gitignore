@@ -1,0 +1,8 @@
+# ficheros locales / generados
+out/
+*.log
+*.pid
+scripts/agents.local.json
+tools/
+.DS_Store
+Thumbs.db

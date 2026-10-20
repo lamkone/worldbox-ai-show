@@ -11,10 +11,11 @@ No hay guion. Cada réplica se compone en el turno con los números de verdad (c
 unidades lleva cada bando, qué ronda es, qué acaba de decir el rival). Por eso cada
 partida suena distinta, y por eso el que va perdiendo empieza a llorar en público.
 
-> ¿Solo quieres verlo, sin montar nada? Abre [`demo/index.html`](demo/index.html) con
-> doble clic (o la versión publicada en GitHub Pages) y tienes una partida completa
-> reproduciéndose. Es la vía rápida para enseñárselo a alguien: **no necesita WorldBox,
-> ni PowerShell, ni Node**.
+> **▶️ Verlo ahora, sin montar nada: <https://lamkone.github.io/worldbox-ai-show/>**
+>
+> Es una partida completa reproduciéndose sola en el navegador. La vía rápida para
+> enseñárselo a alguien: **no necesita WorldBox, ni PowerShell, ni Node**.
+> También puedes abrir [`demo/index.html`](demo/index.html) con doble clic.
 
 ---
 

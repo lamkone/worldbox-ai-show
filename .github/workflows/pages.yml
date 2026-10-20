@@ -29,10 +29,24 @@ jobs:
       - name: Configurar Pages
         uses: actions/configure-pages@v5
 
-      - name: Empaquetar demo/
+      - name: Preparar sitio (demo en raíz, directo en /live)
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site/live
+          cp -R demo/. _site/
+          cp -R live/. _site/live/
+          cp live.json _site/live.json
+          test -f _site/index.html
+          test -f _site/live/index.html
+          test -f _site/live/viewer-fx.js
+          test -f _site/live.json
+
+      - name: Empaquetar sitio
         uses: actions/upload-pages-artifact@v3
         with:
-          path: demo
+          path: _site
 
       - name: Publicar en GitHub Pages
         id: deployment

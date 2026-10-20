@@ -1017,6 +1017,14 @@ header{
 .chip-live.activo:hover{color:#ff8a8a;border-color:rgba(255,93,93,.8)}
 html:not(.movimiento) .chip-live.activo i{animation:none}
 @media (prefers-reduced-motion:reduce){.chip-live.activo i{animation:none}}
+
+/* ============================================================
+   ETIQUETAS DE PIN EN MÓVIL (demo v5)
+   ============================================================ */
+@media (max-width:680px){
+  .pin-et{font-size:8.2px;padding:3px 6px;border-radius:6px;gap:0}
+  .pin-et b{font-size:8.2px}
+}
 /* ============================================================
    CHAT ÚNICO TIPO GRUPO (demo v4)
    Un solo hilo: ROJO + AZUL + tú + mensajes de sistema del show.
@@ -4917,6 +4925,19 @@ if (document.readyState === 'loading') {
   const IMG_W = 1280, IMG_H = 800;
   const BASE = { u: 0.53, v: 0.52, z: 1.28 };
 
+  /* El mundo de WorldBox ocupa un rectángulo dentro de la captura (el resto
+     es océano/UI). Las coordenadas `camara` del show.json vienen en % de ese
+     rectángulo, así que se calibran aquí: medido sobre la captura real, las
+     40 bombas caen sobre tierra con este encuadre (39/40 frente a 33/40 sin
+     calibrar). */
+  const MUNDO = { u0: 0.262, u1: 0.784, v0: 0.137, v1: 0.890 };
+  function calib(u, v) {
+    return {
+      u: clamp(MUNDO.u0 + clamp(u, 0, 1) * (MUNDO.u1 - MUNDO.u0), 0, 1),
+      v: clamp(MUNDO.v0 + clamp(v, 0, 1) * (MUNDO.v1 - MUNDO.v0), 0, 1)
+    };
+  }
+
   /* Encuadre de cada ronda: media de los impactos reales de esa ronda
      (x,y del show.json en %), con un zoom de seguimiento suave. */
   const FOCOS = {
@@ -4989,7 +5010,9 @@ if (document.readyState === 'loading') {
   }
 
   function enfocar(n, rapido) {
-    aplicar(FOCOS[n] || BASE, !!rapido);
+    const f = FOCOS[n] || BASE;
+    const p = calib(f.u, f.v);
+    aplicar({ u: p.u, v: p.v, z: f.z }, !!rapido);
   }
 
   function recolocarPines() {
@@ -5028,6 +5051,17 @@ if (document.readyState === 'loading') {
     const p = punto(u, v);
     pin.style.left = (p.x / geo.W * 100).toFixed(3) + '%';
     pin.style.top = (p.y / geo.H * 100).toFixed(3) + '%';
+
+    /* Si otro pin cae muy cerca, la etiqueta baja un escalón para no solaparse. */
+    let desplaz = 0;
+    Array.prototype.forEach.call(el.pines.children, (otro) => {
+      const ou = Number(otro.dataset.u), ov = Number(otro.dataset.v);
+      if (!isFinite(ou) || !isFinite(ov)) return;
+      const op = punto(ou, ov);
+      if (Math.hypot(op.x - p.x, op.y - p.y) < 70) desplaz += 30;
+    });
+    if (desplaz) et.style.top = (-11 + desplaz) + 'px';
+
     el.pines.appendChild(pin);
     while (el.pines.children.length > 7) el.pines.removeChild(el.pines.firstChild);
     return pin;
@@ -5095,8 +5129,8 @@ if (document.readyState === 'loading') {
     const x = Number(camara && camara.x);
     const y = Number(camara && camara.y);
     if (!isFinite(x) || !isFinite(y)) return false;
-    const u = clamp(x / 100, 0, 1);
-    const v = clamp(y / 100, 0, 1);
+    const p = calib(x / 100, y / 100);
+    const u = p.u, v = p.v;
     const z = clamp(Number(camara.zoom) || 2, 1.2, 2.6);
     const ms = clamp(Number(camara.ms) || 2000, 800, 6000);
     ultimoPunto = { u: u, v: v };
@@ -5114,11 +5148,11 @@ if (document.readyState === 'loading') {
     const s = num(ev.seq, 1);
     const h1 = ((s * 2654435761) % 1000) / 1000;
     const h2 = ((s * 40503 + 7) % 1000) / 1000;
-    return {
-      u: clamp(f.u + (h1 - 0.5) * 0.26, 0.14, 0.86),
-      v: clamp(f.v + (h2 - 0.5) * 0.22, 0.18, 0.82),
-      z: 1.55
-    };
+    const p = calib(
+      clamp(f.u + (h1 - 0.5) * 0.26, 0.14, 0.86),
+      clamp(f.v + (h2 - 0.5) * 0.22, 0.18, 0.82)
+    );
+    return { u: p.u, v: p.v, z: 1.55 };
   }
 
   /* ---------- enganches con la reproducción ---------- */
@@ -5143,8 +5177,11 @@ if (document.readyState === 'loading') {
       const n = m ? m[1] : '';
       const nombre = NOMBRE_BOMBA[String(ev.power || '')] || 'una bomba';
       let pos = camara
-        ? { u: clamp(Number(camara.x) / 100, 0, 1), v: clamp(Number(camara.y) / 100, 0, 1) }
-        : (FOCOS[nRonda] || BASE);
+        ? calib(Number(camara.x) / 100, Number(camara.y) / 100)
+        : (function () {
+            const f = FOCOS[nRonda] || BASE;
+            return calib(f.u, f.v);
+          })();
       crearPin('bomba', pos.u, pos.v, agente, 'BOMBA', n ? n + ' uds.' : 'impacto');
       if (!sil) {
         if (camara) punchCam(camara);

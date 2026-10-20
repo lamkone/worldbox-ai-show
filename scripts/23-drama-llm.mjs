@@ -230,13 +230,10 @@ async function chat(c, mensajes, { maxTokens = 160, temperatura = 1.0 } = {}) {
  * (réplica, emoji, titular, veredicto). Lo que cambia por turno va en la
  * instrucción de usuario.
  */
-const REGLAS_DURAS = `REGLAS QUE NO SE NEGOCIAN:
-- Escribes SOLO lo que dices en voz alta. Ni narración, ni acotaciones, ni "(ríe)", ni asteriscos, ni tu nombre delante.
-- Nunca explicas la situación: la usas. Nada de "estamos en la ronda 3".
-- Todo lo que dices tiene que poder contestarse: es una réplica a alguien, no un monólogo.
-- Cero groserías gruesas. La mala leche se demuestra con ingenio, no con tacos.
-- UN SOLO REGISTRO POR FRASE. Si empiezas macarra, acabas macarra. No mezcles la voz de tebeo con la de libro de texto.
-- El insulto tiene que doler: concreto, personal, dirigido a ÉL (sus cifras, su ciudad, su bomba fallida, lo que acaba de decir). Nada de insultos genéricos que valdrían para cualquiera.`
+const REGLAS_DURAS = `REGLAS BÁSICAS:
+- Escribes SOLO lo que dices en voz alta: ni narración, ni acotaciones, ni tu nombre delante.
+- Nunca explicas la situación: la usas.
+- Cero groserías gruesas.`
 
 /**
  * Las dos voces del show. Cada una con su registro cerrado, sus ejemplos
@@ -250,28 +247,18 @@ const PERSONAS = {
   rojo: {
     nombre: 'ROJO',
     reino: 'los Rojos',
-    system: `Eres ROJO, rey de los Rojos, en un show de peleas de WorldBox contra AZUL. Eres un macarra de barrio: chulo, bocazas, gracioso sin querer, cero cultura. Hablas como se pica la gente de verdad en un grupo de WhatsApp o en el chat de un directo, en español de España de 2026.
-
-REGISTRO ROJO (cerrado, no se sale de aquí):
-- Frase corta y seca. Insulto de calle, no de cómic.
-- Vocabulario SÍ: flipao, fantasma, cuñao, vendehumos, cuentista, farolero, mucho humo, postureo, te falta calle, espabila, a llorar a la llorería, no me cuentes milongas, te has pasao de frenada, mucho ruido y pocas nueces, payaso, pesao, te queda grande, vuelve al tutorial, chúpate esa, toma ya, en tu cara.
-- Vocabulario NO: mentira podrida, mastuerzo, zoquete, berzas, puf, bah, ja ja, chaval, ni nada que suene a tebeo de los 90.
-- Cero tecnicismos. Si te sale una palabra culta, la tachas: tú no dices "hipótesis", dices "milongas".
-- Nada de explicar la escena ni hablar de ti mismo en tercera persona.
+    caracter: 'macarra de barrio: chulo, bocazas, cero cultura',
+    forma: 'frase corta y seca, insulto de calle (flipao, fantasma, cuentista, postureo, espabila), cero palabras cultas',
+    system: `Eres ROJO, rey de los Rojos, en un show de peleas de WorldBox contra AZUL. Macarra de barrio: chulo, bocazas, cero cultura. Hablas como se pica la gente en un grupo de WhatsApp, en español de España de 2026. Frase corta y seca, insulto de calle, cero palabras cultas. Nada de tebeo.
 
 ${REGLAS_DURAS}`,
   },
   azul: {
     nombre: 'AZUL',
     reino: 'los Azules',
-    system: `Eres AZUL, rey de los Azules, en un show de peleas de WorldBox contra ROJO. Eres un cuñao listillo moderno: condescendiente, sarcástico, te crees más listo que nadie y lo dejas caer con ironía seca. Escribes como el tío que corrige a todo el mundo en Twitter, en español de España de 2026. NO eres un profesor: nada de vocabulario académico.
-
-REGISTRO AZUL (cerrado, no se sale de aquí):
-- Ironía seca y condescendencia. Frase corta, mirada por encima del hombro.
-- Vocabulario SÍ: cuéntame más, sí sí claro, ya ya, mucho texto, eso es humo, te lo has creído tú, fuente: créeme bro, cita tus fuentes, no confundas suerte con talento, lo tuyo no es estrategia es esperanza, postureo, relato, te vendes bien, majo, tronco, figura, campeón, genio, artista, qué detalle, me quedo sin palabras, no me hagas reír.
-- Vocabulario NO: hipótesis, datos, tendencia, estadística, correlación, algoritmo, dialéctica, conceptualmente, variables, probabilidad, matemática. Eso es un manual, no una persona.
-- Nada de discursos ni de explicar la escena. Una pulla, no una clase.
-- Nada de hablar de ti mismo en tercera persona.
+    caracter: 'cuñao listillo moderno: condescendiente y sarcástico',
+    forma: 'ironía seca (cuéntame más, mucho texto, eso es humo, te lo has creído), cero vocabulario académico',
+    system: `Eres AZUL, rey de los Azules, en un show de peleas de WorldBox contra ROJO. Cuñao listillo moderno: condescendiente, sarcástico, se cree más listo que nadie. Escribes como el que corrige a todo el mundo en Twitter, en español de España de 2026. Ironía seca, frase corta. NO eres un profesor.
 
 ${REGLAS_DURAS}`,
   },
@@ -279,26 +266,8 @@ ${REGLAS_DURAS}`,
 
 /** Ejemplos literales del tono objetivo. Son calibración, NO material para copiar. */
 const EJEMPLOS = {
-  rojo: [
-    'Tío, mucho postureo y luego no hay nada: espabila.',
-    'Te falta calle, se te ve el plumero a la legua.',
-    'Flipao, que eres un flipao, y encima vas de víctima.',
-    'Vendehumos, que eres un vendehumos de barrio.',
-    'No me cuentes milongas, que se te ve el cartón.',
-    'A llorar a la llorería, que aquí no hay pañuelos.',
-    'Mucho ruido y pocas nueces: eso es lo que eres.',
-    'Te has pasao de frenada y ahora no hay marcha atrás.',
-  ],
-  azul: [
-    'Cuéntame más, que me interesa muchísimo lo que dices.',
-    'Sí, sí, claro, y el cheque está en el correo.',
-    'Mucho texto para decir que no tienes ni idea.',
-    'Eso es humo, tronco, humo del bueno.',
-    'Fuente: créeme, bro. Muy sólido todo.',
-    'No confundas suerte con talento, que se te nota.',
-    'Lo tuyo no es estrategia, es esperanza.',
-    'Te vendes bien, eso sí, luego en el mapa ya tal.',
-  ],
+  rojo: ['Mucho postureo y luego nada, espabila.', 'Te falta calle y se te nota.'],
+  azul: ['Cuéntame más, que me interesa muchísimo.', 'Mucho texto para decir que no tienes ni idea.'],
 }
 
 /** Lo que NO vale. Se enseñan siempre: son la prohibición explícita. */
@@ -311,16 +280,11 @@ const ANTIEJEMPLOS = [
 ]
 
 /**
- * Rota 4 de los 8 ejemplos de cada agente. Enseñarlos todos en cada llamada
- * hacía que el modelo los pegara literalmente; rotándolos, el tono se mantiene
- * y el vocabulario se renueva.
+ * Calibración de tono. Ya no rota: dos frases neutras por personaje y punto.
+ * El modelo copia lo que ve, así que cuanto menos material, menos se pega.
  */
 function ejemplosDe(agente) {
-  const lista = EJEMPLOS[agente] ?? EJEMPLOS.rojo
-  const n = contador[agente] ?? 0
-  const out = []
-  for (let i = 0; i < 4; i++) out.push(lista[(n + i * 2) % lista.length])
-  return [...new Set(out)]
+  return EJEMPLOS[agente] ?? EJEMPLOS.rojo
 }
 
 // ---------------------------------------------------------------- análisis del contexto
@@ -860,6 +824,10 @@ function anotarDicha(agente, texto) {
   anotarMotivos(texto)
   const ap = apodoDe(texto)
   if (ap) ultimoApodo[agente] = ap
+  if (ap) {
+    apodosRecientes.push(ap)
+    while (apodosRecientes.length > 6) apodosRecientes.shift()
+  }
   recientesGlobales.push(String(texto ?? ''))
   while (recientesGlobales.length > 6) recientesGlobales.shift()
 }
@@ -948,7 +916,14 @@ const CORDILLERA_RE = /\bcordilleras?\b/i
  * plaza" no es un pique, es una ordinariez, y no se puede publicar.
  */
 const VULGAR_RE =
-  /\b(meando|meo|mear|mierda|joder|jodido|cagar|cagando|hostia|polla|coño|capullo|gilipollas|subnormal|imb[eé]cil|idiota|est[uú]pido|cerdo|asqueroso)\b/i
+  /\b(meando|meo|mear|mierda|joder|jodid\w*|jodiendo|cagar|cagando|hostia|ostia|polla|coño|cojones|capullo|gilipollas|subnormal|imb[eé]cil|idiota|est[uú]pido|cerdo|asqueroso|cabr[oó]n\w*|pendejo|hijoputa|put[ao]\w*|maric[oó]n\w*|zorra|guarra|por donde te quepa|por el culo|a tomar por|me la suda)\b/i
+
+/** Erratas que el modelo cuela de vez en cuando y se ven en el chat. */
+const TYPOS = [
+  [/\bfliplao\b/gi, 'flipao'],
+  [/\bespavila\b/gi, 'espabila'],
+  [/\bcuentitas\b/gi, 'cuentista'],
+]
 
 /**
  * Los apodos ("figura", "campeón", "majo"…) son un recurso buenísimo, pero el
@@ -961,6 +936,9 @@ const APODOS = [
   'farolero', 'postureo', 'relato',
 ]
 const ultimoApodo = { rojo: '', azul: '' }
+/** Apodos usados en las últimas frases de CUALQUIERA de los dos: si uno se
+ *  repite, el chat suena a plantilla ("fantasma, fantasma, fantasma"). */
+const apodosRecientes = []
 function apodoDe(texto) {
   const x = String(texto ?? '').toLowerCase()
   return APODOS.find(a => new RegExp(`\\b${a}\\b`, 'i').test(x)) ?? ''
@@ -1105,7 +1083,7 @@ function limpiar(texto, agente) {
     while (palabras.length > 8 && FIN_COLGANDO.test(palabras[palabras.length - 1])) palabras.pop()
     return palabras.join(' ').replace(/[,;:]+$/, '') + '.'
   }
-  t = recortar(t, 24)
+  t = recortar(t, 20)
   if (t.length > 190) {
     const corte = t.slice(0, 178)
     const sp = corte.lastIndexOf(' ')
@@ -1128,6 +1106,8 @@ function limpiar(texto, agente) {
     t = t.replace(/([\p{Extended_Pictographic}\uFE0F\u200D]*)\s*\.\s*([\p{Extended_Pictographic}\uFE0F\u200D]*)\s*$/u, '? $1$2').trim()
     if (!/\?/.test(t)) t = t.replace(/\.\s*$/, '?').trim()
   }
+  // erratas típicas del modelo ("fliplao" por "flipao")
+  for (const [re, bien] of TYPOS) t = t.replace(re, bien)
   // y si el modelo dejó "…🖍️.", el punto va ANTES del emoji (se hace al final,
   // cuando ya no queda nada que añada puntuación detrás).
   t = t
@@ -1173,7 +1153,70 @@ const RECUENTO_RE = /\b(bajas|unidades|soldados|tropas|hombres|tipos|ciudades)\b
  *
  * @param {string} tipo apertura|turno|golpe|nervios|burla|contra|final
  */
-function validar(texto, an, agente, ultimoRival = '', tipo = 'turno') {
+/**
+ * Cifras escritas en letras ("mil cuatrocientas", "ochenta y seis"). El validador
+ * solo miraba dígitos, así que un "ochenta y seis" por 860 se colaba como cifra
+ * inventada. Se convierten a número para poder contrastarlas con las reales.
+ */
+const NUM_LETRAS = (() => {
+  const m = {
+    cero: 0, un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7,
+    ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15,
+    dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20,
+    veintiuno: 21, veintiun: 21, veintiuna: 21, veintidos: 22, veintitres: 23,
+    veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28,
+    veintinueve: 29, treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70,
+    ochenta: 80, noventa: 90, cien: 100, ciento: 100,
+    doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300,
+    cuatrocientos: 400, cuatrocientas: 400, quinientos: 500, quinientas: 500,
+    seiscientos: 600, seiscientas: 600, setecientos: 700, setecientas: 700,
+    ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900, mil: 1000,
+  }
+  return m
+})()
+
+function numerosEnLetras(texto) {
+  const toks = String(texto ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+  const vals = []
+  let i = 0
+  while (i < toks.length) {
+    let j = i
+    let acc = 0
+    let total = 0
+    let any = false
+    let grande = false
+    while (j < toks.length) {
+      const w = toks[j]
+      if (w === 'y' && any && NUM_LETRAS[toks[j + 1]] != null) {
+        j++
+        continue
+      }
+      const v = NUM_LETRAS[w]
+      if (v == null) break
+      any = true
+      if (v === 1000) {
+        total += (acc || 1) * 1000
+        acc = 0
+        grande = true
+      } else {
+        acc += v
+        if (v >= 100) grande = true
+      }
+      j++
+    }
+    if (any && (j - i >= 2 || grande)) vals.push(total + acc)
+    i = any ? j : i + 1
+  }
+  return vals
+}
+
+function validar(texto, an, agente, ultimoRival = '', tipo = 'turno', publico = false) {
   const problemas = []
   const t = String(texto ?? '').trim()
   if (!t) return ['la respuesta está vacía']
@@ -1184,27 +1227,16 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno') {
   const frases = t.split(/(?<=[.!?…])\s+/).map(s => s.trim()).filter(Boolean)
   const palabras = t.split(/\s+/).filter(Boolean).length
   if (frases.length > 2) problemas.push('son más de dos frases')
-  // El tope de palabras es 24 (limpiar() lo garantiza recortando por puntuación).
-  if (palabras > 24) problemas.push('es demasiado larga')
-  // una réplica de tres palabras ("¿Gallinas? Qué ternura.") no es un pique:
-  // en el chat se lee como un desplante vacío y el dueño lo notó.
-  if (palabras < 5) problemas.push('es demasiado corta: contesta al rival con algo más')
+  // Tope del prompt nuevo: 20 palabras. limpiar() recorta con el mismo número.
+  if (palabras > 20) problemas.push('es demasiado larga')
+  // "Vale." o "Nos vemos en el mapa." son respuestas legítimas: no se exige mínimo.
   if (t.length > 190) problemas.push('es demasiado larga')
   if (/^(rojo|azul)\s*[:\-—]/i.test(t)) problemas.push('empieza con tu nombre')
   if (/\*/.test(t)) problemas.push('mete asteriscos o narración')
   if (/\([^)\d]{1,30}\)/.test(t)) problemas.push('mete acotaciones o narración')
 
-  // --- cifras ---
-  const cifra = tocaCifraEn(an, agente)
+  // --- cifras: pueden salir siempre, pero tienen que ser REALES ---
   const digitos = [...t.matchAll(/\d{1,6}/g)].map(m => Number(m[0]))
-  const esRonda = n => n === an.ronda || n === an.rondas
-  const recitadas = digitos.filter(n => !esRonda(n))
-  if (!cifra && recitadas.length > 0) {
-    problemas.push('recita cifras cuando esta réplica iba de carácter, no de contabilidad')
-  }
-  if (!cifra && NUM_PALABRA_RE.test(t) && RECUENTO_RE.test(t)) {
-    problemas.push('recita un recuento con cifras en palabras cuando esta réplica iba de carácter')
-  }
   const permitidos = new Set([
     ...(an.permitidos ?? []),
     ...[...String(ultimoRival ?? '').matchAll(/\d{1,6}/g)].map(m => Number(m[0])),
@@ -1213,16 +1245,14 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno') {
   if (inventadas.length > 0) {
     problemas.push(`se inventa cifras que no son de la partida (${[...new Set(inventadas)].join(', ')})`)
   }
-  // en la de cada cuatro SÍ tiene que ir una cifra real (si no, dejamos de tener
-  // números del todo, que es el otro extremo)
-  const cifraEnLetras = NUM_PALABRA_RE.test(t) && RECUENTO_RE.test(t)
-  if (cifra && recitadas.length === 0 && !cifraEnLetras) {
-    problemas.push('esta réplica tenía que citar una cifra real de la partida y no la cita')
+  // y las que escribe en letras, igual de vigiladas ("ochenta y seis" por 860)
+  const inventadasLetras = numerosEnLetras(t).filter(n => !permitidos.has(n))
+  if (inventadasLetras.length > 0) {
+    problemas.push(`se inventa cifras que no son de la partida (${[...new Set(inventadasLetras)].join(', ')})`)
   }
-  // incluso en la de cada cuatro, el número va dentro de una imagen, no en un
-  // balance ("420 bajas tuyas" es justo el molde que hay que erradicar)
-  if (cifra && ['contra', 'bajas', 'unidades', 'marcador'].includes(estructuraDe(t))) {
-    problemas.push('coloca la cifra dentro de una imagen o una pulla, no como recuento "N bajas tuyas"')
+  // el recuento "X contra Y" es el molde que hace que el chat parezca un balance
+  if (/\b\d{1,6}\s+contra\s+(mis\s+|los\s+|sus\s+|tus\s+)?\d{1,6}\b/i.test(t)) {
+    problemas.push('lees el marcador en voz alta ("X contra Y"): reacciona a lo que pasa, no recites cifras')
   }
   // comparaciones recicladas
   const motivosRepetidos = motivosDe(t).filter(m => motivosRecientes.includes(m))
@@ -1285,26 +1315,8 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno') {
   if (ap && ap === ultimoApodo[agente]) {
     problemas.push(`repites el mismo apodo que en tu frase anterior ("${ap}"): busca otro o quítalo`)
   }
-  // (b) continuidad léxica: la réplica tiene que engancharse con lo que dijo el
-  //     rival. Es un chequeo objetivo y barato: al menos una palabra de contenido
-  //     en común, o una marca explícita de estar contestándole ("dices", "eso",
-  //     "llamas"...). Sin esto salen non-sequiturs.
-  const ur = String(ultimoRival ?? '').trim()
-  let engancha = true
-  if (ur) {
-    const suyas = raices(ur)
-    const mias = raices(t)
-    const comunes = [...mias].filter(w => suyas.has(w))
-    engancha = comunes.length > 0 || REFERENCIA_RE.test(t)
-    if (suyas.size >= 2 && !engancha) {
-      problemas.push(
-        'no engancha con lo que acaba de decir el rival: repite al menos una palabra concreta suya o cítalo',
-      )
-    }
-    // (c) si le ha preguntado, hay que contestar (no vale salir por otro lado)
-    if (esPregunta(ur) && !engancha) {
-      problemas.push('el rival te ha hecho una pregunta: contéstala explícitamente en vez de escurrir el bulto')
-    }
+  if (ap && apodosRecientes.filter(x => x === ap).length >= 2) {
+    problemas.push(`el apodo "${ap}" ya ha salido ${apodosRecientes.filter(x => x === ap).length} veces seguidas: cambia de recurso`)
   }
   // (d) el chiste del llanto es el ejemplo malo del dueño, no se usa
   if (BANIDO_RE.test(t)) {
@@ -1325,11 +1337,18 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno') {
   if (an.gana === false && GANA_RE.test(t)) problemas.push('dice que ha ganado, pero va perdiendo')
   if (an.gana === true && PIERDE_RE.test(t)) problemas.push('dice que ha perdido, pero va ganando')
 
-  // la etiqueta y el texto tienen que decir lo mismo (esto era el fallo del
-  // "llanto" que se reía: el motor etiqueta por ratio, sin mirar la frase)
-  const registro = registroDe(tipo, an)
-  if (['llanto', 'panico', 'nervios'].includes(registro) && CHULO_RE.test(t)) {
-    problemas.push(`el registro es ${registro} y la frase chulea: tiene que sonar a miedo o a llanto`)
+  // --- modo público: se le habla a un ESPECTADOR, no al rival del juego ---
+  if (publico) {
+    const enemigo = t.match(/\b(tu|tus)\s+(reino|unidades|ej[eé]rcito|plaza|trono|capital|tropas)\b/i)
+    if (enemigo) {
+      problemas.push(
+        `le hablas al espectador como si fuera el rival del juego ("${enemigo[0]}"): ` +
+          'el rival es la otra IA; al público se le saluda, se le bromea o se le pide el voto',
+      )
+    }
+    if (/\b(te voy a (arrasar|destruir|enterrar)|te arraso|te destruyo)\b/i.test(t)) {
+      problemas.push('amenazas al espectador: no es tu enemigo, es el público')
+    }
   }
 
   return problemas
@@ -1385,7 +1404,8 @@ async function pedirTexto(agente, listaMensajes, { maxTokens, temperatura }) {
 }
 
 /** Problemas que hacen la réplica inservible (no solo mejorable). */
-const GRAVES = /vacía|acotaciones|tu nombre|demasiado larga|más de dos frases|inventa cifras/
+const GRAVES =
+  /vacía|acotaciones|tu nombre|demasiado larga|más de dos frases|inventa cifras|registro de tebeo|registro de manual|ordinariez|cordillera|chiste del llanto|tercera persona|hablas al espectador/
 
 /**
  * Pide una réplica. Si la respuesta incumple el briefing, pide UNA corrección
@@ -1400,6 +1420,7 @@ async function pedirReplica(agente, instruccion, opts = {}) {
     analisis = null,
     ultimoRival = '',
     tipo = 'turno',
+    publico = false,
     validarSalida = true,
   } = opts
   const persona = PERSONAS[agente] ?? PERSONAS.rojo
@@ -1410,7 +1431,7 @@ async function pedirReplica(agente, instruccion, opts = {}) {
   const primero = await pedirTexto(agente, base, { maxTokens, temperatura: temp })
   if (!primero.ok) return primero
 
-  const problemas = validarSalida && analisis ? validar(primero.texto, analisis, agente, ultimoRival, tipo) : []
+  const problemas = validarSalida && analisis ? validar(primero.texto, analisis, agente, ultimoRival, tipo, publico) : []
   if (problemas.length === 0) {
     recordar(agente, 'user', instruccion)
     recordar(agente, 'assistant', primero.texto)
@@ -1432,7 +1453,7 @@ async function pedirReplica(agente, instruccion, opts = {}) {
   let elegido = primero
   let elegidosProblemas = problemas
   if (segundo.ok) {
-    const p2 = validar(segundo.texto, analisis, agente, ultimoRival, tipo)
+    const p2 = validar(segundo.texto, analisis, agente, ultimoRival, tipo, publico)
     if (p2.length <= problemas.length) {
       elegido = segundo
       elegidosProblemas = p2
@@ -1451,197 +1472,88 @@ async function pedirReplica(agente, instruccion, opts = {}) {
 }
 
 /** Contexto → bloque de instrucción. Este es el corazón del arreglo. */
-function construirInstruccion(tipo, ctx, ultimoRival, agente) {
-  const t = String(tipo ?? 'turno').toLowerCase()
+/**
+ * Réplica para un ESPECTADOR del chat en vivo. No es el rival del juego: no tiene
+ * reino ni ejército. El showman le saluda, le bromea o le pide el voto.
+ */
+function construirInstruccionPublica(agente, nick, texto, ctx = {}) {
   const an = analizar(ctx)
-  const rival = agente === 'rojo' ? 'AZUL' : 'ROJO'
+  const p = PERSONAS[agente] ?? PERSONAS.rojo
+  const quien = nick ? `«${nick}»` : 'un espectador'
   const lineas = []
-  const registro = registroDe(t, an)
-  const cifras = cifrasDe(an)
-  const tocaCifra = tocaCifraEn(an, agente)
-
-  // 1. situación. Con cifras SOLO cuando la réplica va de cifras; si no, en
-  //    palabras: si el prompt enseña los números, el modelo los recita.
-  lineas.push(`PARTIDA: ${situacion(ctx, an, { conCifras: tocaCifra })}`)
-
-  // 2. ¿toca cifra o no? Antes se pedía SIEMPRE y el chat acabó siendo un
-  //    balance contable. Ahora solo 1 de cada 4 réplicas puede citar números.
-  if (tocaCifra) {
-    lineas.push(
-      'CIFRA OBLIGATORIA: esta réplica SÍ lleva un número. Elige UNA de estas y dila en dígitos, ' +
-        'colocada como golpe (una comparación, una exclamación, un remate). Cualquier otra cifra es un error:',
-    )
-    lineas.push(
-      'El número va DENTRO de una imagen o de una pulla ("te dejo 420 viudas en tu plaza"), ' +
-        'NUNCA como recuento ("420 bajas tuyas", "mis 520 unidades", "520 contra 1300").',
-    )
-    for (const c of cifras.slice(0, 5)) lineas.push(`- ${c.frase}`)
-    lineas.push(
-      'CONVENIO OBLIGATORIO: "bajas tuyas" = las que TÚ le has causado al rival. ' +
-        '"bajas mías" = las que has perdido tú. No cruces esas dos.',
-    )
-    // El modelo invertía los números DEL TURNO (decía "180 de tus muertos"
-    // cuando en ese turno solo había causado 40 y 180 eran sus propias
-    // pérdidas). Se le dan los dos explícitos y separados.
-    if (an.bajasT > 0 || an.perdidasT > 0) {
-      lineas.push(
-        `ESTE TURNO, EN CLARO: tú le has hecho ${an.bajasT} bajas; tú has perdido ${an.perdidasT} unidades. ` +
-          'Si dices "tus muertos"/"tus bajas" son las que TÚ has causado. Si dices "mis bajas"/"los míos" son los que has perdido tú.',
-      )
-    }
-    if (an.misB > 0 || an.misP > 0) {
-      lineas.push(
-        `EN TOTAL: le has causado ${an.misB} bajas; tú llevas ${an.misP} perdidas. ` +
-          'No atribuyas al rival las que has perdido tú.',
-      )
-    }
-  } else {
-    lineas.push(
-      'PROHIBIDO CITAR CIFRAS EN ESTA FRASE. Cero números, cero recuentos, cero "X contra Y". ' +
-        'Esta réplica va de carácter: insulto, humor, gesto, amenaza teatral o emoción. Nada de estadística.',
-    )
-  }
-
-  // 3. el evento del turno
-  const eventos = []
-  if (an.ultimoGolpe) eventos.push(`acabas de ${an.ultimoGolpe}`)
-  if (an.golpeRival) eventos.push(`el rival acaba de ${an.golpeRival}`)
-  if (eventos.length) lineas.push(`AHORA MISMO: ${eventos.join('; ')}.`)
-
-  // 4. lo que dijo el rival (la pieza que faltaba para que conteste de verdad)
-  const ur = String(ultimoRival ?? '').trim()
-  if (ur) {
-    lineas.push(`LO ÚLTIMO QUE DIJO ${rival}: "${ur.slice(0, 240)}"`)
-    lineas.push(`Tu frase tiene que ser una RESPUESTA a eso. Si no se entiende a qué le contestas, está mal.`)
-  } else {
-    lineas.push(`${rival} no ha dicho nada todavía. Responde al marcador, no a una frase inventada.`)
-  }
-
-  // 4b. TEMA y BEAT: esto es lo que convierte dos frases sueltas en una pelea
-  //     sobre algo concreto. El tema es el mismo para los dos agentes.
-  lineas.push(temaDeRonda(an, agente))
-  lineas.push(beatDe(t))
-  if (ur) {
-    lineas.push(
-      'ESCALADA: tu frase tiene que quedar UN ESCALÓN POR ENCIMA de la del rival ' +
-        '(provocación → acusación → amenaza → sentencia). No contestes a su altura: sube.',
-    )
-    if (esPregunta(ur)) {
-      lineas.push('TE HA HECHO UNA PREGUNTA: contéstala en las primeras palabras, sin escurrir el bulto.')
-    }
-    lineas.push(
-      'OBLIGATORIO: repite al menos UNA palabra concreta de su mensaje (o su idea exacta) ' +
-        'para que se vea a simple vista que le estás contestando A ÉL.',
-    )
-  }
+  lineas.push(`Eres ${p.nombre}, rey de ${p.reino}, en un show de peleas de WorldBox. ${p.caracter}.`)
+  lineas.push(`Hablas así: ${p.forma}.`)
   lineas.push(
-    'PROHIBIDO el humor meta o filosófico: nada de definiciones, disquisiciones, "búsqueda aleatoria", ' +
-      '"lo estudié", "eso cuenta como plan", "filosóficamente", "en términos generales", "como dijo Sun Tzu" ' +
-      'ni chistes sobre el propio chat. Aquí se acusa, se amenaza o se remata; no se define nada.',
+    `Estás en el chat en vivo y te acaba de escribir ${quien}, un ESPECTADOR del público. ` +
+      'No es tu rival del juego: no tiene reino, ni ejército, ni unidades.',
   )
-
-  // 5. su propia frase anterior, para no calcar la forma
-  const previa = [...memoria[agente]].reverse().find(m => m.role === 'assistant')
-  if (previa?.content) {
-    lineas.push(`TU FRASE ANTERIOR (no la repitas ni empieces igual): "${String(previa.content).slice(0, 160)}"`)
-  }
-  const ap = aperturas[agente].slice(-4).filter(Boolean)
-  if (ap.length) lineas.push(`PROHIBIDO empezar por: ${ap.map(a => `"${a}"`).join(', ')}.`)
-
-  // 5b. la fórmula de arranque, que es lo que más se repetía
-  const muletillasUsadas = [...new Set(
-    [...memoria[agente]]
-      .filter(m => m.role === 'assistant')
-      .map(m => muletillaDe(m.content))
-      .filter(Boolean),
-  )].slice(-5)
-  if (muletillasUsadas.length) {
-    lineas.push(`No abras con estas muletillas, que ya las has gastado: ${muletillasUsadas.join(', ')}.`)
-  }
+  if (texto) lineas.push(`Te ha dicho: "${String(texto).slice(0, 160)}"`)
   lineas.push(
-    'VARÍA LA FORMA DE ARRANCAR: alterna una cifra seca, una pregunta directa, una orden, un insulto o una negación. ' +
-      'No todas tus frases pueden empezar igual.',
-  )
-
-  // 5c. no repetir el molde sintáctico de las últimas réplicas
-  const moldesUsados = [...new Set(
-    [...memoria[agente]]
-      .filter(m => m.role === 'assistant')
-      .map(m => estructuraDe(m.content))
-      .filter(e => e !== 'otra' && e !== 'corta'),
-  )]
-  if (moldesUsados.length) {
-    const nombre = { contra: '"X contra mis Y"', bajas: '"N bajas tuyas"', unidades: '"N unidades"', marcador: '"mis N contra…"', recuento: 'recuentos "N y N"', pregunta: 'preguntas', exclamacion: 'exclamaciones' }
-    lineas.push(
-      `PROHIBIDO usar estas estructuras, que ya has gastado: ${moldesUsados.map(m => nombre[m] ?? m).join(', ')}.`,
-    )
-  }
-  lineas.push(
-    'PROHIBIDO el molde "X contra mis Y", "tus N bajas", "mis N unidades" y cualquier recuento de dos cifras. ' +
-      'Varía la sintaxis: pregunta, exclamación, una sola palabra, onomatopeya, frase de tres palabras.',
-  )
-  if (ultimoEmoji[agente]) {
-    lineas.push(`No repitas el emoji ${ultimoEmoji[agente]}: usa otro distinto o ninguno.`)
-  }
-  // 5d. comparaciones ya gastadas (si no, los dos acaban hablando de mercadillos)
-  if (motivosRecientes.length) {
-    lineas.push(
-      `PROHIBIDO usar estas comparaciones, que ya han salido: ${motivosRecientes.join(', ')}. ` +
-        'Búscate una imagen nueva.',
-    )
-  }
-
-  // 6. el encargo concreto
-  const ta = tarea(t, agente, an)
-  const rec = recurso()
-  if (ta) lineas.push(`TAREA: ${ta} ${rec}`)
-
-  // 7. el registro emocional: tiene que sonar a esto, no solo estar etiquetado
-  lineas.push(`REGISTRO EMOCIONAL (${registro.toUpperCase()}): ${VOZ[registro] ?? VOZ.pique}`)
-  lineas.push(`TONO: ${arcoDe(an)}`)
-
-  // 7b. LA VOZ. Esto es lo que separa a los dos personajes: sin este bloque los
-  //     dos acababan hablando igual, y en un registro de tebeo o de manual.
-  lineas.push(
-    `TU VOZ ES ${PERSONAS[agente]?.nombre ?? agente.toUpperCase()}: ` +
-      (agente === 'rojo'
-        ? 'macarra de barrio. Frase corta y seca, insulto de calle, cero palabras cultas. Nada de tecnicismos ni de vocabulario de libro.'
-        : 'cuñao listillo moderno. Ironía seca, condescendencia, se cree más listo. Nada de vocabulario académico: tú no das clase, tú sueltas pullas.'),
-  )
-  lineas.push(`Muestra del tono que busco (NO las copies literalmente, son calibración):`)
-  for (const e of ejemplosDe(agente)) lineas.push(`- "${e}"`)
-  lineas.push(`PROHIBIDO caer en esto (es justo lo que el público odia):`)
-  for (const e of ANTIEJEMPLOS) lineas.push(`- "${e}"`)
-  lineas.push(
-    'UN SOLO REGISTRO EN TODA LA FRASE: si empiezas macarra, acabas macarra; si empiezas de cuñao, ' +
-      'acabas de cuñao. Mezclar los dos registros es el error más grave que puedes cometer.',
+    'Contéstale al espectador como showman: salúdale por su nombre si lo sabes, bromea con él, ' +
+      'pídele su opinión o su voto, dale complicidad. UNA frase corta (máximo 20 palabras), con tu carácter.',
   )
   lineas.push(
-    'El insulto tiene que ser CONCRETO y PERSONAL: contra sus cifras, su ciudad perdida, su bomba fallida ' +
-      'o lo que acaba de decir. Un insulto genérico no vale.',
+    'NO le trates como enemigo: prohibido "tu reino", "tus unidades", "te voy a arrasar" o cualquier cifra de la partida.',
   )
-  lineas.push(
-    'Nada de ordinarieces ni tacos ("meando", "mierda", "joder", "gilipollas"): se puede ser macarra sin ser grosero. ' +
-      'Y no repitas el mismo apodo dos frases seguidas: si ya has dicho "figura", ahora di otra cosa.',
-  )
-
-  // 8. cierre de reglas
-  lineas.push(
-    `FORMATO: una sola frase (máximo 18 palabras), sin comillas, sin acotaciones, sin tu nombre. Un emoji como máximo. ` +
-      'Nada de nombres propios inventados de ciudades ni de personas: habla de su reino con tus propias palabras, ' +
-      'sin repetir la misma fórmula de una frase a otra.',
-  )
-  // el modelo copia literalmente cualquier ejemplo que le des: si ya ha tirado de
-  // "tu corte"/"tu capital", se le prohíbe explícitamente para que busque otra imagen
-  if (CORTE_RE.test(dichas[agente].at(-1) ?? '')) {
-    lineas.push('Ya has usado "tu corte" o "tu capital" en tu frase anterior: ahora usa otra imagen distinta.')
+  if (an.ronda != null) {
+    lineas.push(`Contexto del show (por si te sirve de tema): ronda ${an.ronda}${an.rondas ? ` de ${an.rondas}` : ''}.`)
   }
-  if (an.fase === 'final' && an.gana === false) {
-    lineas.push('Ojo: has PERDIDO. No puedes decir que has ganado ni repartir el mapa.')
-  }
+  lineas.push('FORMATO: sin comillas, sin acotaciones, sin tu nombre delante, un emoji como máximo.')
   return lineas.join('\n')
 }
 
+function construirInstruccion(tipo, ctx, ultimoRival, agente) {
+  const an = analizar(ctx)
+  const rival = agente === 'rojo' ? 'AZUL' : 'ROJO'
+  const p = PERSONAS[agente] ?? PERSONAS.rojo
+  const lineas = []
+
+  // 1. quién eres (dos líneas, sin listas de vocabulario)
+  lineas.push(`Eres ${p.nombre}, rey de ${p.reino}. ${p.caracter}.`)
+  lineas.push(`Hablas así: ${p.forma}.`)
+
+  // 2. el estado real de la partida: unidades, bajas, ciudades y resultado
+  lineas.push(`ESTADO REAL: ${situacion(ctx, an, { conCifras: true })}`)
+
+  // 3. lo que acaba de pasar en el mapa (los nombres de ciudad no están en situacion)
+  const eventos = []
+  if (an.ciudadArrasada) eventos.push(`le has arrasado ${an.ciudadArrasada}`)
+  if (an.ciudadPerdida) eventos.push(`te ha quitado ${an.ciudadPerdida}`)
+  if (eventos.length) lineas.push(`LO QUE ACABA DE PASAR: ${eventos.join('; ')}.`)
+
+  // 4. lo que dijo el rival. Se le da, pero NO se le obliga a contestarle.
+  const ur = String(ultimoRival ?? '').trim()
+  if (ur) lineas.push(`${rival} acaba de decir: "${ur.slice(0, 200)}"`)
+
+  // 5. el encargo: una frase, corta, reaccionando a lo que pasa
+  lineas.push(
+    'Di UNA sola frase corta (máximo 20 palabras) reaccionando a lo que acaba de pasar, como lo diría tu personaje. ' +
+      (ur ? 'Puedes contestarle o ignorarlo, lo que te salga natural. ' : '') +
+      'Si no hay nada interesante que decir, dilo simple. No inventes cifras: usa solo las del estado.',
+  )
+  lineas.push(
+    'No leas el marcador en voz alta ("X contra Y", "tengo N y tú M"): eso suena a contabilidad, no a una persona. ' +
+      'Y no reacciones siempre de la misma forma: unas veces amenaza, otras pregunta, otras contesta seco, otras se ríe.',
+  )
+  lineas.push('FORMATO: sin comillas, sin acotaciones, sin tu nombre delante, un emoji como máximo.')
+
+  // 6. anti-repetición mínima: no se fuerza la gracia, solo que no se calque
+  const previa = [...memoria[agente]].reverse().find(m => m.role === 'assistant')
+  if (previa?.content) {
+    lineas.push(`Tu frase anterior fue: "${String(previa.content).slice(0, 140)}". No la repitas ni empieces igual.`)
+  }
+  if (ultimoEmoji[agente]) lineas.push(`No repitas el emoji ${ultimoEmoji[agente]}.`)
+
+  // 7. prohibiciones que siguen vigentes (las que pidió el dueño)
+  lineas.push(
+    'PROHIBIDO: humor meta o filosófico, definiciones, "búsqueda aleatoria", "lo estudié", ' +
+      '"cordillera en el ojo", hablar de ti mismo en tercera persona.',
+  )
+  if (an.fase === 'final' && an.gana === false) {
+    lineas.push('Ojo: has PERDIDO. No digas que has ganado.')
+  }
+  return lineas.join('\n')
+}
 // ---------------------------------------------------------------- emojis
 
 const EMOJI_EMOCION = {
@@ -1663,9 +1575,9 @@ const EMOJI_AGENTE = {
 }
 
 function emojisDe(agente, emocion) {
-  const base = EMOJI_EMOCION[emocion] ?? EMOJI_EMOCION.pique
-  const propios = EMOJI_AGENTE[agente] ?? []
-  return [...new Set([...base, ...propios])]
+  // SOLO el repertorio de la emoción. Fusionar el del personaje metía 😤 en
+  // "pánico" y 📊🤓 en la cara de AZUL, que es justo el registro friki vetado.
+  return EMOJI_EMOCION[emocion] ?? EMOJI_EMOCION.pique
 }
 
 /** Emoción sin tipo de beat: para /emoji, que solo recibe el contexto. */
@@ -1763,21 +1675,46 @@ async function manejar(req, res) {
     const tipo = String(b.tipo ?? 'turno')
     const ctx = b.contexto ?? {}
     const an = analizar(ctx)
-    // el contador se incrementa ANTES de construir la instrucción: la decisión
-    // de "toca cifra" tiene que ser la misma en el prompt y en el validador
+
+    // ¿esto es una réplica al PÚBLICO o al rival del juego? La pasarela de chat
+    // (25-live-gateway.mjs) manda los mensajes de visitantes como
+    // `ultimoRival: "<nick> dice: <texto>"`, sin flag: se detecta ese formato
+    // para no tratar al espectador como si tuviera reino y ejército.
+    let publico = b.publico === true || b.esPublico === true || b.es_publico === true
+    let nickPublico = String(b.nickPublico ?? b.nick ?? '').trim()
+    let textoPublico = String(b.textoPublico ?? '').trim()
+    if (!publico) {
+      const m = String(b.ultimoRival ?? '').match(/^\s*([^:\n]{1,24}?)\s+dice:\s*([\s\S]+)$/i)
+      if (m) {
+        publico = true
+        nickPublico = nickPublico || m[1].trim()
+        textoPublico = textoPublico || m[2].trim()
+      }
+    }
+
+    // el contador se incrementa ANTES de construir la instrucción
     contador[agente] = (contador[agente] ?? 0) + 1
-    const instruccion = construirInstruccion(tipo, ctx, b.ultimoRival ?? '', agente)
+    const instruccion = publico
+      ? construirInstruccionPublica(agente, nickPublico, textoPublico, ctx)
+      : construirInstruccion(tipo, ctx, b.ultimoRival ?? '', agente)
     llamadas++
     const r = await pedirReplica(agente, instruccion, {
       maxTokens: Number(b.maxTokens ?? 120),
       temperatura: Number(b.temperatura ?? 0.9),
       analisis: an,
-      ultimoRival: b.ultimoRival ?? '',
+      ultimoRival: publico ? '' : (b.ultimoRival ?? ''),
       tipo,
+      publico,
     })
     if (!r.ok) {
       fallos++
-      return json(res, 200, { ok: false, error: r.error, tipo, diagnostico: diagnosticoDe(an, tipo, agente) })
+      return json(res, 200, {
+        ok: false,
+        error: r.error,
+        tipo,
+        publico,
+        diagnostico: diagnosticoDe(an, tipo, agente),
+      })
     }
     if (r.reparado) reparaciones++
     r.texto = desmuletillar(r.texto)
@@ -1789,6 +1726,8 @@ async function manejar(req, res) {
       ms: r.ms,
       cuenta: r.cuenta,
       tipo,
+      publico,
+      nickPublico: publico ? nickPublico : undefined,
       reparado: !!r.reparado,
       diagnostico: { ...diagnosticoDe(an, tipo, agente), problemas: r.problemas ?? [] },
     })

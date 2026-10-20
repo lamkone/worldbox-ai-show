@@ -235,6 +235,34 @@ function Get-EmojiDrama {
   return (New-Emoji -Agente $Agente)
 }
 
+# Emoji -> una de las cinco emociones que entiende el visor. Se resuelve por el
+# glifo (no por el marcador), porque el marcador mentia: un 🤬 salia como llanto.
+# Los codepoints van en hexadecimal para no depender de la codificacion del fichero.
+$script:EmocionPorCodepoint = @{}
+foreach ($cp in 0x1F621, 0x1F92C, 0x1F620, 0x1F4A2, 0x1F525, 0x1F624, 0x1F47F, 0x1F44A, 0x1F4A5) { $script:EmocionPorCodepoint[[int]$cp] = 'furia' }
+foreach ($cp in 0x1F631, 0x1F628, 0x1F630, 0x1F62C, 0x1F480, 0x2620, 0x1F47B, 0x1FAE3, 0x1F635, 0x1F633, 0x1F92F) { $script:EmocionPorCodepoint[[int]$cp] = 'panico' }
+foreach ($cp in 0x1F62D, 0x1F622, 0x1F4A7, 0x1F972, 0x1F63F, 0x1F61E, 0x1F614, 0x1FAE0, 0x1F625, 0x1F62A) { $script:EmocionPorCodepoint[[int]$cp] = 'llanto' }
+foreach ($cp in 0x1F389, 0x1F973, 0x1F60E, 0x1F4AA, 0x1F3C6, 0x1F451, 0x1F929, 0x2728, 0x1F680, 0x1F31F, 0x1F4AF) { $script:EmocionPorCodepoint[[int]$cp] = 'euforia' }
+foreach ($cp in 0x1F602, 0x1F923, 0x1F60F, 0x1F61C, 0x1F61D, 0x1F643, 0x1F606, 0x1F37F, 0x1F921, 0x1F0CF, 0x1F63A, 0x1F440, 0x1F609, 0x1F92A) { $script:EmocionPorCodepoint[[int]$cp] = 'burla' }
+
+<# Devuelve furia | llanto | burla | euforia | panico para un emoji suelto. #>
+function Get-EmocionDeEmoji {
+  param([string]$Emoji)
+  $s = [string]$Emoji
+  if (-not $s) { return 'burla' }
+  for ($i = 0; $i -lt $s.Length; $i++) {
+    $ch = $s[$i]
+    if ([char]::IsHighSurrogate($ch) -and ($i + 1) -lt $s.Length) {
+      $cp = [char]::ConvertToUtf32($ch, $s[$i + 1])
+      $i++
+    } else {
+      $cp = [int]$ch
+    }
+    if ($script:EmocionPorCodepoint.ContainsKey([int]$cp)) { return $script:EmocionPorCodepoint[[int]$cp] }
+  }
+  return 'burla'
+}
+
 <# El titular de la ronda, tipo prensa deportiva. $null si no hay cerebro. #>
 function Get-Titular {
   param([string]$Agente, $Contexto)

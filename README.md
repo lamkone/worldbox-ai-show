@@ -36,40 +36,38 @@ partida suena distinta, y por eso el que va perdiendo empieza a llorar en públi
 
 ## Cómo se ve
 
-El visor es una página de retransmisión: mapa en vídeo en el centro y dos columnas de
-drama a los lados.
+El visor es una **retransmisión deportiva**: el mapa del juego a pantalla completa y un
+HUD de cristal flotando encima. Nada de paneles de administración.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│  WorldBox · ROJO vs AZUL      Ronda 3/8   Marcador 728 · 693   EN DIRECTO │
-├────────────────────┬─────────────────────────────────────┬───────────────┤
-│  ROJO              │                                     │  AZUL         │
-│  Jepy Djomo        │                                     │  Los Azules   │
-│  412 unidades      │          EL MUNDO, EN VÍDEO         │  380 unidades │
-│  ▓▓▓▓▓▓░░░░  moral │     (capturas del juego en bucle)   │  ▓▓▓▓░░░░░    │
-│  puro drama        │                                     │  puro drama   │
-│  ┌──────────────┐  │                                     │  ┌──────────┐ │
-│  │"Tu reino es  │  │                                     │  │"Cuestión │ │
-│  │de cartón."   │  │                                     │  │de cálculo"│ │
-│  └──────────────┘  │  ┌────────────────────────────────┐ │  └──────────┘ │
-│  💀 😭 🔥          │  │ pista de guerra · los dos bandos│ │  📊 🤓       │
-│                    │  │ ROJO lanza la Bomba del Zar…    │ │               │
-├────────────────────┴──┴────────────────────────────────┴─┴───────────────┤
-│  histórico por ronda: gráfica de unidades + tabla de acciones y bajas     │
-└──────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│ WORLDBOX AI SHOW   RONDA 3/8   03:12   ROJO 728 · 693 AZUL   ● EN DIRECTO │
+├──────────────────────┬──────────────────────────────────┬─────────────────┤
+│ ROJO  Jepy Djomo     │                                  │ AZUL Los Azules │
+│ 412 unidades         │      EL MUNDO, A PANTALLA        │ 380 unidades    │
+│ MORAL ▓▓▓▓▓░░░       │      COMPLETA (vídeo en vivo)    │ MORAL ▓▓▓░░░░░  │
+│ "Tu reino es de      │                                  │ "Cuestión de    │
+│  cartón."  💀 😭 🔥  │                                  │  cálculo" 📊 🤓 │
+├──────────────────────┴─────────┬────────────────┴───────┴─────────────────┤
+│ PISTA DE GUERRA · ROJO lanza la Bomba del Zar… · AZUL desembarca…        │
+├───────────────────────────────────────────────────────────────────────────┤
+│ TENSIÓN 78%  CIUDADES 3-8  MAYOR GOLPE 748 AZUL  DURACIÓN 04:14  SEÑAL 18 │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 Qué te vas a encontrar:
 
 | Pieza | Qué hace |
 |---|---|
-| **Marcador** | Bajas causadas por cada bando, siempre a la vista en la cabecera. |
-| **Drama en dos columnas** | Un feed por IA, con burbujas que entran animadas: chat, bombas, tropas, resultados de turno. |
-| **Emojis que invaden la pantalla** | Cuando una IA suelta un emoji suelto, se hace grande y estalla. No es decoración: es el golpe emocional del turno. |
-| **Ticker de guerra** | La «pista de guerra»: lo que lanzan los dos bandos, fuera del chat. Se lee de un vistazo quién está apretando. |
-| **Titular de ronda** | Al cerrar cada ronda, un titular de prensa deportiva («ROJO arrasa tres ciudades y AZUL se queda mudo»). Lo escribe el director; con LLM, lo improvisa el modelo. |
-| **Barra de tensión y moral** | Dos números que resumen cómo va la velada. La moral sube al pegar y baja al recibir; la tensión sube con los golpes cruzados y baja cuando la partida se desequilibra. |
-| **Pantalla de victoria** | Ganador, unidades finales, bajas, mayor golpe, racha y duración, con lluvia de emojis. |
+| **Cabecera broadcast** | Marca, ronda, reloj de partida, marcador de bajas y chip EN DIRECTO (o FINAL / REPETICIÓN). |
+| **Dos paneles, solo lectura** | Un panel por IA con nombre, unidades, moral, stats de bajas/ciudades y su chat. Sin cajas de texto, sin apodos, sin visitantes: aquí solo hablan las dos IAs. |
+| **Mapa a pantalla completa** | El mundo ocupa el escenario; la cámara hace paneo y zoom con cada bomba (ida → 2,8 s de hold → vuelta). |
+| **Emojis que invaden la pantalla** | Cada emoji suelto se hace gigante y tiene animación propia según la emoción (furia, llanto, burla, euforia, pánico). No es decoración: es el golpe emocional del turno. |
+| **Impactos y sacudida** | Onda expansiva, escombros, chispas, flash y temblor de pantalla en el punto exacto del golpe. |
+| **Pista de guerra** | Ticker continuo con lo que lanzan los dos bandos, fuera del chat. |
+| **Titular de ronda** | Al cerrar cada ronda, un titular de prensa deportiva en la parte baja («ROJO arrasa tres ciudades y AZUL se queda mudo»). Lo escribe el director; con LLM, lo improvisa el modelo. |
+| **Splash de ronda y barra de tensión** | Transición grande al empezar cada ronda y dos números que resumen cómo va la velada: tensión y moral. |
+| **Pantalla de victoria** | Ganador, unidades finales, bajas, mayor golpe, racha y duración, con lluvia de confeti. |
 | **Modo cine** | Se queda solo la cabecera y el mapa, para ver el mundo sin distracciones. |
 
 ## Arquitectura
@@ -263,42 +261,69 @@ Y para comprobar que está vivo: `Invoke-RestMethod http://127.0.0.1:8766/health
 
 ## La repetición, sin WorldBox
 
-[`demo/index.html`](demo/index.html) es un reproductor autónomo: **un solo fichero HTML, sin dependencias,
-sin red**. Reproduce una partida a partir de un `show.json` con el formato del
-[contrato](docs/CONTRATO.md).
+[`demo/index.html`](demo/index.html) es el reproductor de repeticiones: reproduce una
+partida completa a partir de un `show.json` con el formato del
+[contrato](docs/CONTRATO.md). En GitHub Pages usa `demo/show.json` (la última partida
+real que publique `scripts/publish-show.ps1`); si no lo encuentra, cae a una partida de
+ejemplo embebida.
 
 - **Doble clic y ya está** (`file://`). Sin servidor, sin PowerShell, sin juego.
 - **Con otra partida:** `demo/index.html?show=ruta/a/tu-show.json`.
-- **En GitHub Pages:** el workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
-  publica `demo/` en cada push a `main` (o a `master`, por si el repo se publica con el
-  nombre de rama antiguo). La primera vez hay que ir a **Settings → Pages → Build and
-  deployment → Source: GitHub Actions**; a partir de ahí queda en
-  `https://<usuario>.github.io/worldbox-ai-show/` y se puede compartir con un enlace.
+- **Mismo motor de FX que el directo:** carga `../live/viewer-fx.js` (el motor v2 del
+  visor) y, si no está, usa su capa interna de respaldo. El lenguaje visual es el mismo
+  en el directo y en la repetición.
+- **Chip EN VIVO:** el botón de la cabecera enlaza siempre a `../live/`; `live.json` solo
+  decide si dice «EN VIVO AHORA» o «REPETICIÓN».
 - **Controles:** pausa (botón o `Espacio`), velocidad ×1 / ×2 / ×4 (botones o teclas
   `1` / `2` / `4`), saltar ±5 s con `←` / `→`, `R` reiniciar, `Fin` saltar al final y
   `Esc` cerrar la pantalla de victoria. La barra de progreso se puede arrastrar.
-  Reproduce con los `t_ms` reales de los eventos, comprimidos.
+- **Para capturas o enlaces directos:** `?auto=1` arranca solo y `?t=150` salta al
+  segundo 150. En Chrome headless añade `&motion=full` (si no, el navegador pide
+  `prefers-reduced-motion` y se pierden cámara y efectos).
 
-Dentro lleva una partida de ejemplo embebida (ROJO contra AZUL, con sus pullas, sus
-emojis y su ganador), así que funciona aunque no le pases nada.
+## El directo (EN VIVO)
+
+El modo directo enseña la partida **mientras se juega**. Son tres piezas:
+
+| Pieza | Qué hace |
+|---|---|
+| `scripts/25-live-gateway.mjs` | Gateway Node en `:8770` que unifica visor (`:8765`), vídeo (`:8767`), cerebro (`:8766`) y hub de chat en un solo origen. |
+| `scripts/26-live-publish.ps1` | Abre un túnel efímero de Cloudflare (`bin/cloudflared.exe`) hacia el gateway y escribe `live.json` con la URL pública. `-Parar` lo cierra y deja `en_vivo:false`. |
+| `live/` | La misma página del visor preparada para publicarse: lee `../live.json`, encuentra el túnel y se conecta sola. Si el túnel no responde, muestra «El directo está apagado ahora mismo» y un enlace a la repetición. |
+
+Para publicar todo de una vez (sincroniza el repo, genera `live/`, copia la última
+partida, abre túnel, hace commit y push, y verifica GitHub Pages):
+
+```powershell
+pwsh -File scripts/publish-show.ps1 -Mensaje "show: nueva partida" -ConDirecto -Verificar
+```
+
+Sin `-ConDirecto` publica solo la repetición y la página `/live/` con el directo apagado.
+El túnel de Cloudflare es **efímero**: si se cae, `/live/` avisa y enlaza a la repetición;
+vuelve a lanzar `26-live-publish.ps1` para abrir uno nuevo.
 
 ## Teclas y trucos
+
+Visor en vivo:
 
 | Tecla | Acción |
 |---|---|
 | `T` | Cambia el tema (oscuro / claro). |
-| `L` | Bloquea o desbloquea el layout (los tiradores de las columnas). |
+| `L` | Bloquea o desbloquea los tiradores de los paneles. |
 | `C` | Modo cine: solo cabecera y mapa. |
 | `F` | Pantalla completa. |
+| `M` | Sonido on/off. |
 | `R` | Restablece el layout y recarga. |
 | `Esc` | Cierra la pantalla de victoria. |
 
-- Los paneles laterales son **redimensionables**: arrastra cualquiera de los dos tiradores
-  y cambian los dos a la vez, con un tope para que el mapa siempre mande. El layout se
-  guarda en `localStorage`.
-- En móvil (por debajo de 1000 px) pasa a una columna con el mapa primero y los feeds con
-  scroll propio.
-- El mapa se refresca a 9-14 fps en las pruebas, porque cada captura del bridge tarda
+Repetición: `Espacio` pausa, `1` / `2` / `4` cambian la velocidad, `←` / `→` saltan ±5 s,
+`R` reinicia, `Fin` salta al final y `Esc` cierra la victoria.
+
+- Los paneles se pueden ajustar arrastrando sus tiradores (y `L` los bloquea); el ancho
+  se guarda en `localStorage`.
+- En móvil el layout se compacta: cabecera, mapa, titular y los dos paneles 50/50 con
+  chat, sin scroll horizontal.
+- El mapa se refresca a 9-18 fps en las pruebas, porque cada captura del bridge tarda
   42-128 ms. El resto de la interfaz va a 60 fps. No es un fallo: es el precio de pedir
   capturas al juego.
 
@@ -309,12 +334,17 @@ worldbox-ai-show/
 ├── README.md                  ← estás aquí
 ├── LICENSE                    ← MIT
 ├── .gitignore
+├── live.json                  ← estado del directo (en_vivo + URL del túnel)
 ├── docs/
 │   ├── CONTRATO.md            ← contrato de datos (state/feed/show)
 │   ├── ARQUITECTURA.md        ← flujo por turno, director, diálogo
 │   └── MONTAJE-WORLDBOX.md    ← BepInEx, mod, tokens, guardado, 401
 ├── demo/
-│   └── index.html             ← reproductor autónomo de repeticiones
+│   ├── index.html             ← reproductor de repeticiones
+│   └── show.json              ← última partida real publicada
+├── live/
+│   ├── index.html             ← visor del directo (generado por build-live-page.ps1)
+│   └── viewer-fx.js           ← motor de efectos v2
 ├── scripts/
 │   ├── 18-wb-multi.ps1        ← cliente del bridge (tokens, Invoke-WbAgent)
 │   ├── 19-wb-match.ps1        ← el motor
@@ -322,9 +352,15 @@ worldbox-ai-show/
 │   ├── 21-drama.ps1           ← drama procedural (fallback)
 │   ├── 22-director.ps1        ← moral, tensión, titulares, show.json
 │   ├── 23-drama-llm.mjs       ← cerebro LLM opcional (:8766)
+│   ├── 24-wb-stream.ps1       ← captura MJPEG del juego (:8767)
+│   ├── 25-live-gateway.mjs    ← gateway del directo (:8770)
+│   ├── 26-live-publish.ps1    ← abre/cierra el túnel y escribe live.json
 │   ├── viewer-live.html       ← plantilla del visor
+│   ├── viewer-fx.js           ← motor de efectos (fuente)
+│   ├── build-live-page.ps1    ← genera live/ desde la plantilla
+│   ├── publish-show.ps1       ← publica todo (sync, build, túnel, push, verifica)
 │   └── agents.example.json    ← plantilla de tokens
-└── .github/workflows/pages.yml← publica demo/ en GitHub Pages
+└── .github/workflows/pages.yml← publica demo/ en la raíz y live/ en /live/
 ```
 
 ## Si algo falla

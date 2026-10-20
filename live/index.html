@@ -2,1764 +2,2029 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="color-scheme" content="dark light">
-<title>WorldBox · ROJO vs AZUL</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b0f16'/%3E%3Ccircle cx='11' cy='16' r='5' fill='%23ff5d5d'/%3E%3Ccircle cx='21' cy='16' r='5' fill='%234d8dff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:,">
+<title>WorldBox AI Show · EN DIRECTO</title>
+<!--
+  WorldBox AI Show — visor v3 "broadcast" (SHOW-V3, docs/SHOW-V3.md).
+  El mapa es el escenario a pantalla completa; el HUD (marcador, paneles ROJO/AZUL,
+  pista de guerra, tensión, titular, splash, victoria) flota encima en glassmorphism.
+
+  Capas:
+    · viewer-live.html  -> layout, cámara del mapa, HUD y datos.
+    · viewer-fx.js      -> ÚNICA capa de efectos sobre el mapa (API v2 del contrato §3).
+      Si viewer-fx.js falta o es la v1, el visor sigue vivo (adaptador de compatibilidad).
+
+  Endpoints:
+    BASE + /state.json | /feed.json | /frame.jpg
+    STREAM_BASE + /stream.mjpg | /stats
+    Se aceptan window.__WB_ENDPOINTS__ = {base, streamBase} y la promesa opcional
+    window.__WB_ENDPOINTS_READY__ (se espera UNA vez, con tope de 1,8 s).
+    Si base === '' la página publicada no tiene túnel: modo "sin señal" limpio.
+
+  Parámetros de QA (solo para capturas):
+    ?qa=1   suprime el splash inicial y el takeover de victoria (para ver el layout).
+    ?tema=claro  arranca en tema claro.
+
+  Sin dependencias externas. Funciona con file:// y servido por HTTP.
+-->
 <style>
 /* ============================================================
-   Tokens
+   1. Tokens y base
    ============================================================ */
 :root{
-  --bg:#05070c;
-  --bg-2:#090d15;
-  --surface:rgba(255,255,255,.045);
-  --surface-2:rgba(255,255,255,.075);
-  --line:rgba(255,255,255,.085);
-  --line-2:rgba(255,255,255,.16);
-  --text:#eaeff7;
-  --muted:#8792a6;
-  --muted-2:#5d687b;
-  --rojo:#ff5d5d;
-  --rojo-2:#ff9a4d;
-  --azul:#4d8dff;
-  --azul-2:#38dcff;
-  --ok:#35d07f;
-  --r-lg:20px;
-  --r-md:14px;
-  --r-sm:10px;
-  --shadow:0 24px 60px -30px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.06);
-  --font:"Inter","SF Pro Display",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --r:#ff4757; --r-soft:#ff8b95; --r-deep:#b3212f;
+  --a:#3d9bff; --a-soft:#8cc6ff; --a-deep:#1d5fb8;
+  --oro:#ffcc4d;
+  --txt:#eef4ff; --dim:#9db0ca; --tenue:#6d819c;
+  --glass:rgba(9,15,26,.58);
+  --glass-fuerte:rgba(8,13,23,.84);
+  --line:rgba(255,255,255,.12);
+  --line-fuerte:rgba(255,255,255,.22);
+  --sombra:0 18px 50px rgba(0,0,0,.55);
+  --panel-w:318px; --cab-h:58px; --pie-h:80px; --radio:16px;
+  --blur:blur(18px) saturate(1.3);
 }
 body.light{
-  --bg:#eef1f7;
-  --bg-2:#f7f9fc;
-  --surface:rgba(255,255,255,.85);
-  --surface-2:rgba(255,255,255,.98);
-  --line:rgba(16,24,40,.10);
-  --line-2:rgba(16,24,40,.20);
-  --text:#101828;
-  --muted:#5b6779;
-  --muted-2:#8792a6;
-  --rojo:#e0343c;
-  --rojo-2:#f2762e;
-  --azul:#2563eb;
-  --azul-2:#0891b2;
-  --ok:#0f9d58;
-  --shadow:0 20px 50px -30px rgba(16,24,40,.45), inset 0 1px 0 rgba(255,255,255,.9);
+  --txt:#0d1726; --dim:#4c5f78; --tenue:#7b8ca3;
+  --glass:rgba(255,255,255,.66);
+  --glass-fuerte:rgba(255,255,255,.9);
+  --line:rgba(8,20,40,.14);
+  --line-fuerte:rgba(8,20,40,.24);
+  --sombra:0 18px 50px rgba(20,40,80,.22);
 }
-
-/* ============================================================
-   Base
-   ============================================================ */
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
+html,body{height:100%}
 body{
-  font-family:var(--font);
-  font-size:clamp(12px,.85vw,13.5px);
-  color:var(--text);
-  background:
-    radial-gradient(1100px 520px at 12% -8%, rgba(255,93,93,.16), transparent 62%),
-    radial-gradient(1100px 520px at 88% -8%, rgba(77,141,255,.20), transparent 62%),
-    radial-gradient(900px 700px at 50% 120%, rgba(56,220,255,.07), transparent 60%),
-    linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 45%, var(--bg) 100%);
-  background-attachment:fixed;
-  overflow:hidden;
-  -webkit-font-smoothing:antialiased;
+  margin:0;overflow:hidden;background:#04070d;color:var(--txt);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
 }
-body.light{background:linear-gradient(180deg,#f7f9fc,#eef1f7)}
-
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
-::-webkit-scrollbar-thumb:hover{background:var(--muted-2);background-clip:padding-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+b,strong{font-weight:800}
+::selection{background:rgba(61,155,255,.35)}
+.oculto{display:none!important}
 
 /* ============================================================
-   Shell
+   2. Escenario: mapa a pantalla completa
    ============================================================ */
-#app{position:fixed;inset:0;display:flex;flex-direction:column;min-height:0}
-
-/* ---------- cabecera ---------- */
-header{
-  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-  padding:12px clamp(12px,1.4vw,22px);
-  border-bottom:1px solid var(--line);
-  background:linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.01));
-  backdrop-filter:blur(18px) saturate(140%);
-  -webkit-backdrop-filter:blur(18px) saturate(140%);
-  z-index:5;
+#escenario{position:fixed;inset:0;z-index:0;overflow:hidden;background:#04070d}
+#frame{position:absolute;inset:0;width:100%;height:100%;display:block;background:#04070d;image-rendering:auto}
+#fx-host{position:absolute;inset:0;z-index:3;pointer-events:none;transition:z-index 0s}
+/* viñeta cinematográfica estática (decorado de escenario, no efecto de juego) */
+#escenario::after{
+  content:'';position:absolute;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(125% 95% at 50% 44%,transparent 42%,rgba(0,0,0,.62) 100%);
 }
-.brand{display:flex;align-items:center;gap:10px;min-width:0}
-.mark{
-  width:30px;height:30px;border-radius:9px;flex:0 0 auto;
-  background:linear-gradient(140deg,var(--rojo) 0%, #b04bff 50%, var(--azul) 100%);
-  box-shadow:0 6px 18px -6px rgba(176,75,255,.7), inset 0 1px 0 rgba(255,255,255,.45);
+#noframe{
+  position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;text-align:center;
+  color:var(--dim);padding:24px;pointer-events:none;
 }
-.brand h1{font-size:clamp(13px,1.05vw,15.5px);font-weight:700;margin:0;letter-spacing:-.01em;white-space:nowrap}
-.brand h1 span{color:var(--muted);font-weight:500}
-.chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-.chip{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:5px 11px;border-radius:99px;
-  border:1px solid var(--line);background:var(--surface);
-  font-size:clamp(10px,.78vw,11.5px);color:var(--muted);
-  white-space:nowrap;font-variant-numeric:tabular-nums;
-  transition:border-color .2s,color .2s,background .2s;
+#noframe b{font-size:clamp(16px,2vw,24px);letter-spacing:.34em;color:var(--txt);font-weight:900}
+#noframe span{font-size:12px;letter-spacing:.16em;text-transform:uppercase}
+#noframe i{
+  width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.16);
+  border-top-color:var(--a);animation:gira 1.1s linear infinite;display:block;
 }
-.chip b{color:var(--text);font-weight:650}
-.chip.live{color:var(--rojo);border-color:rgba(255,93,93,.42);background:rgba(255,93,93,.10)}
-.chip.live i{width:7px;height:7px;border-radius:50%;background:var(--rojo);animation:pulso 1.4s ease-in-out infinite}
-.chip.score{gap:7px;font-variant-numeric:tabular-nums}
-.chip.score b{font-size:12.5px;font-weight:750}
-.chip.score b.r{color:var(--rojo)} .chip.score b.a{color:var(--azul)}
-.chip.score i{color:var(--muted-2);font-style:normal}
-.chip.fin{color:var(--ok);border-color:rgba(53,208,127,.45);background:rgba(53,208,127,.10);font-weight:650}
-@keyframes pulso{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(255,93,93,.55)}50%{opacity:.55;box-shadow:0 0 0 6px rgba(255,93,93,0)}}
-.acciones{margin-left:auto;display:flex;gap:7px}
-.btn{
-  width:34px;height:34px;display:grid;place-items:center;
-  border-radius:11px;border:1px solid var(--line);background:var(--surface);
-  color:var(--text);font-size:14px;cursor:pointer;
-  transition:transform .15s,border-color .2s,background .2s,box-shadow .2s;
-}
-.btn:hover{border-color:var(--line-2);background:var(--surface-2);transform:translateY(-1px)}
-.btn:active{transform:translateY(0) scale(.96)}
-.btn.on{border-color:rgba(53,208,127,.5);color:var(--ok);box-shadow:0 0 0 3px rgba(53,208,127,.10)}
-
-#aviso{
-  display:none;margin:10px clamp(12px,1.4vw,22px) 0;padding:11px 14px;
-  border-radius:var(--r-md);border:1px solid rgba(255,93,93,.4);
-  background:rgba(255,93,93,.09);font-size:12.5px;color:var(--text);
-}
-#aviso code{background:var(--surface-2);padding:2px 6px;border-radius:6px;font-size:11.5px}
+@keyframes gira{to{transform:rotate(360deg)}}
 
 /* ============================================================
-   Rejilla principal
+   3. Cabecera (glass)
    ============================================================ */
-#wrap{
-  flex:1 1 auto;display:flex;gap:14px;
-  padding:14px clamp(12px,1.4vw,22px) 0;
-  min-height:0;min-width:0;overflow:hidden;
+#cabecera{
+  position:fixed;top:10px;left:12px;right:12px;z-index:30;
+  height:var(--cab-h);display:flex;align-items:center;gap:16px;padding:0 14px;
+  border-radius:14px;border:1px solid var(--line);background:var(--glass);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:var(--sombra);
+  transition:opacity .35s ease,transform .35s ease;
 }
-aside,main{
-  min-height:0;min-width:0;display:flex;flex-direction:column;
-  background:linear-gradient(180deg, var(--surface), rgba(255,255,255,.012));
-  border:1px solid var(--line);border-radius:var(--r-lg);
-  box-shadow:var(--shadow);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  overflow:hidden;position:relative;
+.marca{display:flex;align-items:center;gap:10px;min-width:0}
+.marca .logo{
+  width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
+  font-size:16px;color:#fff;flex:0 0 auto;
+  background:linear-gradient(135deg,var(--r) 0%,#8b1d2b 46%,#123a6b 54%,var(--a) 100%);
+  box-shadow:0 0 20px rgba(255,71,87,.35),0 0 20px rgba(61,155,255,.25);
 }
-aside{flex:0 0 auto;width:var(--lado,330px);transition:width .12s linear}
-main{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
-aside::before{
-  content:"";position:absolute;inset:0 0 auto 0;height:2px;
-  background:linear-gradient(90deg,transparent,var(--rojo),transparent);opacity:.85;
-}
-#azul::before{background:linear-gradient(90deg,transparent,var(--azul),transparent)}
-
-/* ---------- equipo ---------- */
-.team{padding:14px 16px 12px;border-bottom:1px solid var(--line);position:relative;overflow:hidden}
-.team::after{
-  content:"";position:absolute;width:180px;height:180px;right:-60px;top:-90px;border-radius:50%;
-  background:radial-gradient(circle, rgba(255,93,93,.22), transparent 70%);pointer-events:none;
-}
-#azul .team::after{background:radial-gradient(circle, rgba(77,141,255,.24), transparent 70%)}
-.team-row{display:flex;align-items:center;gap:8px;min-width:0}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--rojo);box-shadow:0 0 12px var(--rojo);flex:0 0 auto}
-#azul .dot{background:var(--azul);box-shadow:0 0 12px var(--azul)}
-.tname{font-size:clamp(10.5px,.8vw,11.5px);font-weight:750;letter-spacing:.14em;text-transform:uppercase;color:var(--rojo)}
-#azul .tname{color:var(--azul)}
-.tking{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.units{display:flex;align-items:baseline;gap:7px;margin-top:8px}
-.units b{
-  font-size:clamp(26px,2.4vw,34px);font-weight:800;line-height:1;
-  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
-  background:linear-gradient(180deg,var(--text),rgba(234,239,247,.62));
+.marca .marca-txt{display:flex;flex-direction:column;line-height:1.05;min-width:0}
+.marca .marca-txt small{font-size:8.5px;letter-spacing:.3em;color:var(--dim);font-weight:700}
+.marca .marca-txt strong{
+  font-size:14px;letter-spacing:.12em;font-weight:900;white-space:nowrap;
+  background:linear-gradient(90deg,#fff 0%,#cfe0ff 55%,#9db8e6 100%);
   -webkit-background-clip:text;background-clip:text;color:transparent;
 }
-.units span{font-size:11px;color:var(--muted)}
-.meta{margin-top:3px;font-size:11px;color:var(--muted-2)}
-.share{height:4px;border-radius:99px;background:var(--surface-2);margin-top:11px;overflow:hidden}
-.share i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--rojo-2),var(--rojo));transition:width .6s cubic-bezier(.2,.8,.2,1)}
-#azul .share i{background:linear-gradient(90deg,var(--azul-2),var(--azul))}
-
-/* ---------- kpis ---------- */
-.kpis{display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:12px 14px;border-bottom:1px solid var(--line)}
-.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);padding:7px 9px;min-width:0}
-.kpi span{display:block;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.kpi b{display:block;margin-top:2px;font-size:clamp(13px,1.15vw,15px);font-weight:700;font-variant-numeric:tabular-nums}
-
-/* ---------- feed ---------- */
-.feed-h{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
-  padding:9px 16px;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted-2);border-bottom:1px solid var(--line);
-  background:linear-gradient(180deg, rgba(255,255,255,.03), transparent);
+body.light .marca .marca-txt strong{background:linear-gradient(90deg,#0d1726,#3b5a86);-webkit-background-clip:text;background-clip:text}
+.hud-centro{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);
+  font-size:10px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase;white-space:nowrap;
 }
-.feed-h .cnt{font-variant-numeric:tabular-nums;letter-spacing:0;text-transform:none;color:var(--muted)}
-.feed{flex:1;overflow:auto;padding:10px 12px 16px;display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth}
-
-.ev{font-size:12.5px;line-height:1.45}
-.ev.entra{animation:sube .45s cubic-bezier(.2,.8,.2,1)}
-@keyframes sube{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-.ev.chat{display:flex;gap:9px;align-items:flex-start}
-.av{
-  width:26px;height:26px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;
-  font-size:11px;font-weight:800;color:#fff;
-  background:linear-gradient(140deg,var(--rojo),var(--rojo-2));
-  box-shadow:0 4px 12px -4px rgba(255,93,93,.7);
+.chip b{color:var(--txt);font-weight:900;letter-spacing:.05em}
+.chip.reloj b{font-variant-numeric:tabular-nums}
+.marcador{
+  display:flex;align-items:center;gap:10px;padding:3px 14px;border-radius:12px;
+  background:rgba(255,255,255,.05);border:1px solid var(--line);flex:0 0 auto;
 }
-.ev.chat.a .av{background:linear-gradient(140deg,var(--azul),var(--azul-2));box-shadow:0 4px 12px -4px rgba(77,141,255,.7)}
-.bub{background:var(--surface);border:1px solid var(--line);border-radius:13px;border-top-left-radius:5px;padding:7px 11px;min-width:0}
-.ev.chat.a .bub{border-top-left-radius:13px;border-top-right-radius:5px}
-.bub .tx{color:var(--text)}
-.bub .mt{margin-top:3px;font-size:9.5px;color:var(--muted-2);font-variant-numeric:tabular-nums}
-.to{
-  font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
-  border:1px solid var(--line);border-radius:99px;padding:1px 6px;margin-left:5px;white-space:nowrap;
+.marcador .m{display:flex;flex-direction:column;align-items:center;line-height:1}
+.marcador .m b{font-size:25px;font-weight:900;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.marcador .m small{font-size:8px;letter-spacing:.2em;color:var(--dim);margin-top:3px;font-weight:800}
+.marcador .r b{color:var(--r-soft);text-shadow:0 0 20px rgba(255,71,87,.6)}
+.marcador .a b{color:var(--a-soft);text-shadow:0 0 20px rgba(61,155,255,.6)}
+.marcador .sep{color:var(--tenue);font-size:17px;margin-top:-6px}
+.acciones{margin-left:auto;display:flex;align-items:center;gap:6px;flex:0 0 auto}
+.btn{
+  width:32px;height:32px;border-radius:9px;display:grid;place-items:center;font-size:14px;
+  background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--txt);
+  transition:background .18s ease,transform .18s ease,border-color .18s ease;
 }
-
-/* ---------- drama en el chat ---------- */
-.ev.chat.tono-llanto .bub{border-color:rgba(77,141,255,.42);background:rgba(77,141,255,.10);animation:llorar 1.3s ease-in-out 3}
-.ev.chat.tono-llanto .av{filter:saturate(.8)}
-@keyframes llorar{0%,100%{transform:translateX(0)}25%{transform:translateX(-1.6px)}75%{transform:translateX(1.6px)}}
-.ev.chat.tono-nervios .bub{border-color:rgba(255,190,90,.45);animation:nervios .55s ease-in-out 5}
-@keyframes nervios{0%,100%{transform:translate(0,0)}50%{transform:translate(1.2px,-1.2px)}}
-.ev.chat.tono-burla .bub{border-color:rgba(255,93,93,.4);animation:burla 1.1s ease-in-out 2}
-@keyframes burla{0%,100%{transform:rotate(0)}30%{transform:rotate(-1.4deg)}65%{transform:rotate(1.4deg)}}
-.ev.chat.tono-golpe .bub{border-color:rgba(255,93,93,.6);background:rgba(255,93,93,.10);animation:impacto .55s cubic-bezier(.2,.8,.2,1) 1}
-@keyframes impacto{0%{transform:scale(1.07)}100%{transform:scale(1)}}
-/* ---------- emoji suelto: mensaje propio, grande y animado ---------- */
-.ev.chat.emoji-solo .bub{background:none;border:0;padding:0;box-shadow:none}
-.ev.chat.emoji-solo .em{display:inline-block;font-size:42px;line-height:1.05;filter:drop-shadow(0 8px 18px rgba(0,0,0,.5))}
-.ev.chat.emoji-solo .mt{display:none}
-.em.a1{animation:emSaltito 1.1s ease-in-out infinite}
-.em.a2{animation:emTemblor .5s ease-in-out infinite}
-.em.a3{animation:emGiro 2.4s linear infinite}
-.em.a4{animation:emLatido 1s ease-in-out infinite}
-.em.a5{animation:emBalanceo 1.4s ease-in-out infinite}
-.em.a6{animation:emFlota 2.2s ease-in-out infinite}
-@keyframes emSaltito{0%,100%{transform:translateY(0) scale(1)}45%{transform:translateY(-8px) scale(1.07)}}
-@keyframes emTemblor{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(-2px,1px) rotate(-5deg)}75%{transform:translate(2px,-1px) rotate(5deg)}}
-@keyframes emGiro{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
-@keyframes emLatido{0%,100%{transform:scale(1)}35%{transform:scale(1.24)}60%{transform:scale(.95)}}
-@keyframes emBalanceo{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(10deg)}}
-@keyframes emFlota{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-6px) rotate(3deg)}}
-
-/* ---------- pista de guerra compartida (bajo el mapa) ---------- */
-#eventos{
-  flex:0 0 auto;margin:0 12px 12px;display:none;flex-direction:column;gap:5px;padding:9px 13px;
-  border:1px solid var(--line);border-radius:14px;background:var(--surface);
-  backdrop-filter:blur(10px);max-height:118px;overflow:hidden;
+.btn:hover{background:rgba(255,255,255,.15);transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.95)}
+.btn.on{background:linear-gradient(135deg,rgba(255,71,87,.38),rgba(61,155,255,.38));border-color:var(--line-fuerte)}
+.chip-live{
+  display:inline-flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:999px;
+  background:linear-gradient(135deg,rgba(255,71,87,.30),rgba(255,71,87,.10));
+  border:1px solid rgba(255,71,87,.55);color:#ffd9dc;
+  font-size:10px;font-weight:900;letter-spacing:.17em;white-space:nowrap;flex:0 0 auto;
 }
-#eventos.on{display:flex}
-#eventos .ev-h{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);display:flex;justify-content:space-between}
-#eventos .fila-ev{display:flex;gap:8px;align-items:baseline;font-size:12px;color:var(--muted);animation:sube .4s cubic-bezier(.2,.8,.2,1)}
-#eventos .fila-ev .q{font-size:13px;flex:0 0 auto}
-#eventos .fila-ev .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#eventos .fila-ev.r .tx{color:var(--rojo)}
-#eventos .fila-ev.a .tx{color:var(--azul)}
-#eventos .fila-ev.ron .tx{color:var(--text);font-weight:600}
-#eventos .fila-ev .h{font-size:9.5px;color:var(--muted-2);flex:0 0 auto;font-variant-numeric:tabular-nums}
-
-/* escribiendo… */
-.typing{display:none;gap:3px;align-items:center;margin-left:6px}
-.typing.on{display:inline-flex}
-.typing i{width:4px;height:4px;border-radius:50%;background:currentColor;animation:teclea 1s ease-in-out infinite}
-.typing i:nth-child(2){animation-delay:.15s}
-.typing i:nth-child(3){animation-delay:.3s}
-@keyframes teclea{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-2px)}}
-
-/* ---------- emojis que vuelan sobre el mapa ---------- */
-.emoji-vuela{
-  position:absolute;z-index:6;font-size:34px;pointer-events:none;user-select:none;
-  filter:drop-shadow(0 6px 12px rgba(0,0,0,.65));
-  animation:vuela 1.7s cubic-bezier(.2,.7,.3,1) forwards;
+.chip-live i{width:8px;height:8px;border-radius:50%;background:var(--r);animation:pulso 1.6s ease-out infinite}
+.chip-live.fin{background:linear-gradient(135deg,rgba(255,204,77,.28),rgba(255,204,77,.10));border-color:rgba(255,204,77,.55);color:#ffe9b0}
+.chip-live.fin i{background:var(--oro);animation:none}
+.chip-live.sin{background:rgba(255,255,255,.07);border-color:var(--line);color:var(--dim)}
+.chip-live.sin i{background:var(--tenue);animation:none}
+@keyframes pulso{
+  0%{box-shadow:0 0 0 0 rgba(255,71,87,.65)}
+  70%{box-shadow:0 0 0 9px rgba(255,71,87,0)}
+  100%{box-shadow:0 0 0 0 rgba(255,71,87,0)}
 }
-@keyframes vuela{
-  0%{opacity:0;transform:translateY(14px) scale(.55) rotate(-6deg)}
-  18%{opacity:1}
-  100%{opacity:0;transform:translateY(-78px) scale(1.4) rotate(9deg)}
-}
-
-/* ---------- emoji que invade la pantalla ---------- */
-.invasor{
-  position:fixed;left:50%;top:50%;z-index:70;pointer-events:none;user-select:none;
-  font-size:min(46vw,420px);line-height:1;transform:translate(-50%,-50%);
-  animation:invade 1.9s cubic-bezier(.2,.9,.2,1) forwards;
-}
-.invasor.r{filter:drop-shadow(0 0 70px rgba(255,93,93,.55)) drop-shadow(0 30px 80px rgba(0,0,0,.6))}
-.invasor.a{filter:drop-shadow(0 0 70px rgba(77,141,255,.55)) drop-shadow(0 30px 80px rgba(0,0,0,.6))}
-@keyframes invade{
-  0%{opacity:0;transform:translate(-50%,-50%) scale(.2) rotate(-14deg)}
-  20%{opacity:1;transform:translate(-50%,-50%) scale(1.08) rotate(4deg)}
-  36%{transform:translate(-50%,-50%) scale(1) rotate(0)}
-  100%{opacity:0;transform:translate(-50%,-50%) scale(1.28) rotate(7deg)}
-}
-/* furia: entra temblando y se va a golpes */
-.invasor.furia{animation:invadeFuria 2.1s cubic-bezier(.2,.9,.2,1) forwards}
-@keyframes invadeFuria{
-  0%{opacity:0;transform:translate(-50%,-50%) scale(.3) rotate(-18deg)}
-  14%{opacity:1;transform:translate(-50%,-50%) scale(1.15) rotate(6deg)}
-  24%{transform:translate(-52%,-50%) scale(1.11) rotate(-6deg)}
-  34%{transform:translate(-48%,-50%) scale(1.13) rotate(6deg)}
-  44%{transform:translate(-52%,-50%) scale(1.1) rotate(-5deg)}
-  56%{transform:translate(-50%,-50%) scale(1.08) rotate(0)}
-  100%{opacity:0;transform:translate(-50%,-50%) scale(1.38) rotate(9deg)}
-}
-/* llanto: cae desde arriba y se hunde */
-.invasor.llanto{animation:invadeLlanto 2.4s cubic-bezier(.3,.7,.3,1) forwards}
-@keyframes invadeLlanto{
-  0%{opacity:0;transform:translate(-50%,-95%) scale(.45) rotate(-8deg)}
-  18%{opacity:1;transform:translate(-50%,-46%) scale(1.06) rotate(3deg)}
-  40%{transform:translate(-50%,-55%) scale(1) rotate(-2deg)}
-  62%{transform:translate(-50%,-47%) scale(1.04) rotate(1deg)}
-  100%{opacity:0;transform:translate(-50%,-22%) scale(1.24) rotate(0)}
-}
-/* burla: bota de un lado a otro */
-.invasor.burla{animation:invadeBurla 2s cubic-bezier(.2,.9,.2,1) forwards}
-@keyframes invadeBurla{
-  0%{opacity:0;transform:translate(-50%,-50%) scale(.25) rotate(-16deg)}
-  16%{opacity:1;transform:translate(-50%,-58%) scale(1.18) rotate(14deg)}
-  32%{transform:translate(-50%,-42%) scale(1) rotate(-12deg)}
-  48%{transform:translate(-50%,-56%) scale(1.12) rotate(10deg)}
-  64%{transform:translate(-50%,-46%) scale(1) rotate(-6deg)}
-  100%{opacity:0;transform:translate(-50%,-50%) scale(1.34) rotate(18deg)}
-}
-/* euforia: salta hacia arriba con todo */
-.invasor.euforia{animation:invadeEuforia 2.2s cubic-bezier(.2,.9,.2,1) forwards}
-@keyframes invadeEuforia{
-  0%{opacity:0;transform:translate(-50%,-50%) scale(.12) rotate(0)}
-  12%{opacity:1;transform:translate(-50%,-62%) scale(1.22) rotate(-5deg)}
-  26%{transform:translate(-50%,-44%) scale(1.04) rotate(5deg)}
-  42%{transform:translate(-50%,-60%) scale(1.12) rotate(-3deg)}
-  100%{opacity:0;transform:translate(-50%,-78%) scale(1.45) rotate(0)}
-}
-/* pánico: vibra y se encoge, como si no supiera dónde meterse */
-.invasor.panico{animation:invadePanico 2s linear forwards}
-@keyframes invadePanico{
-  0%{opacity:0;transform:translate(-50%,-50%) scale(.25)}
-  12%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}
-  20%{transform:translate(-51.6%,-50%) scale(1.04)}
-  28%{transform:translate(-48.4%,-50%) scale(1.06)}
-  36%{transform:translate(-51.6%,-50%) scale(1.03)}
-  44%{transform:translate(-48.4%,-50%) scale(1.06)}
-  52%{transform:translate(-51.2%,-50%) scale(1.04)}
-  60%{transform:translate(-48.8%,-50%) scale(1.05)}
-  100%{opacity:0;transform:translate(-50%,-50%) scale(.86)}
-}
-html:not(.movimiento) .invasor{animation-duration:.5s!important}
-@media (prefers-reduced-motion:reduce){.invasor{animation-duration:.5s!important}}
-
-/* ---------- lluvia de emojis al ganar ---------- */
-#victoria .lluvia{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
-.emoji-cae{position:absolute;top:-10%;font-size:26px;animation:cae linear forwards}
-@keyframes cae{to{transform:translateY(120vh) rotate(260deg)}}
-.ev.act{display:flex;gap:9px;align-items:flex-start;color:var(--muted)}
-.ico{
-  width:24px;height:24px;border-radius:8px;flex:0 0 auto;display:grid;place-items:center;font-size:12px;
-  background:var(--surface-2);border:1px solid var(--line);
-}
-.ev.act .tx{padding-top:3px}
-.ev.round{
-  margin:8px 0 4px;padding:9px 12px;border-radius:var(--r-sm);
-  background:linear-gradient(90deg, rgba(53,208,127,.10), rgba(53,208,127,.02));
-  border:1px solid rgba(53,208,127,.22);color:var(--text);font-size:12px;
-}
-.ev.round b{color:var(--ok)}
-.ev.sys{padding:7px 11px;border-radius:var(--r-sm);background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:12px}
-
-/* separador de ronda */
-.div{display:flex;align-items:center;gap:10px;margin:12px 2px 6px;color:var(--muted-2);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase}
-.div::before,.div::after{content:"";height:1px;flex:1;background:var(--line)}
-
-/* ---------- mapa ---------- */
-.mapa{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:
-  radial-gradient(circle at 50% 45%, rgba(77,141,255,.10), transparent 62%), #04060a}
-body.light .mapa{background:radial-gradient(circle at 50% 45%, rgba(37,99,235,.08), transparent 62%), #e9edf4}
-#fondo{position:absolute;inset:-26px;width:calc(100% + 52px);height:calc(100% + 52px);object-fit:cover;
-  filter:blur(30px) saturate(1.2) brightness(.45);opacity:.9;z-index:0;pointer-events:none;display:none}
-body.light #fondo{filter:blur(30px) saturate(1.1) brightness(1.05);opacity:.7}
-#frame{position:relative;z-index:1;width:100%;height:100%;object-fit:contain;display:none}
-#noframe{position:absolute;color:var(--muted);font-size:12.5px;letter-spacing:.02em}
-.hud{position:absolute;inset:12px 12px auto 12px;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;gap:8px}
-.hud .chip{background:rgba(5,7,12,.55);backdrop-filter:blur(10px);border-color:var(--line-2)}
-body.light .hud .chip{background:rgba(255,255,255,.75)}
-.hud .der{display:flex;gap:7px}
-
-/* ---------- histórico ---------- */
-#bottom{
-  flex:0 0 auto;height:var(--bh,210px);margin:14px clamp(12px,1.4vw,22px) clamp(12px,1.4vw,22px);
-  display:flex;flex-direction:column;overflow:hidden;min-height:0;
-  background:linear-gradient(180deg, var(--surface), rgba(255,255,255,.012));
-  border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);
-  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-}
-#bottom .scroll{flex:1;overflow:auto}
-table.hist{width:100%;border-collapse:separate;border-spacing:0;font-size:12px}
-table.hist th,table.hist td{padding:8px 14px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-table.hist th{
-  position:sticky;top:0;z-index:2;
-  font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);
-  background:rgba(10,14,22,.92);backdrop-filter:blur(10px);
-  border-bottom:1px solid var(--line);
-}
-body.light table.hist th{background:rgba(247,249,252,.95)}
-table.hist th:first-child,table.hist td:first-child{text-align:left}
-table.hist td{border-bottom:1px solid var(--line);color:var(--muted)}
-table.hist tbody tr{transition:background .18s}
-table.hist tbody tr:hover{background:var(--surface)}
-table.hist td.ronda{font-weight:750;color:var(--text);font-size:13px}
-table.hist td.acc{text-align:left;max-width:430px;overflow:hidden;text-overflow:ellipsis;font-weight:600}
-table.hist td.acc.r{color:var(--rojo)}
-table.hist td.acc.a{color:var(--azul)}
-table.hist td.num{font-variant-numeric:tabular-nums;color:var(--text)}
-.mini{display:inline-block;width:46px;height:5px;border-radius:3px;background:var(--surface-2);margin-right:8px;vertical-align:middle;overflow:hidden}
-.mini i{display:block;height:100%;border-radius:3px;transition:width .4s cubic-bezier(.2,.8,.2,1)}
-.mini.r i{background:linear-gradient(90deg,rgba(255,93,93,.55),var(--rojo))}
-.mini.a i{background:linear-gradient(90deg,rgba(77,141,255,.55),var(--azul))}
-.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;border:1px solid}
-.pill.r{color:var(--rojo);border-color:rgba(255,93,93,.4);background:rgba(255,93,93,.1)}
-.pill.a{color:var(--azul);border-color:rgba(77,141,255,.42);background:rgba(77,141,255,.1)}
-.pill.e{color:var(--muted);border-color:var(--line-2);background:var(--surface)}
-
-/* ---------- gráfica de evolución ---------- */
-#bottom .cols{flex:1;display:flex;min-height:0}
-#bottom .graf{flex:0 0 38%;min-width:260px;padding:6px 16px 10px;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-#bottom .graf .titulo{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2);margin-bottom:2px}
-#graf{flex:1;width:100%;min-height:0;display:block}
-#graf .eje{stroke:var(--line);stroke-width:1}
-#graf .rot{fill:var(--muted-2);font-size:9px;font-family:inherit}
-#graf .lr{fill:none;stroke:var(--rojo);stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
-#graf .la{fill:none;stroke:var(--azul);stroke-width:2.4;stroke-linejoin:round;stroke-linecap:round}
-#graf .ar{fill:url(#gRojo)}
-#graf .aa{fill:url(#gAzul)}
-#graf .pr{fill:var(--rojo)}
-#graf .pa{fill:var(--azul)}
-#graf .leyenda{display:flex;gap:14px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)}
-#graf .leyenda i{display:inline-block;width:14px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
-#graf .leyenda .r i{background:var(--rojo)}
-#graf .leyenda .a i{background:var(--azul)}
-
-/* ---------- pantalla de victoria ---------- */
-#victoria{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;padding:18px;
-  background:rgba(3,5,9,.74);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
-#victoria.on{display:flex;animation:aparece .3s ease}
-@keyframes aparece{from{opacity:0}to{opacity:1}}
-.vic{position:relative;z-index:2;width:min(540px,100%);max-height:92vh;overflow:auto;border-radius:24px;border:1px solid var(--line-2);
-  background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015)),var(--surface-2);
-  padding:26px 28px 22px;box-shadow:0 30px 90px rgba(0,0,0,.6);text-align:center;animation:sube2 .35s cubic-bezier(.2,.8,.2,1)}
-@keyframes sube2{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
-.vic .copa{font-size:40px;line-height:1}
-.vic h2{margin:10px 0 4px;font-size:clamp(22px,4vw,30px);letter-spacing:-.02em}
-.vic .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
-.vic .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;text-align:left}
-.vic .caja{border:1px solid var(--line);border-radius:15px;padding:11px 13px;background:var(--surface)}
-.vic .caja span{display:block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2);margin-bottom:3px}
-.vic .caja b{font-size:17px;font-variant-numeric:tabular-nums}
-.vic .caja b.r{color:var(--rojo)} .vic .caja b.a{color:var(--azul)}
-.vic .cerrar{width:100%;padding:12px;border-radius:13px;border:1px solid var(--line-2);background:var(--surface);
-  color:var(--text);font:inherit;font-weight:650;font-size:14px;cursor:pointer;transition:background .18s}
-.vic .cerrar:hover{background:var(--surface-2)}
-
-/* ---------- modo cine ---------- */
-body.cine aside,body.cine #bottom,body.cine .sp{display:none!important}
-body.cine #wrap{padding:0}
-body.cine main{border-radius:0;border-color:transparent}
-body.cine .mapa{background:#000}
-
-/* ---------- tiradores ---------- */
-.sp{flex:0 0 auto;background:transparent;touch-action:none;position:relative}
-.sp.v{flex-basis:8px;width:8px;cursor:col-resize}
-.sp.h{flex-basis:8px;height:8px;margin:0 clamp(12px,1.4vw,22px);cursor:row-resize}
-.sp::after{content:"";position:absolute;inset:0;margin:auto;border-radius:99px;background:var(--line);opacity:0;transition:opacity .2s}
-.sp.v::after{width:3px}
-.sp.h::after{height:3px}
-.sp:hover::after{opacity:1;background:var(--muted-2)}
-body.locked .sp{visibility:hidden}
 
 /* ============================================================
-   Responsive
+   4. Paneles laterales ROJO / AZUL
    ============================================================ */
-@media (max-width:1240px){
-  aside{width:var(--lado,300px)}
-  table.hist td.acc{max-width:280px}
+.panel{
+  position:fixed;top:calc(var(--cab-h) + 20px);bottom:calc(var(--pie-h) + 20px);
+  width:var(--panel-w);z-index:20;display:flex;flex-direction:column;gap:9px;
+  padding:13px 13px 11px;border-radius:var(--radio);
+  background:var(--glass);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
+  border:1px solid var(--line);box-shadow:var(--sombra);overflow:hidden;
+  transition:opacity .35s ease,transform .35s ease;
 }
-@media (max-width:1000px){
-  body{overflow:auto}
-  #app{position:static;height:auto;min-height:100vh}
-  #wrap{flex-direction:column;overflow:visible;padding-bottom:0}
-  main{order:-1;min-height:min(58vw,420px)}
-  aside{width:auto!important;min-height:0}
-  .feed{max-height:320px}
-  .sp{display:none}
-  #bottom{height:auto;max-height:420px;margin-top:14px}
-  #bottom .scroll{max-height:340px}
-  header{position:sticky;top:0}
+#p-rojo{left:12px;border-top:2px solid var(--r);box-shadow:var(--sombra),0 -1px 26px rgba(255,71,87,.22)}
+#p-azul{right:12px;border-top:2px solid var(--a);box-shadow:var(--sombra),0 -1px 26px rgba(61,155,255,.22)}
+.panel.sacudida{animation:sacude .42s cubic-bezier(.36,.07,.19,.97)}
+@keyframes sacude{
+  0%,100%{transform:translateX(0)}
+  18%{transform:translateX(-4px)}
+  38%{transform:translateX(4px)}
+  58%{transform:translateX(-3px)}
+  78%{transform:translateX(2px)}
 }
-@media (max-width:640px){
-  .brand h1 span{display:none}
-  .chips .chip.oculto{display:none}
-  .kpis{grid-template-columns:1fr 1fr}
-  main{min-height:64vw}
-  table.hist th,table.hist td{padding:7px 10px}
-  table.hist td.acc{max-width:180px}
-  .movil-off{display:none}
-  .units b{font-size:30px}
+.p-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 auto}
+.p-lado{font-size:10px;letter-spacing:.26em;font-weight:900;color:var(--r-soft)}
+#p-azul .p-lado{color:var(--a-soft)}
+.p-dot{width:8px;height:8px;border-radius:50%;background:var(--r);box-shadow:0 0 12px var(--r)}
+#p-azul .p-dot{background:var(--a);box-shadow:0 0 12px var(--a)}
+.p-nombre{
+  font-size:19px;font-weight:900;line-height:1.1;letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;
 }
-</style>
-<style id="show-v2">
+.p-unid{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
+.p-unid b{font-size:26px;font-weight:900;line-height:1;color:var(--r-soft)}
+#p-azul .p-unid b{color:var(--a-soft)}
+.p-unid span{font-size:9px;letter-spacing:.18em;color:var(--dim);text-transform:uppercase}
+.p-moral{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.p-moral .et{font-size:8.5px;letter-spacing:.18em;color:var(--dim);font-weight:800;white-space:nowrap}
+.p-moral .barra{flex:1;height:7px;border-radius:999px;background:rgba(255,255,255,.10);overflow:hidden;min-width:30px}
+.p-moral .barra i{display:block;height:100%;width:0;border-radius:999px;transition:width .55s cubic-bezier(.2,.8,.2,1);background:linear-gradient(90deg,#ffb020,#ffcc4d)}
+.p-moral b{font-size:11.5px;font-weight:900;min-width:34px;text-align:right}
+.p-moral.alta .barra i{background:linear-gradient(90deg,#2fbf7f,#5ce6a8)}
+.p-moral.media .barra i{background:linear-gradient(90deg,#ffb020,#ffcc4d)}
+.p-moral.baja .barra i{background:linear-gradient(90deg,#ff4757,#ff8b95)}
+.p-moral.baja b{color:var(--r-soft)}
+.p-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;flex:0 0 auto}
+.p-stats .st{
+  display:flex;flex-direction:column;gap:1px;min-width:0;
+  background:rgba(255,255,255,.055);border:1px solid var(--line);
+  border-radius:9px;padding:5px 6px;
+}
+.p-stats .st span{
+  font-size:8px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.p-stats .st b{font-size:13.5px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p-chat-h{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;flex:0 0 auto;
+  margin-top:2px;padding-top:8px;border-top:1px solid var(--line);
+  font-size:8.5px;letter-spacing:.22em;color:var(--dim);font-weight:800;
+}
+.p-chat-h .typing{display:inline-flex;gap:3px;opacity:0;transition:opacity .25s ease}
+.p-chat-h .typing.on{opacity:1}
+.p-chat-h .typing i{width:4px;height:4px;border-radius:50%;background:var(--r);animation:escribe 1.1s infinite ease-in-out}
+#p-azul .p-chat-h .typing i{background:var(--a)}
+.p-chat-h .typing i:nth-child(2){animation-delay:.16s}
+.p-chat-h .typing i:nth-child(3){animation-delay:.32s}
+@keyframes escribe{0%,100%{transform:translateY(0);opacity:.35}50%{transform:translateY(-3px);opacity:1}}
+.p-chat{
+  flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:5px;
+  scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent;padding-right:1px;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.35) 5px,#000 16px);
+  mask-image:linear-gradient(180deg,transparent 0,rgba(0,0,0,.35) 5px,#000 16px);
+}
+.p-chat::-webkit-scrollbar{width:5px}
+.p-chat::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:99px}
+.p-chat::-webkit-scrollbar-track{background:transparent}
+.msg{
+  background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:10px;
+  padding:6px 9px;font-size:12px;line-height:1.34;color:var(--txt);
+  overflow-wrap:anywhere;word-break:break-word;flex:0 0 auto;
+}
+#p-rojo .msg{border-left:2px solid rgba(255,71,87,.55)}
+#p-azul .msg{border-right:2px solid rgba(61,155,255,.55)}
+.msg.fuerte{font-weight:700;background:rgba(255,255,255,.09)}
+.msg.entra{animation:msgEntra .3s cubic-bezier(.2,.85,.3,1)}
+/* reacción emoji suelta: grande y SIN caja (va al final para ganar a .fuerte y a los bordes de bando) */
+.msg.emoji,.msg.emoji.fuerte{
+  background:transparent;border:0;padding:2px 0;font-size:31px;line-height:1.12;
+  text-align:center;text-shadow:0 6px 22px rgba(0,0,0,.55);
+}
+#p-rojo .msg.emoji,#p-azul .msg.emoji{border:0}
+@keyframes msgEntra{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+
 /* ============================================================
-   Capa de espectáculo (v2): titular, tensión, moral, narrador,
-   splash de ronda, números de daño y sacudida de cámara.
-   Todo es aditivo: si el motor no manda estos datos, no se ve.
+   5. Pie: pista de guerra + tensión + stats
    ============================================================ */
-#centro{position:relative}
-#showfx{position:absolute;inset:0;pointer-events:none;z-index:25;overflow:hidden}
+#pie{
+  position:fixed;left:12px;right:12px;bottom:10px;height:var(--pie-h);z-index:25;
+  display:grid;grid-template-columns:minmax(0,1fr) 240px auto;align-items:center;gap:16px;
+  padding:0 14px;border-radius:14px;border:1px solid var(--line);background:var(--glass);
+  -webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:var(--sombra);
+  overflow:hidden;transition:opacity .35s ease,transform .35s ease;
+}
+.pista{display:flex;align-items:center;gap:10px;min-width:0;overflow:hidden}
+.pista-tit{
+  display:flex;align-items:center;gap:6px;font-size:8.5px;letter-spacing:.2em;font-weight:900;
+  color:var(--oro);white-space:nowrap;text-transform:uppercase;flex:0 0 auto;
+}
+.pista-tit::before{content:'▸';font-size:11px}
+.ticker-mask{flex:1;min-width:0;overflow:hidden;position:relative;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent);
+}
+.ticker{display:flex;align-items:center;gap:26px;white-space:nowrap;width:max-content;will-change:transform}
+.ticker:hover{animation-play-state:paused}
+.ticker:empty{animation:none}
+.tk-grupo{display:flex;align-items:center;gap:26px;flex:0 0 auto}
+.tick{display:inline-flex;align-items:center;gap:7px;font-size:11.5px;color:var(--txt);flex:0 0 auto}
+.tick .ico{font-size:12px;line-height:1}
+.tick .who{font-size:8.5px;letter-spacing:.14em;font-weight:900}
+.tick .who.r{color:var(--r-soft)}
+.tick .who.a{color:var(--a-soft)}
+.tick .who.s{color:var(--tenue)}
+.tick .tx{max-width:520px;overflow:hidden;text-overflow:ellipsis}
+.tick .hora{color:var(--tenue);font-size:10px;font-weight:700;font-variant-numeric:tabular-nums}
+.tension{display:flex;align-items:center;gap:9px;min-width:0}
+.tension .et{font-size:8.5px;letter-spacing:.18em;color:var(--dim);font-weight:900;white-space:nowrap;text-transform:uppercase}
+.tbar{position:relative;flex:1;height:9px;border-radius:999px;background:rgba(255,255,255,.10);overflow:hidden;min-width:60px}
+.tbar i{
+  display:block;height:100%;width:0;border-radius:999px;
+  background:linear-gradient(90deg,#2fbf7f,#ffcc4d 55%,#ff4757);
+  transition:width .6s cubic-bezier(.2,.8,.2,1);
+}
+.tension b{font-size:13px;font-weight:900;min-width:38px;text-align:right;font-variant-numeric:tabular-nums}
+.tension.alta .tbar{box-shadow:0 0 0 1px rgba(255,71,87,.55),0 0 18px rgba(255,71,87,.5);animation:latido 1.15s ease-in-out infinite}
+.tension.alta b{color:#ffb3ba}
+@keyframes latido{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.4)}}
+.pie-stats{display:flex;align-items:center;gap:14px;flex:0 0 auto}
+.pie-stats .ps{display:flex;flex-direction:column;gap:1px;min-width:0}
+.pie-stats .ps span{font-size:7.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;white-space:nowrap}
+.pie-stats .ps b{font-size:12px;font-weight:900;white-space:nowrap;font-variant-numeric:tabular-nums}
 
-#titular{position:absolute;left:50%;top:10px;transform:translate(-50%,-170%);opacity:0;
-  max-width:min(660px,92%);display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;
-  padding:9px 16px 10px;border-radius:14px;color:var(--text);text-align:center;
-  background:linear-gradient(135deg,rgba(255,93,93,.20),rgba(77,141,255,.20)),rgba(6,9,15,.84);
-  border:1px solid var(--line-2);box-shadow:var(--shadow);backdrop-filter:blur(12px);
-  transition:transform .55s cubic-bezier(.2,1.45,.4,1),opacity .35s}
-#titular.on{transform:translate(-50%,0);opacity:1}
-#titular .tx{font:800 clamp(12px,1.35vw,17px)/1.22 var(--font);letter-spacing:-.01em;text-wrap:balance}
-#titular .kick{font:800 9px/1 var(--font);letter-spacing:.16em;text-transform:uppercase;color:#fff;
-  background:linear-gradient(90deg,var(--rojo),var(--azul));padding:5px 8px;border-radius:6px;white-space:nowrap}
+/* ============================================================
+   6. Titular (lower third), splash y aviso
+   ============================================================ */
+#titular{
+  position:fixed;left:50%;bottom:calc(var(--pie-h) + 30px);z-index:24;
+  transform:translateX(-50%);
+  width:min(760px,calc(100vw - 2 * (var(--panel-w) + 46px)));
+  display:flex;align-items:center;gap:12px;padding:11px 18px;border-radius:12px;
+  background:var(--glass-fuerte);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);
+  border:1px solid var(--line);box-shadow:var(--sombra);
+  opacity:0;pointer-events:none;will-change:transform,opacity;
+}
+#titular .et{
+  font-size:8.5px;letter-spacing:.22em;font-weight:900;color:var(--oro);
+  white-space:nowrap;padding-right:12px;border-right:1px solid var(--line);flex:0 0 auto;
+}
+#titular p{margin:0;font-size:15px;font-weight:700;line-height:1.25;min-width:0}
+#titular.on{animation:titEntra .52s cubic-bezier(.16,1.08,.3,1) forwards}
+#titular.sale{animation:titSale .45s cubic-bezier(.55,0,.75,0) forwards}
+@keyframes titEntra{
+  0%{opacity:0;transform:translateX(-50%) translateY(20px) scaleX(.9)}
+  60%{opacity:1;transform:translateX(-50%) translateY(-2px) scaleX(1.01)}
+  100%{opacity:1;transform:translateX(-50%) translateY(0) scaleX(1)}
+}
+@keyframes titSale{
+  from{opacity:1;transform:translateX(-50%) translateY(0)}
+  to{opacity:0;transform:translateX(-50%) translateY(-16px)}
+}
+#splash{
+  position:fixed;inset:0;z-index:45;display:grid;place-items:center;pointer-events:none;
+  opacity:0;visibility:hidden;
+}
+#splash::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 50% 44%,rgba(3,6,12,.42),rgba(3,6,12,.86) 78%);
+}
+#splash .caja{position:relative;text-align:center;padding:0 20px}
+#splash .et{
+  display:block;font-size:clamp(10px,1.05vw,15px);letter-spacing:.62em;color:var(--oro);
+  font-weight:900;margin-bottom:4px;text-shadow:0 0 30px rgba(255,204,77,.5);
+}
+#splash b{
+  display:block;font-size:clamp(64px,11vw,148px);font-weight:900;line-height:.88;letter-spacing:-.02em;
+  background:linear-gradient(180deg,#fff 0%,#c3d2ea 58%,#7f93b4 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 14px 44px rgba(0,0,0,.7));
+}
+#splash.on{visibility:visible;animation:splashVive 2.1s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes splashVive{
+  0%{opacity:0;transform:scale(1.16)}
+  14%{opacity:1;transform:scale(1)}
+  76%{opacity:1;transform:scale(1.005)}
+  100%{opacity:0;transform:scale(1.05)}
+}
+#aviso{
+  position:fixed;left:50%;top:calc(var(--cab-h) + 26px);z-index:55;
+  transform:translateX(-50%);display:none;max-width:min(720px,92vw);
+  padding:11px 16px;border-radius:11px;
+  background:linear-gradient(135deg,rgba(255,176,32,.22),rgba(255,176,32,.07));
+  border:1px solid rgba(255,176,32,.45);color:#ffe3ae;
+  font-size:12.5px;line-height:1.45;box-shadow:0 16px 44px rgba(0,0,0,.45);
+}
+#aviso.on{display:block}
+#aviso code{background:rgba(0,0,0,.3);padding:1px 5px;border-radius:4px;font-size:11.5px}
+#aviso a{color:#fff;text-decoration:underline}
 
-#splash{position:absolute;inset:0;display:grid;place-items:center;opacity:0;
-  font:900 clamp(46px,13vw,150px)/1 var(--font);letter-spacing:-.05em;color:#fff;
-  text-shadow:0 12px 70px rgba(0,0,0,.85),0 0 90px rgba(77,141,255,.35)}
-#splash.on{animation:splashIn 1.7s cubic-bezier(.2,.9,.3,1) forwards}
-@keyframes splashIn{
-  0%{opacity:0;transform:scale(.62)} 16%{opacity:.97;transform:scale(1)}
-  68%{opacity:.92;transform:scale(1.02)} 100%{opacity:0;transform:scale(1.16)}}
+/* ============================================================
+   7. Victoria (takeover)
+   ============================================================ */
+#victoria{
+  position:fixed;inset:0;z-index:60;display:none;place-items:center;padding:22px;
+  background:radial-gradient(circle at 50% 38%,rgba(10,16,28,.7),rgba(3,6,12,.95));
+  -webkit-backdrop-filter:blur(7px);backdrop-filter:blur(7px);
+}
+#victoria.on{display:grid;animation:vicEntra .55s cubic-bezier(.2,.85,.3,1) both}
+@keyframes vicEntra{from{opacity:0}to{opacity:1}}
+#victoria .vic{
+  position:relative;width:min(680px,94vw);max-width:calc(100vw - 24px);max-height:92vh;overflow:hidden;text-align:center;
+  padding:30px 28px 26px;border-radius:20px;background:var(--glass-fuerte);
+  border:1px solid var(--line);box-shadow:0 34px 100px rgba(0,0,0,.65);
+}
+#victoria .vic::before{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  box-shadow:inset 0 0 120px -30px var(--glow);opacity:.9;
+}
+#victoria.rojo{--glow:rgba(255,71,87,.6)}
+#victoria.azul{--glow:rgba(61,155,255,.6)}
+#victoria .et{
+  position:relative;display:block;font-size:9px;letter-spacing:.32em;color:var(--dim);
+  font-weight:900;text-transform:uppercase;margin-bottom:6px;
+}
+#victoria .copa{position:relative;font-size:52px;line-height:1;filter:drop-shadow(0 10px 26px rgba(0,0,0,.5))}
+#victoria h2{
+  position:relative;margin:4px 0 2px;font-size:clamp(34px,5vw,52px);font-weight:900;
+  letter-spacing:.06em;line-height:1;
+}
+#victoria.rojo h2{color:var(--r-soft);text-shadow:0 0 40px rgba(255,71,87,.55)}
+#victoria.azul h2{color:var(--a-soft);text-shadow:0 0 40px rgba(61,155,255,.55)}
+#victoria .sub{position:relative;font-size:15px;font-weight:700;color:var(--txt);opacity:.92}
+.marcador-vic{
+  position:relative;display:flex;align-items:center;justify-content:center;gap:14px;
+  margin:16px 0 6px;
+}
+.marcador-vic span{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:8px;letter-spacing:.2em;font-weight:900;color:var(--dim)}
+.marcador-vic b{font-size:32px;font-weight:900;line-height:1}
+.marcador-vic .r b{color:var(--r-soft)}
+.marcador-vic .a b{color:var(--a-soft)}
+.marcador-vic i{color:var(--tenue);font-style:normal;font-size:20px;margin-top:-8px}
+.grid-vic{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:16px 0 20px}
+.grid-vic .caja{
+  background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:10px;padding:8px 6px;
+  display:flex;flex-direction:column;gap:2px;min-width:0;
+}
+.grid-vic .caja span{font-size:7.5px;letter-spacing:.12em;color:var(--dim);text-transform:uppercase}
+.grid-vic .caja b{font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#victoria .cerrar{
+  position:relative;padding:9px 22px;border-radius:999px;font-size:12px;font-weight:800;
+  letter-spacing:.1em;text-transform:uppercase;border:1px solid var(--line-fuerte);
+  background:rgba(255,255,255,.08);transition:background .18s ease,transform .18s ease;
+}
+#victoria .cerrar:hover{background:rgba(255,255,255,.18);transform:translateY(-1px)}
+.lluvia{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1}
+.lluvia span{position:absolute;top:-40px;font-size:22px;will-change:transform,opacity;animation:caer linear forwards}
+@keyframes caer{
+  from{transform:translate3d(0,-40px,0) rotate(0deg);opacity:0}
+  10%{opacity:1}
+  to{transform:translate3d(0,104vh,0) rotate(300deg);opacity:0}
+}
 
-#narrador{position:absolute;left:50%;bottom:54px;transform:translateX(-50%);max-width:min(640px,86%);
-  font:600 clamp(11px,1.1vw,14px)/1.35 var(--font);color:#fff;text-align:center;opacity:0;
-  text-shadow:0 2px 16px rgba(0,0,0,.95);transition:opacity .45s}
-#narrador.on{opacity:1}
+/* ============================================================
+   8. Splitters (redimensionar paneles) y modo cine
+   ============================================================ */
+.sp{
+  position:fixed;top:calc(var(--cab-h) + 20px);bottom:calc(var(--pie-h) + 20px);
+  width:8px;z-index:21;cursor:col-resize;touch-action:none;
+}
+#sp-rojo{left:calc(12px + var(--panel-w) - 4px)}
+#sp-azul{right:calc(12px + var(--panel-w) - 4px)}
+.sp::after{content:'';position:absolute;top:50%;left:3px;width:2px;height:44px;margin-top:-22px;
+  border-radius:99px;background:rgba(255,255,255,.16);transition:background .2s ease}
+.sp:hover::after{background:rgba(255,255,255,.4)}
+body.locked .sp{display:none}
+body.cine #p-rojo,body.cine #p-azul,body.cine #pie,body.cine #titular,body.cine .sp{
+  opacity:0;pointer-events:none;transform:translateY(12px);
+}
+body.cine .marca,body.cine .hud-centro{display:none}
+body.cine #cabecera{
+  background:transparent;border-color:transparent;box-shadow:none;
+  -webkit-backdrop-filter:none;backdrop-filter:none;
+}
+body.cine .marcador{background:rgba(0,0,0,.32);border-color:rgba(255,255,255,.16)}
+body.cine .btn{opacity:.55}
+body.cine .btn:hover{opacity:1}
 
-#tension{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);width:min(560px,74%);
-  background:rgba(6,9,15,.66);border:1px solid var(--line);border-radius:999px;
-  padding:5px 12px 7px;backdrop-filter:blur(10px)}
-#tension .lab{display:flex;justify-content:space-between;font:700 9px/1 var(--font);
-  letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
-#tension .bar{height:5px;border-radius:999px;background:rgba(255,255,255,.11);overflow:hidden}
-#tension .bar i{display:block;height:100%;width:0;border-radius:999px;
-  background:linear-gradient(90deg,#35d07f,#ffd24d 52%,#ff5d5d);transition:width .7s cubic-bezier(.2,1,.3,1)}
-
-.moral{margin:7px 0 2px}
-.moral .lab{display:flex;justify-content:space-between;font:700 8.5px/1 var(--font);
-  letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
-.moral .bar{height:5px;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden}
-.moral .bar i{display:block;height:100%;width:60%;border-radius:999px;
-  transition:width .8s cubic-bezier(.2,1,.3,1)}
-#rojo .moral .bar i{background:linear-gradient(90deg,var(--rojo-2),var(--rojo))}
-#azul .moral .bar i{background:linear-gradient(90deg,var(--azul-2),var(--azul))}
-.moral.baja .lab .v{color:var(--rojo)}
-
-.dmg{position:absolute;font:900 clamp(16px,2.3vw,34px)/1 var(--font);color:#fff;
-  text-shadow:0 3px 20px rgba(0,0,0,.9);white-space:nowrap;
-  animation:dmgUp 1.2s cubic-bezier(.15,.9,.3,1) forwards}
-.dmg.r{color:#ff9a9a}.dmg.a{color:#9cc2ff}
-@keyframes dmgUp{
-  0%{opacity:0;transform:translateY(12px) scale(.66)}
-  18%{opacity:1;transform:translateY(0) scale(1.14)}
-  100%{opacity:0;transform:translateY(-70px) scale(1)}}
-
-@keyframes sacudida{
-  0%,100%{transform:translate(0,0)} 12%{transform:translate(-7px,4px)}
-  28%{transform:translate(6px,-5px)} 44%{transform:translate(-5px,-3px)}
-  62%{transform:translate(5px,4px)} 80%{transform:translate(-3px,2px)}}
-body.sacude #centro{animation:sacudida .5s cubic-bezier(.36,.07,.19,.97)}
-
-#c-live .reloj{opacity:.72;font-weight:700;margin-left:6px;font-variant-numeric:tabular-nums}
-
-.vtitular{margin:14px auto 6px;max-width:640px;font:700 13px/1.4 var(--font);
-  color:var(--text);text-align:center;opacity:.92}
-.vnarrador{max-width:640px;margin:0 auto 6px;font:600 11.5px/1.45 var(--font);
-  color:var(--muted);text-align:center;font-style:italic}
-.vmoral{font:600 11px/1.4 var(--font);color:var(--muted);text-align:center;margin-bottom:8px}
-
-@media (max-width:1000px){
-  #titular{top:6px;font-size:12.5px;padding:8px 12px;max-width:94%}
-  #tension{bottom:8px;width:88%}
-  #narrador{bottom:42px;font-size:11px;max-width:92%}
-  #splash{font-size:22vw}
+/* ============================================================
+   9. Responsive: móvil (<1000 px)
+   ============================================================ */
+@media (max-width:999px){
+  :root{
+    --panel-w:100%;--cab-h:64px;--pie-h:110px;--radio:0px;--mapa-h:46vh;
+    --chat-h:calc(100vh - var(--cab-h) - var(--mapa-h) - var(--pie-h) - 12px);
+  }
+  /* ---------- 1) cabecera compacta ARRIBA ---------- */
+  #cabecera{
+    top:0;left:0;right:0;height:var(--cab-h);border-radius:0;border-left:0;border-right:0;border-top:0;
+    padding:3px 9px;gap:2px 7px;flex-wrap:wrap;align-content:center;
+    background:rgba(6,10,18,.94);
+  }
+  body.light #cabecera{background:rgba(248,251,255,.94)}
+  .marca{order:1}
+  .marca .logo{width:24px;height:24px;font-size:11px;border-radius:6px}
+  .marca .marca-txt small{font-size:9px;letter-spacing:.14em}
+  .marca .marca-txt strong{font-size:11px;letter-spacing:.04em}
+  .acciones{order:2;margin-left:auto;gap:3px}
+  .btn{width:26px;height:26px;font-size:12px;border-radius:7px}
+  .chip-live{order:3;height:22px;font-size:9.5px;padding:0 8px;letter-spacing:.08em;margin-left:0}
+  .chip-live i{width:5px;height:5px}
+  .hud-centro{order:4;gap:4px;margin-left:0}
+  .chip{height:21px;font-size:9.5px;padding:0 7px;letter-spacing:.03em}
+  .marcador{order:5;margin-left:auto;padding:1px 8px;gap:6px;border-radius:8px}
+  .marcador .m b{font-size:18px}
+  .marcador .m small{font-size:9px;letter-spacing:.12em;margin-top:1px}
+  .marcador .sep{font-size:13px;margin-top:-3px}
+  /* ---------- 2) mapa justo bajo la cabecera ---------- */
+  #escenario{top:var(--cab-h);height:var(--mapa-h);bottom:auto}
+  /* ---------- 3) paneles en DOS COLUMNAS 50/50 (contrato §2 móvil) ---------- */
+  #p-rojo,#p-azul{
+    top:calc(var(--cab-h) + var(--mapa-h) + 3px);
+    height:var(--chat-h);width:calc(50% - 5px);
+    border-radius:10px;border-left:0;border-right:0;border-top-width:2px;
+    padding:6px 7px 5px;gap:3px;
+    display:flex;flex-direction:column;align-items:stretch;
+    align-content:start;overflow:hidden;
+  }
+  #p-rojo{left:4px;right:auto}
+  #p-azul{right:4px;left:auto}
+  .p-head{margin:0;padding:0;gap:4px;flex:0 0 auto}
+  .p-lado{font-size:10px;letter-spacing:.1em}
+  .p-dot{width:6px;height:6px}
+  .p-nombre{font-size:12.5px;line-height:1.15;margin:0;flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-unid{display:flex;align-items:baseline;gap:3px;font-size:10px;margin:0;flex:0 0 auto}
+  .p-unid b{font-size:12px}
+  .p-stats{display:grid;grid-template-columns:1fr 1fr;gap:2px 4px;margin:0;flex:0 0 auto}
+  .p-stats .st:nth-child(3){grid-column:1 / -1}
+  .p-stats .st{padding:2px 5px;border-radius:6px;display:flex;align-items:baseline;justify-content:space-between;gap:4px;min-width:0}
+  .p-stats .st span{font-size:10px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p-stats .st b{font-size:11.5px}
+  .p-moral{gap:5px;margin:0;flex:0 0 auto}
+  .p-moral .et{font-size:10px;letter-spacing:.06em}
+  .p-moral b{font-size:11px;min-width:26px}
+  .p-moral .barra{height:5px}
+  .p-chat-h{display:none}
+  .p-chat{flex:1 1 auto;gap:3px;min-height:0;overflow-y:auto;padding-right:0}
+  .msg{
+    font-size:10.5px;padding:3px 6px;border-radius:7px;line-height:1.3;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  }
+  .msg.emoji,.msg.emoji.fuerte{display:block;font-size:17px;padding:0 1px;line-height:1.1;text-align:left;-webkit-line-clamp:unset;overflow:visible}
+  /* ---------- 4) pie: pista + tensión + stats ---------- */
+  #pie{
+    left:0;right:0;bottom:0;height:var(--pie-h);border-radius:0;border-left:0;border-right:0;
+    grid-template-columns:minmax(0,1fr);grid-template-rows:26px 22px minmax(0,1fr);
+    gap:3px;padding:4px 9px 5px;
+  }
+  .pista{gap:6px}
+  .pista-tit{font-size:10px;letter-spacing:.08em}
+  .tick{font-size:10.5px;gap:4px}
+  .tick .tx{max-width:230px}
+  .tick .who{font-size:9.5px}
+  .tick .hora{font-size:9.5px}
+  .tension{gap:6px}
+  .tension .et{font-size:10px;letter-spacing:.06em}
+  .tbar{height:6px}
+  .tension b{font-size:11px;min-width:28px}
+  .pie-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%;align-items:center}
+  .pie-stats .ps{min-width:0}
+  .pie-stats .ps span{font-size:10px;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pie-stats .ps b{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* ---------- 5) titular sobre el mapa ---------- */
+  #titular{
+    left:6px;right:6px;transform:none;width:auto;bottom:auto;
+    top:calc(var(--cab-h) + var(--mapa-h) - 64px);
+    padding:7px 10px;border-radius:9px;gap:7px;
+  }
+  #titular .et{font-size:9.5px;padding-right:7px;letter-spacing:.1em}
+  #titular p{font-size:12px;line-height:1.3}
+  #titular.on{animation:titEntraM .52s cubic-bezier(.16,1.08,.3,1) forwards}
+  #titular.sale{animation:titSaleM .45s cubic-bezier(.55,0,.75,0) forwards}
+  @keyframes titEntraM{
+    0%{opacity:0;transform:translateY(16px) scaleX(.94)}
+    60%{opacity:1;transform:translateY(-1px) scaleX(1.005)}
+    100%{opacity:1;transform:translateY(0) scaleX(1)}
+  }
+  @keyframes titSaleM{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-12px)}}
+  #aviso{top:calc(var(--cab-h) + 6px);left:6px;right:6px;font-size:11px;max-width:none;padding:9px 12px}
+  /* el splash va sobre el mapa, no sobre los paneles */
+  #splash{top:var(--cab-h);height:var(--mapa-h);bottom:auto}
+  #splash b{font-size:clamp(58px,20vw,110px)}
+  /* ---------- 6) victoria: tarjeta dentro del viewport, stats 2x2 ---------- */
+  #victoria{padding:10px}
+  #victoria .vic{
+    width:100%;max-width:calc(100vw - 20px);max-height:94vh;overflow:hidden;
+    padding:15px 12px 13px;border-radius:16px;box-sizing:border-box;
+  }
+  #victoria .et{font-size:10px;letter-spacing:.2em;margin-bottom:3px}
+  #victoria .copa{font-size:36px}
+  #victoria h2{font-size:clamp(25px,8.5vw,32px);margin:2px 0 1px}
+  #victoria .sub{font-size:12px}
+  .marcador-vic{gap:9px;margin:9px 0 2px}
+  .marcador-vic span{font-size:10px;letter-spacing:.1em}
+  .marcador-vic b{font-size:22px}
+  .marcador-vic i{font-size:14px;margin-top:-4px}
+  .grid-vic{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:9px 0 11px}
+  .grid-vic .caja{padding:6px 6px;border-radius:8px;gap:1px}
+  .grid-vic .caja span{font-size:10px;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .grid-vic .caja b{font-size:12px;max-width:100%}
+  #victoria .cerrar{padding:7px 16px;font-size:10px;letter-spacing:.06em}
+  .lluvia span{font-size:16px}
+  /* ---------- 7) cine y splitters en móvil ---------- */
+  .sp{display:none!important}
+  body.cine #escenario{top:0;height:100vh}
+  body.cine #cabecera{background:transparent;border:0;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+  body.cine .marca,body.cine .hud-centro{display:flex}
+}
+@media (max-width:999px) and (max-height:720px){
+  :root{--mapa-h:34vh;--pie-h:100px;--cab-h:60px}
+  #victoria .vic{max-height:96vh;padding:12px 10px 11px}
+  #victoria .copa{font-size:30px}
+  #victoria h2{font-size:24px}
+  .grid-vic{margin:7px 0 9px}
+  .marcador-vic{margin:7px 0 2px}
 }
 @media (prefers-reduced-motion:reduce){
-  #splash.on{animation-duration:.4s}
-  body.sacude #centro{animation:none}
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  #ticker{animation:none!important}
+  .tension.alta .tbar{animation:none!important}
 }
-.btn.repo{width:auto;padding:0 10px;font-size:11px;font-weight:600;text-decoration:none;color:var(--text);display:inline-flex;align-items:center;gap:5px}
-.btn.repo:hover{color:var(--text)}
 </style>
 </head>
 <body>
-<div id="app">
-  <header>
-    <div class="brand">
-      <div class="mark"></div>
-      <h1>WorldBox <span>· ROJO vs AZUL</span></h1>
-    </div>
-    <div class="chips">
-      <span class="chip" id="c-ronda">Ronda <b>—</b></span>
-      <span class="chip oculto" id="c-turno">Turno <b>—</b></span>
-      <span class="chip oculto" id="c-tick">Tick <b>—</b></span>
-      <span class="chip" id="c-hora">—</span>
-      <span class="chip score" id="c-score"><b class="r">—</b><i>·</i><b class="a">—</b></span>
-      <span class="chip live" id="c-live"><i></i>EN DIRECTO</span>
-    </div>
-    <div class="acciones">
-      <a class="btn repo" id="btn-repo" href="../" title="Ver la repetición">↩ Repetición</a>
-      <button class="btn" id="btn-cine" title="Modo cine (C)">🎬</button>
-      <button class="btn" id="btn-full" title="Pantalla completa">⛶</button>
-      <button class="btn" id="btn-lock" title="Bloquear layout (L)">🔓</button>
-      <button class="btn" id="btn-theme" title="Cambiar tema (T)">🌙</button>
-      <button class="btn" id="btn-reset" title="Restablecer layout (R)">↺</button>
-    </div>
-  </header>
-  <div id="aviso">Sin conexión con el directo. Comprueba que el show esté emitiéndose y recarga la página.</div>
-
-  <div id="wrap">
-    <aside id="rojo">
-      <div class="team">
-        <div class="team-row"><span class="dot"></span><span class="tname">ROJO</span><span class="tking" id="k-rojo">—</span></div>
-        <div class="units"><b id="u-rojo">—</b><span>unidades</span></div>
-        <div class="meta" id="m-rojo">—</div>
-        <div class="share"><i id="s-rojo" style="width:50%"></i></div>
-      </div>
-      <div class="kpis" id="p-rojo"></div>
-      <div class="feed-h"><span>puro drama</span><span class="typing" id="esc-rojo"><i></i><i></i><i></i></span><span class="cnt" id="n-rojo">0</span></div>
-      <div class="feed" id="feed-rojo"></div>
-    </aside>
-
-    <div class="sp v" id="sp1"></div>
-
-    <main id="centro">
-      <div class="mapa">
-        <img id="fondo" alt="" aria-hidden="true">
-        <canvas id="frame" aria-label="Mundo en vivo"></canvas>
-        <div id="noframe">Esperando señal del mundo…</div>
-        <div class="hud">
-          <span class="chip" id="c-fps">— fps</span>
-          <div class="der"><span class="chip live" id="c-live2"><i></i>LIVE</span></div>
-        </div>
-      </div>
-      <div id="eventos">
-        <div class="ev-h"><span>pista de guerra</span><span>los dos bandos</span></div>
-        <div id="eventos-lista"></div>
-      </div>
-    </main>
-
-    <div class="sp v" id="sp2"></div>
-
-    <aside id="azul">
-      <div class="team">
-        <div class="team-row"><span class="dot"></span><span class="tname">AZUL</span><span class="tking" id="k-azul">—</span></div>
-        <div class="units"><b id="u-azul">—</b><span>unidades</span></div>
-        <div class="meta" id="m-azul">—</div>
-        <div class="share"><i id="s-azul" style="width:50%"></i></div>
-      </div>
-      <div class="kpis" id="p-azul"></div>
-      <div class="feed-h"><span>puro drama</span><span class="typing" id="esc-azul"><i></i><i></i><i></i></span><span class="cnt" id="n-azul">0</span></div>
-      <div class="feed" id="feed-azul"></div>
-    </aside>
-  </div>
-
-  <div class="sp h" id="sp3"></div>
-
-  <section id="bottom">
-    <div class="feed-h"><span>histórico por ronda</span><span class="cnt" id="n-rondas">0 rondas</span></div>
-    <div class="cols">
-      <div class="graf">
-        <div class="titulo">evolución de unidades</div>
-        <svg id="graf" viewBox="0 0 400 150" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Gráfica de unidades por ronda"></svg>
-        <div class="leyenda"><span class="r"><i></i>ROJO</span><span class="a"><i></i>AZUL</span></div>
-      </div>
-      <div class="scroll">
-        <table class="hist">
-          <thead><tr><th>Ronda</th><th>Lanzó ROJO</th><th>Lanzó AZUL</th><th class="movil-off">Bajas R</th><th class="movil-off">Bajas A</th><th>Dominó</th></tr></thead>
-          <tbody id="hist"></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
+<script>
+/* build-live-page: resuelve el backend del directo ANTES de arrancar el visor.
+   Generado automaticamente desde scripts/viewer-live.html; no editar a mano. */
+window.__WB_AVISO__ = '<b>El directo está apagado ahora mismo.</b> Puedes <a href="../">ver la última repetición</a> mientras vuelve.';
+window.__WB_ENDPOINTS_READY__ = (async function () {
+  var host = (location.hostname || '').toLowerCase();
+  // servido por el propio tunel: todo en el mismo origen
+  if (/\.trycloudflare\.com$/.test(host)) {
+    return { base: location.origin, streamBase: location.origin };
+  }
+  // GitHub Pages (o cualquier origen estatico): el tunel esta en ../live.json
+  try {
+    var r = await fetch('../live.json?ts=' + Date.now(), { cache: 'no-store' });
+    if (r.ok) {
+      var j = await r.json();
+      if (j && j.en_vivo && j.url) {
+        var u = String(j.url).replace(/\/+$/, '');
+        // El tunel de Cloudflare es efimero: si live.json se quedo viejo, la URL
+        // ya no existe. Comprobamos /health (el gateway manda CORS abierto) para
+        // no quedarnos en CONECTANDO eterno: si no responde, modo sin senal.
+        try {
+          var ctl = new AbortController();
+          var t = setTimeout(function () { ctl.abort(); }, 3500);
+          var h = await fetch(u + '/health?ts=' + Date.now(), { cache: 'no-store', signal: ctl.signal });
+          clearTimeout(t);
+          if (h.ok) return { base: u, streamBase: u };
+        } catch (e2) { /* tunel caido */ }
+      }
+    }
+  } catch (e) { /* sin live.json o sin red: se queda sin senal */ }
+  return { base: '', streamBase: '' };
+})();
+</script>
+<div id="escenario">
+  <canvas id="frame" aria-label="Mundo en vivo"></canvas>
+  <div id="fx-host"></div>
+  <div id="noframe"><i></i><b>CONECTANDO</b><span>Esperando señal del mundo…</span></div>
 </div>
+
+<header id="cabecera">
+  <div class="marca">
+    <div class="logo" aria-hidden="true">▣</div>
+    <div class="marca-txt">
+      <small>WORLDBOX</small>
+      <strong>AI SHOW</strong>
+    </div>
+  </div>
+  <div class="hud-centro">
+    <span class="chip" id="c-ronda">RONDA <b>—</b></span>
+    <span class="chip reloj" id="c-reloj"><b>00:00</b></span>
+    <span class="chip" id="c-estado">—</span>
+  </div>
+  <div class="marcador" aria-label="Marcador">
+    <span class="m r"><b id="s-rojo">—</b><small>ROJO</small></span>
+    <span class="sep" aria-hidden="true">·</span>
+    <span class="m a"><b id="s-azul">—</b><small>AZUL</small></span>
+  </div>
+  <div class="acciones">
+    <span class="chip-live" id="c-live"><i></i>EN DIRECTO</span>
+    <button class="btn" id="btn-cine" title="Modo cine (C)" aria-label="Modo cine">🎬</button>
+    <button class="btn" id="btn-full" title="Pantalla completa (F)" aria-label="Pantalla completa">⛶</button>
+    <button class="btn" id="btn-sonido" title="Sonido (M)" aria-label="Sonido">🔇</button>
+    <button class="btn" id="btn-theme" title="Tema claro/oscuro (T)" aria-label="Cambiar tema">🌙</button>
+    <button class="btn" id="btn-reset" title="Restablecer layout (R)" aria-label="Restablecer">↺</button>
+  </div>
+</header>
+
+<aside id="p-rojo" class="panel" aria-label="Panel ROJO">
+  <div class="p-head"><span class="p-lado">ROJO</span><span class="p-dot" aria-hidden="true"></span></div>
+  <div class="p-nombre" id="n-rojo">—</div>
+  <div class="p-unid"><b id="u-rojo">—</b><span>unidades</span></div>
+  <div class="p-moral" id="mor-rojo"><span class="et">MORAL</span><div class="barra"><i id="m-rojo"></i></div><b id="mv-rojo">—</b></div>
+  <div class="p-stats">
+    <div class="st"><span>BAJAS</span><b id="b-rojo">—</b></div>
+    <div class="st"><span>PÉRDIDAS</span><b id="pd-rojo">—</b></div>
+    <div class="st"><span>CIUDADES</span><b id="ci-rojo">—</b></div>
+  </div>
+  <div class="p-chat-h"><span>CHAT</span><span class="typing" id="esc-rojo"><i></i><i></i><i></i></span></div>
+  <div class="p-chat" id="chat-rojo"></div>
+</aside>
+
+<aside id="p-azul" class="panel" aria-label="Panel AZUL">
+  <div class="p-head"><span class="p-lado">AZUL</span><span class="p-dot" aria-hidden="true"></span></div>
+  <div class="p-nombre" id="n-azul">—</div>
+  <div class="p-unid"><b id="u-azul">—</b><span>unidades</span></div>
+  <div class="p-moral" id="mor-azul"><span class="et">MORAL</span><div class="barra"><i id="m-azul"></i></div><b id="mv-azul">—</b></div>
+  <div class="p-stats">
+    <div class="st"><span>BAJAS</span><b id="b-azul">—</b></div>
+    <div class="st"><span>PÉRDIDAS</span><b id="pd-azul">—</b></div>
+    <div class="st"><span>CIUDADES</span><b id="ci-azul">—</b></div>
+  </div>
+  <div class="p-chat-h"><span>CHAT</span><span class="typing" id="esc-azul"><i></i><i></i><i></i></span></div>
+  <div class="p-chat" id="chat-azul"></div>
+</aside>
+
+<div id="sp-rojo" class="sp" aria-hidden="true"></div>
+<div id="sp-azul" class="sp" aria-hidden="true"></div>
+
+<div id="titular" aria-live="polite"><span class="et">TITULAR</span><p id="titular-txt"></p></div>
+
+<div id="splash" aria-hidden="true"><div class="caja"><span class="et">RONDA</span><b id="splash-num">1</b></div></div>
+
+<footer id="pie">
+  <div class="pista">
+    <span class="pista-tit">PISTA DE GUERRA</span>
+    <div class="ticker-mask"><div class="ticker" id="ticker"></div></div>
+  </div>
+  <div class="tension" id="tension">
+    <span class="et">TENSIÓN</span>
+    <div class="tbar"><i id="tbar"></i></div>
+    <b id="tval">—</b>
+  </div>
+  <div class="pie-stats">
+    <div class="ps"><span>CIUDADES</span><b id="ps-ciudades">—</b></div>
+    <div class="ps"><span>MAYOR GOLPE</span><b id="ps-golpe">—</b></div>
+    <div class="ps"><span>DURACIÓN</span><b id="ps-duracion">—</b></div>
+    <div class="ps"><span>SEÑAL</span><b id="ps-senal">—</b></div>
+  </div>
+</footer>
+
+<div id="aviso" role="status"></div>
 
 <div id="victoria" role="dialog" aria-modal="true" aria-labelledby="v-titulo">
   <div class="vic">
-    <div class="copa" id="v-copa">🏆</div>
-    <h2 id="v-titulo">Gana —</h2>
-    <div class="sub" id="v-sub">Partida terminada</div>
-    <div class="grid">
-      <div class="caja"><span>unidades finales</span><b id="v-u">—</b></div>
-      <div class="caja"><span>bajas causadas</span><b id="v-b">—</b></div>
-      <div class="caja"><span>mayor golpe</span><b id="v-g">—</b></div>
-      <div class="caja"><span>duración</span><b id="v-d">—</b></div>
+    <div class="lluvia" id="v-lluvia" aria-hidden="true"></div>
+    <span class="et">FIN DE LA PARTIDA</span>
+    <div class="copa" aria-hidden="true">🏆</div>
+    <h2 id="v-titulo">CAMPEÓN</h2>
+    <div class="sub" id="v-sub">—</div>
+    <div class="marcador-vic">
+      <span class="r"><b id="v-r">—</b>ROJO</span>
+      <i aria-hidden="true">·</i>
+      <span class="a"><b id="v-a">—</b>AZUL</span>
     </div>
-    <button class="cerrar" id="v-cerrar">Cerrar</button>
+    <div class="grid-vic">
+      <div class="caja"><span>BAJAS</span><b id="v-b">—</b></div>
+      <div class="caja"><span>MAYOR GOLPE</span><b id="v-g">—</b></div>
+      <div class="caja"><span>RACHA</span><b id="v-racha">—</b></div>
+      <div class="caja"><span>DURACIÓN</span><b id="v-d">—</b></div>
+    </div>
+    <button class="cerrar" id="v-cerrar">Cerrar · Esc</button>
   </div>
 </div>
 
-<script>
-const $ = s => document.querySelector(s);
-// Backend del directo. Se resuelve ANTES de arrancar los sondeos (resolverBase):
-//  - visor del PC (localhost:8765): mismo origen y stream directo al 8767.
-//  - GitHub Pages / cualquier otro origen: ../live.json -> url del túnel.
-//  - túnel (.trycloudflare.com): mismo origen (la pasarela ya enruta todo).
-let BASE = location.protocol === 'file:' ? 'http://localhost:8765' : '';
-let STREAM_BASE = '';
-const QS_API = (() => { try { return new URLSearchParams(location.search).get('api') || ''; } catch (e) { return ''; } })();
-async function resolverBase() {
-  if (location.protocol === 'file:') { BASE = 'http://localhost:8765'; STREAM_BASE = 'http://localhost:8767'; return; }
-  if (QS_API) { BASE = QS_API.replace(/\/+$/, ''); STREAM_BASE = BASE; return; }
-  const host = location.hostname || '';
-  const local = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(host);
-  if (local && location.port === '8765') { BASE = ''; STREAM_BASE = 'http://' + host + ':8767'; return; }
-  if (local && location.port === '8770') { BASE = location.origin; STREAM_BASE = location.origin; return; }
-  if (/\.trycloudflare\.com$/i.test(host)) { BASE = location.origin; STREAM_BASE = location.origin; return; }
-  try {
-    const r = await fetch('../live.json?ts=' + Date.now(), { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(3500) : undefined });
-    if (r.ok) {
-      const j = await r.json();
-      if (j && j.en_vivo === true && typeof j.url === 'string' && /^https?:\/\//i.test(j.url)) {
-        BASE = j.url.replace(/\/+$/, '');
-        STREAM_BASE = BASE;
-        return;
-      }
-    }
-  } catch (e) { /* sin live.json o sin red */ }
-  BASE = ''; STREAM_BASE = '';
-}
-const fmt = n => (n === undefined || n === null || isNaN(n)) ? '—' : new Intl.NumberFormat('es-ES').format(n);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let ultimaHist = '', fallos = 0, ultimoGolpeSeq = 0, ultimoEmojiSeq = 0;
-const feeds = new Map();
-
-/* ---------------- tema ---------------- */
-function aplicarTema(claro) {
-  document.body.classList.toggle('light', claro);
-  $('#btn-theme').textContent = claro ? '☀️' : '🌙';
-  localStorage.setItem('wb4-tema', claro ? 'claro' : 'oscuro');
-}
-/* ---------------- bloqueo ---------------- */
-function aplicarBloqueo(b) {
-  document.body.classList.toggle('locked', b);
-  $('#btn-lock').textContent = b ? '🔒' : '🔓';
-  $('#btn-lock').classList.toggle('on', b);
-  localStorage.setItem('wb4-lock', b ? '1' : '0');
-}
-
-/* ---------------- layout (simétrico) ---------------- */
-const esMovil = () => window.matchMedia('(max-width:1000px)').matches;
-function anchoLado() { return $('#rojo').getBoundingClientRect().width; }
-function fijarLado(px) {
-  const wrap = $('#wrap');
-  // el mapa manda: los laterales nunca pasan del 26 % del ancho
-  const max = Math.max(260, Math.round(wrap.clientWidth * 0.26));
-  const w = Math.round(Math.min(Math.max(240, px), max));
-  $('#rojo').style.width = w + 'px';
-  $('#azul').style.width = w + 'px';
-}
-function guardarLayout() {
-  if (esMovil()) return;
-  localStorage.setItem('wb5-lado', Math.round(anchoLado()));
-  localStorage.setItem('wb5-bh', Math.round($('#bottom').getBoundingClientRect().height));
-}
-function cargarLayout() {
-  if (esMovil()) return;
-  const w = parseFloat(localStorage.getItem('wb5-lado'));
-  const bh = parseFloat(localStorage.getItem('wb5-bh'));
-  if (isFinite(w) && w >= 240) fijarLado(w);
-  if (isFinite(bh) && bh >= 90) $('#bottom').style.setProperty('--bh', bh + 'px');
-}
-function restaurarLayout() {
-  ['wb5-lado', 'wb5-bh'].forEach(k => localStorage.removeItem(k));
-  $('#rojo').style.removeProperty('width');
-  $('#azul').style.removeProperty('width');
-  $('#bottom').style.removeProperty('--bh');
-  fijarLado(300);
-}
-function iniciarSplitters() {
-  const bot = $('#bottom');
-  document.querySelectorAll('.sp').forEach(sp => {
-    sp.addEventListener('pointerdown', e => {
-      if (document.body.classList.contains('locked') || esMovil()) return;
-      e.preventDefault();
-      const vertical = sp.classList.contains('v');
-      const x0 = e.clientX, y0 = e.clientY;
-      const w0 = anchoLado();
-      const hb = bot.getBoundingClientRect().height;
-      document.body.style.cursor = vertical ? 'col-resize' : 'row-resize';
-      const mover = ev => {
-        if (vertical) {
-          const dx = ev.clientX - x0;
-          fijarLado(sp.id === 'sp1' ? w0 + dx : w0 - dx);
-        } else {
-          const dy = ev.clientY - y0;
-          const maxH = window.innerHeight - 220;
-          bot.style.setProperty('--bh', Math.round(Math.min(Math.max(90, hb - dy), maxH)) + 'px');
-        }
-      };
-      const fin = () => {
-        document.removeEventListener('pointermove', mover);
-        document.removeEventListener('pointerup', fin);
-        document.body.style.cursor = '';
-        guardarLayout();
-      };
-      document.addEventListener('pointermove', mover);
-      document.addEventListener('pointerup', fin);
-    });
-  });
-  window.addEventListener('resize', () => {
-    if (esMovil()) { $('#rojo').style.removeProperty('width'); $('#azul').style.removeProperty('width'); }
-    else if (!document.body.classList.contains('locked')) fijarLado(anchoLado());
-  });
-}
-
-/* ---------------- datos ---------------- */
-async function jget(url) {
-  const r = await fetch(BASE + url + '?t=' + Date.now(), { cache: 'no-store' });
-  if (!r.ok) throw new Error('HTTP ' + r.status);
-  return r.json();
-}
-function kpi(sel, mk) {
-  const c = $(sel);
-  if (!c.dataset.listo) {
-    c.innerHTML =
-      '<div class="kpi"><span>bajas</span><b>—</b></div>' +
-      '<div class="kpi"><span>pérdidas</span><b>—</b></div>' +
-      '<div class="kpi"><span>arrasadas</span><b>—</b></div>' +
-      '<div class="kpi"><span>acciones</span><b>—</b></div>';
-    c.dataset.listo = '1';
-  }
-  const b = c.querySelectorAll('.kpi b');
-  b[0].textContent = fmt(mk.bajas);
-  b[1].textContent = fmt(mk.perdidas);
-  b[2].textContent = fmt(mk.ciudades_arrasadas);
-  b[3].textContent = fmt(mk.acciones);
-}
-function renderState(st) {
-  $('#c-ronda').innerHTML = 'Ronda <b>' + (st.ronda || 0) + '/' + (st.rondas || 0) + '</b>';
-  const ct = $('#c-turno');
-  if (st.terminada) { ct.innerHTML = 'Fin · <b>gana ' + esc(st.ganador) + '</b>'; ct.className = 'chip fin oculto'; }
-  else { ct.innerHTML = 'Turno <b>' + esc(String(st.turno || '—').toUpperCase()) + '</b>'; ct.className = 'chip oculto'; }
-  $('#c-tick').innerHTML = 'Tick <b>' + fmt(st.tick) + '</b>';
-  $('#c-hora').textContent = st.actualizado || '—';
-  const vivo = !st.terminada;
-  $('#c-live').style.display = vivo ? '' : 'none';
-  $('#c-live2').style.display = vivo ? '' : 'none';
-  const turnoAhora = String(st.turno || '').toLowerCase();
-  $('#esc-rojo').classList.toggle('on', vivo && turnoAhora === 'rojo');
-  $('#esc-azul').classList.toggle('on', vivo && turnoAhora === 'azul');
-
-  const s = st.scoreboard || {}, m = st.marcador || {};
-  if (s.rojo && s.azul) {
-    $('#c-score').innerHTML = '<b class="r">' + fmt(s.rojo.unidades) + '</b><i>·</i><b class="a">' + fmt(s.azul.unidades) + '</b>';
-    document.title = st.terminada
-      ? 'Fin · gana ' + String(st.ganador || '').toUpperCase() + ' · WorldBox'
-      : 'R' + (st.ronda || 0) + '/' + (st.rondas || 0) + ' · ' + fmt(s.rojo.unidades) + ' vs ' + fmt(s.azul.unidades) + ' · WorldBox';
-  }
-  if (s.rojo && s.azul && m.rojo && m.azul) {
-    $('#k-rojo').textContent = s.rojo.nombre;
-    $('#k-azul').textContent = s.azul.nombre;
-    ponerNum($('#u-rojo'), s.rojo.unidades);
-    ponerNum($('#u-azul'), s.azul.unidades);
-    $('#m-rojo').textContent = fmt(s.rojo.ciudades) + ' ciudades';
-    $('#m-azul').textContent = fmt(s.azul.ciudades) + ' ciudades';
-    const total = Math.max(1, s.rojo.unidades + s.azul.unidades);
-    $('#s-rojo').style.width = Math.round(1000 * s.rojo.unidades / total) / 10 + '%';
-    $('#s-azul').style.width = Math.round(1000 * s.azul.unidades / total) / 10 + '%';
-    kpi('#p-rojo', m.rojo);
-    kpi('#p-azul', m.azul);
-  }
-  const hist = st.historial || [];
-  $('#n-rondas').textContent = hist.length + (hist.length === 1 ? ' ronda' : ' rondas');
-  const sigHist = JSON.stringify(hist);
-  if (sigHist !== ultimaHist) {
-    ultimaHist = sigHist;
-    pintarHist(hist);
-    renderGrafica(hist);
-  }
-  mostrarVictoria(st, hist);
-}
-function pintarHist(hist) {
-  let prevR = 0, prevA = 0;
-  const filas = hist.map(h => {
-    const bR = Math.max(0, (h.rojo_bajas || 0) - prevR);
-    const bA = Math.max(0, (h.azul_bajas || 0) - prevA);
-    prevR = h.rojo_bajas || 0;
-    prevA = h.azul_bajas || 0;
-    return { h, bR, bA };
-  });
-  const maxB = Math.max(1, ...filas.map(f => Math.max(f.bR, f.bA)));
-  const barra = (v, cls) => '<span class="mini ' + cls + '"><i style="width:' +
-    Math.round(44 * v / maxB) + 'px"></i></span>' + fmt(v);
-  $('#hist').innerHTML = filas.map(({ h, bR, bA }) => {
-    const d = h.dominio === 'rojo' ? '<span class="pill r">ROJO</span>'
-      : h.dominio === 'azul' ? '<span class="pill a">AZUL</span>'
-      : '<span class="pill e">Igualada</span>';
-    return '<tr><td class="ronda">' + h.ronda + '</td>' +
-      '<td class="acc r">' + esc(h.rojo_acciones || '—') + '</td>' +
-      '<td class="acc a">' + esc(h.azul_acciones || '—') + '</td>' +
-      '<td class="movil-off num">' + barra(bR, 'r') + '</td>' +
-      '<td class="movil-off num">' + barra(bA, 'a') + '</td>' +
-      '<td>' + d + '</td></tr>';
-  }).join('');
-}
-
-/* ---------------- feed incremental (sin parpadeo) ---------------- */
-function nodoFila(e) {
-  const tipo = String(e.tipo || '');
-  const ag = String(e.agente || '').toLowerCase();
-  const d = document.createElement('div');
-  d.dataset.seq = e.seq;
-  if (tipo === 'chat') {
-    const esAzul = ag === 'azul';
-    const tono = String(e.tono || 'chulo').toLowerCase();
-    const texto = String(e.texto || '');
-    // mensaje que es solo un emoji: se pinta grande, animado y sin burbuja
-    const soloEmoji = tono === 'emoji' || /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u.test(texto);
-    if (soloEmoji) {
-      const anim = 1 + Math.floor(Math.random() * 6);
-      d.className = 'ev chat emoji-solo ' + (esAzul ? 'a' : 'r');
-      d.innerHTML = '<span class="av">' + (esAzul ? 'A' : 'R') + '</span>' +
-        '<div class="bub"><span class="em a' + anim + '">' + esc(texto) + '</span></div>';
-    } else {
-      d.className = 'ev chat ' + (esAzul ? 'a' : 'r') + ' tono-' + tono;
-      d.innerHTML = '<span class="av">' + (esAzul ? 'A' : 'R') + '</span>' +
-        '<div class="bub"><div class="tx">' + esc(texto) +
-        '</div><div class="mt">' + esc(e.t) + '</div></div>';
-    }
-  } else if (tipo === 'bomba' || tipo === 'tropas') {
-    d.className = 'ev act';
-    d.innerHTML = '<span class="ico">' + (tipo === 'bomba' ? '💥' : '🛡️') +
-      '</span><span class="tx">' + esc(e.texto) + '</span>';
-  } else if (tipo === 'ronda') {
-    d.className = 'ev round';
-    d.textContent = e.texto;
-  } else if (tipo === 'error') {
-    d.className = 'ev sys';
-    d.textContent = '⚠ ' + e.texto;
-  } else {
-    d.className = 'ev sys';
-    d.textContent = e.texto;
-  }
-  return d;
-}
-function nodoDivisor(ronda) {
-  const d = document.createElement('div');
-  d.className = 'div';
-  d.textContent = Number(ronda) > 0 ? 'Ronda ' + ronda : 'Apertura';
-  return d;
-}
-function pintarFeed(items, sel) {
-  const cont = $(sel);
-  const maxSeq = items.reduce((m, e) => Math.max(m, Number(e.seq) || 0), 0);
-  let st = feeds.get(sel);
-  // partida nueva o feed reiniciado: los seq vuelven a empezar
-  if (st && maxSeq < st.ultimo) {
-    cont.innerHTML = '';
-    st = null;
-  }
-  if (!st) { st = { ultimo: -1, ronda: null }; feeds.set(sel, st); }
-  // el chat va del más viejo al más nuevo: lo último que se dice queda ABAJO,
-  // como en cualquier chat, y la vista baja sola si el usuario ya estaba abajo
-  const nuevos = items.slice(-200).filter(e => Number(e.seq) > st.ultimo);
-  if (!nuevos.length) return;
-  const animar = st.ultimo >= 0;                      // la carga inicial no anima
-  const pegado = cont.scrollHeight - cont.scrollTop - cont.clientHeight < 80;
-  for (const e of nuevos) {
-    if (String(st.ronda) !== String(e.ronda)) {
-      cont.appendChild(nodoDivisor(e.ronda));
-      st.ronda = e.ronda;
-    }
-    const n = nodoFila(e);
-    if (animar) n.classList.add('entra');
-    cont.appendChild(n);
-  }
-  st.ultimo = Math.max(st.ultimo, ...nuevos.map(e => Number(e.seq)));
-  // techo de 200 mensajes: se van los más viejos, que están arriba
-  const evs = Array.from(cont.querySelectorAll('.ev'));
-  for (let i = 0; i < evs.length - 200; i++) evs[i].remove();
-  while (cont.firstElementChild && cont.firstElementChild.classList.contains('div') &&
-    (!cont.firstElementChild.nextElementSibling ||
-      cont.firstElementChild.nextElementSibling.classList.contains('div'))) {
-    cont.firstElementChild.remove();
-  }
-  if (pegado || !animar) cont.scrollTop = cont.scrollHeight;
-}
-function renderFeed(items, st) {
-  // partida nueva: la ronda vuelve a 0/1 y el histórico está vacío, pero el feed
-  // aún muestra rondas antiguas -> se limpia todo para empezar de cero
-  if (st && Number(st.ronda) <= 1 && !(st.historial || []).length) {
-    let viejo = false;
-    feeds.forEach(s => { if (s.ronda && Number(s.ronda) > 1) viejo = true; });
-    if (viejo) {
-      feeds.clear();
-      document.querySelectorAll('.feed').forEach(c => { c.innerHTML = ''; });
-      ultimaHist = '';
-      $('#hist').innerHTML = '';
-      $('#graf').innerHTML = '';
-    }
-  }
-  // el drama son las réplicas y los emojis sueltos; el gameplay va a la pista
-  const valido = e => String(e.tipo) === 'chat' || String(e.tipo) === 'emoji';
-  const deRojo = items.filter(e => { const a = String(e.agente || '').toLowerCase(); return valido(e) && (a === 'rojo' || a === 'sistema'); });
-  const deAzul = items.filter(e => { const a = String(e.agente || '').toLowerCase(); return valido(e) && (a === 'azul' || a === 'sistema'); });
-  pintarFeed(deRojo, '#feed-rojo');
-  pintarFeed(deAzul, '#feed-azul');
-  $('#n-rojo').textContent = deRojo.length;
-  $('#n-azul').textContent = deAzul.length;
-  // pista de guerra compartida: acciones y crónica, fuera del chat
-  pintarEventos(items);
-  // emojis que estallan sobre el mapa con cada golpe nuevo
-  const nuevosGolpes = items.filter(e => Number(e.seq) > ultimoGolpeSeq &&
-    (String(e.tipo) === 'bomba' || String(e.tipo) === 'tropas'));
-  if (nuevosGolpes.length) {
-    ultimoGolpeSeq = Math.max(...nuevosGolpes.map(e => Number(e.seq) || 0));
-    nuevosGolpes.slice(-2).forEach(e => {
-      const esBomba = String(e.tipo) === 'bomba';
-      const pool = esBomba ? ['💥', '🔥', '💀', '☄️'] : ['🛡️', '🏴‍☠️', '🐺', '⚔️'];
-      soltarEmoji(pool[Math.floor(Math.random() * pool.length)]);
-    });
-  }
-  // emojis sueltos del chat: invaden el visor un momento
-  const nuevosEmoji = items.filter(e => Number(e.seq) > ultimoEmojiSeq &&
-    (String(e.tipo) === 'chat' || String(e.tipo) === 'emoji') && (String(e.tono) === 'emoji' ||
-      /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u.test(String(e.texto || ''))));
-  if (nuevosEmoji.length) {
-    ultimoEmojiSeq = Math.max(...nuevosEmoji.map(e => Number(e.seq) || 0));
-    nuevosEmoji.slice(-2).forEach(e => invadir(e.texto, String(e.agente || '').toLowerCase(), e.emocion));
-  }
-}
-
-/* pinta las últimas acciones y la crónica en la pista compartida */
-function pintarEventos(items) {
-  const interesantes = items.filter(e => ['bomba', 'tropas', 'ronda', 'info'].includes(String(e.tipo)));
-  if (!interesantes.length) return;
-  const ultimos = interesantes.slice(-3).reverse();
-  const caja = $('#eventos-lista');
-  const html = ultimos.map(e => {
-    const tipo = String(e.tipo);
-    const ag = String(e.agente || '').toLowerCase();
-    const cls = (tipo === 'ronda' || tipo === 'info') ? 'ron' : (ag === 'azul' ? 'a' : 'r');
-    const q = tipo === 'bomba' ? '💥' : tipo === 'tropas' ? '🛡️' : tipo === 'ronda' ? '🏁' : '📣';
-    const quien = (tipo === 'ronda' || tipo === 'info') ? '' : (ag === 'azul' ? 'AZUL · ' : 'ROJO · ');
-    return '<div class="fila-ev ' + cls + '"><span class="q">' + q + '</span>' +
-      '<span class="tx">' + esc(quien + e.texto) + '</span>' +
-      '<span class="h">' + esc(e.t || '') + '</span></div>';
-  }).join('');
-  if (caja.dataset.sig !== html) { caja.dataset.sig = html; caja.innerHTML = html; }
-  $('#eventos').classList.add('on');
-}
-
-/* un emoji del chat crece hasta ocupar la pantalla y se desvanece */
-function invadir(emoji, agente, emocion) {
-  const capa = document.createElement('div');
-  const lado = String(agente || '').toLowerCase() === 'azul' ? 'a' : 'r';
-  const emo = String(emocion || '').toLowerCase();
-  const validas = ['furia', 'llanto', 'burla', 'euforia', 'panico'];
-  const clase = validas.includes(emo) ? emo : inferirEmocion(emoji);
-  capa.className = 'invasor ' + lado + (clase ? ' ' + clase : '');
-  capa.textContent = emoji;
-  document.body.appendChild(capa);
-  setTimeout(() => capa.remove(), 2600);
-}
-
-/* deduce la emoción del propio emoji cuando el motor no la manda */
-function inferirEmocion(emoji) {
-  const e = String(emoji || '');
-  if (/[😡🤬😠💢🔥]/.test(e)) return 'furia';
-  if (/[😭😢💧🥲😿]/.test(e)) return 'llanto';
-  if (/[😏😆🤣😜😝🙃]/.test(e)) return 'burla';
-  if (/[🎉🥳😎💪🏆👑]/.test(e)) return 'euforia';
-  if (/[😱😨😰🫨😵]/.test(e)) return 'panico';
-  return '';
-}
-function soltarEmoji(emoji) {
-  const mapa = document.querySelector('.mapa');
-  if (!mapa) return;
-  const s = document.createElement('span');
-  s.className = 'emoji-vuela';
-  s.textContent = emoji;
-  s.style.left = (8 + Math.random() * 74) + '%';
-  s.style.top = (18 + Math.random() * 58) + '%';
-  s.style.fontSize = (26 + Math.random() * 16) + 'px';
-  mapa.appendChild(s);
-  setTimeout(() => s.remove(), 1900);
-}
-
-/* ---------------- número que cuenta ---------------- */
-function ponerNum(el, v) {
-  if (!el) return;
-  const antes = Number(String(el.textContent).replace(/\./g, '')) || 0;
-  const fin = Number(v) || 0;
-  if (antes === fin || !isFinite(fin)) { el.textContent = fmt(fin); return; }
-  const t0 = performance.now(), dur = 480;
-  const paso = t => {
-    const k = Math.min(1, (t - t0) / dur);
-    const val = Math.round(antes + (fin - antes) * (1 - Math.pow(1 - k, 3)));
-    el.textContent = fmt(val);
-    if (k < 1) requestAnimationFrame(paso);
-  };
-  requestAnimationFrame(paso);
-}
-
-/* ---------------- gráfica de evolución ---------------- */
-function renderGrafica(hist) {
-  const svg = $('#graf');
-  if (!svg) return;
-  if (!hist || !hist.length) {
-    svg.innerHTML = '<text class="rot" x="200" y="78" text-anchor="middle">Esperando la primera ronda…</text>';
-    return;
-  }
-  const W = 400, H = 150, L = 32, R = 8, T = 12, B = 18;
-  const vals = [];
-  hist.forEach(h => { vals.push(Number(h.rojo_unidades) || 0, Number(h.azul_unidades) || 0); });
-  const max = Math.max(1, ...vals);
-  const n = hist.length;
-  const x = i => n === 1 ? (L + W - R) / 2 : L + i * (W - L - R) / (n - 1);
-  const y = v => H - B - (Number(v) || 0) / max * (H - T - B);
-  const linea = k => hist.map((h, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(h[k]).toFixed(1)).join(' ');
-  const area = k => linea(k) + ' L' + x(n - 1).toFixed(1) + ' ' + (H - B) + ' L' + x(0).toFixed(1) + ' ' + (H - B) + ' Z';
-  const ejes = [0, .5, 1].map(t => {
-    const yy = (H - B - t * (H - T - B)).toFixed(1);
-    return '<line class="eje" x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '"/>' +
-      '<text class="rot" x="' + (L - 5) + '" y="' + (Number(yy) + 3) + '" text-anchor="end">' + fmt(Math.round(max * t)) + '</text>';
-  }).join('');
-  const etiquetas = hist.map((h, i) =>
-    '<text class="rot" x="' + x(i).toFixed(1) + '" y="' + (H - 4) + '" text-anchor="middle">' + h.ronda + '</text>').join('');
-  const puntos = (k, cls) => hist.map((h, i) =>
-    '<circle class="' + cls + '" cx="' + x(i).toFixed(1) + '" cy="' + y(h[k]).toFixed(1) + '" r="2.3"/>').join('');
-  svg.innerHTML =
-    '<defs>' +
-    '<linearGradient id="gRojo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(255,93,93,.28)"/><stop offset="1" stop-color="rgba(255,93,93,0)"/></linearGradient>' +
-    '<linearGradient id="gAzul" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(77,141,255,.28)"/><stop offset="1" stop-color="rgba(77,141,255,0)"/></linearGradient>' +
-    '</defs>' + ejes + etiquetas +
-    '<path class="ar" d="' + area('rojo_unidades') + '"/><path class="aa" d="' + area('azul_unidades') + '"/>' +
-    '<path class="lr" d="' + linea('rojo_unidades') + '"/><path class="la" d="' + linea('azul_unidades') + '"/>' +
-    puntos('rojo_unidades', 'pr') + puntos('azul_unidades', 'pa');
-}
-
-/* ---------------- victoria ---------------- */
-let victoriaSig = '';
-function estadisticasDe(hist, res) {
-  let prevR = 0, prevA = 0, mayor = { agente: '', bajas: 0, ronda: 0 };
-  let rachaAct = '', racha = 0, mejorRacha = { agente: '', rondas: 0 };
-  hist.forEach(h => {
-    const bR = Math.max(0, (h.rojo_bajas || 0) - prevR);
-    const bA = Math.max(0, (h.azul_bajas || 0) - prevA);
-    prevR = h.rojo_bajas || 0;
-    prevA = h.azul_bajas || 0;
-    if (bR > mayor.bajas) mayor = { agente: 'rojo', bajas: bR, ronda: h.ronda };
-    if (bA > mayor.bajas) mayor = { agente: 'azul', bajas: bA, ronda: h.ronda };
-    if (h.dominio === rachaAct) racha++;
-    else { rachaAct = h.dominio; racha = 1; }
-    if (h.dominio !== 'empate' && racha > mejorRacha.rondas) mejorRacha = { agente: h.dominio, rondas: racha };
-  });
-  return {
-    mayor: (res && res.mayor_golpe && res.mayor_golpe.bajas) ? res.mayor_golpe : mayor,
-    racha: (res && res.racha && res.racha.rondas) ? res.racha : mejorRacha,
-    duracion: (res && res.duracion_s) ? res.duracion_s : 0
-  };
-}
-function mostrarVictoria(st, hist) {
-  const v = $('#victoria');
-  if (!st.terminada) { v.classList.remove('on'); victoriaSig = ''; return; }
-  const sig = 'fin|' + st.ganador + '|' + hist.length + '|' + st.rondas;
-  if (sig === victoriaSig) return;
-  victoriaSig = sig;
-  if (sessionStorage.getItem('wb6-vic') === sig) return;
-  const g = String(st.ganador || '').toLowerCase();
-  const s = st.scoreboard || {}, m = st.marcador || {}, res = st.resumen || {};
-  const est = estadisticasDe(hist, res);
-  const color = g === 'rojo' ? 'var(--rojo)' : 'var(--azul)';
-  $('#v-copa').textContent = '🏆';
-  $('#v-titulo').innerHTML = 'Gana <span style="color:' + color + '">' + (g === 'rojo' ? 'ROJO' : 'AZUL') + '</span>';
-  const nom = (s[g] && s[g].nombre) ? ' · ' + esc(s[g].nombre) : '';
-  $('#v-sub').textContent = hist.length + ' rondas jugadas' + nom;
-  $('#v-u').textContent = (s[g] && s[g].unidades !== undefined) ? fmt(s[g].unidades) : '—';
-  $('#v-b').textContent = (m[g] && m[g].bajas !== undefined) ? fmt(m[g].bajas) : '—';
-  $('#v-g').innerHTML = est.mayor && est.mayor.bajas
-    ? '<span style="color:' + (est.mayor.agente === 'rojo' ? 'var(--rojo)' : 'var(--azul)') + '">' +
-      (est.mayor.agente === 'rojo' ? 'ROJO' : 'AZUL') + '</span> · ' + fmt(est.mayor.bajas) + ' <small>(r' + est.mayor.ronda + ')</small>'
-    : '—';
-  $('#v-d').textContent = est.duracion ? Math.floor(est.duracion / 60) + 'm ' + (est.duracion % 60) + 's' : '—';
-  lluviaEmojis();
-  v.classList.add('on');
-}
-function lluviaEmojis() {
-  const v = $('#victoria');
-  let capa = v.querySelector('.lluvia');
-  if (!capa) { capa = document.createElement('div'); capa.className = 'lluvia'; v.appendChild(capa); }
-  capa.innerHTML = '';
-  const pool = ['🎉', '🎊', '🏆', '💥', '🔥', '😱', '😂', '💀', '🍿', '✨'];
-  for (let i = 0; i < 18; i++) {
-    const s = document.createElement('span');
-    s.className = 'emoji-cae';
-    s.textContent = pool[Math.floor(Math.random() * pool.length)];
-    s.style.left = (Math.random() * 96) + '%';
-    s.style.fontSize = (18 + Math.random() * 22) + 'px';
-    s.style.animationDuration = (2.4 + Math.random() * 2.6) + 's';
-    s.style.animationDelay = (Math.random() * 1.6) + 's';
-    capa.appendChild(s);
-  }
-}
-function cerrarVictoria() {
-  $('#victoria').classList.remove('on');
-  if (victoriaSig) sessionStorage.setItem('wb6-vic', victoriaSig);
-}
-
-/* ---------------- modo cine y pantalla completa ---------------- */
-function aplicarCine(b) {
-  document.body.classList.toggle('cine', b);
-  $('#btn-cine').classList.toggle('on', b);
-  localStorage.setItem('wb6-cine', b ? '1' : '0');
-}
-function alternarFull() {
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
-  else document.exitFullscreen().catch(() => {});
-}
-async function ciclo() {
-  try {
-    const st = await jget('/state.json');
-    renderState(st);
-    const fd = await jget('/feed.json');
-    renderFeed(Array.isArray(fd) ? fd : [], st);
-    fallos = 0;
-    $('#aviso').style.display = 'none';
-  } catch (e) {
-    fallos++;
-    if (fallos >= 2) $('#aviso').style.display = 'block';
-  }
-  setTimeout(ciclo, 900);
-}
-
-/* ---------------- mapa en vídeo ---------------- */
-const cv = $('#frame'), ctx = cv.getContext('2d'), fondo = $('#fondo');
-let frames = 0, framesUlt = 0, frameOK = false;
-/* Stream MJPEG nativo: la ventana de WorldBox servida por 24-wb-stream.ps1.
-   Se pinta en el canvas para poder mover la cámara (zoom/paneo) por encima.
-   STREAM_BASE lo resuelve resolverBase(): 8767 en el PC del visor y la
-   pasarela del túnel en GitHub Pages (que enruta /stream.mjpg y /stats). */
-// recorta el vacío del mapa y el HUD del juego (fracciones de la ventana capturada)
-const RECORTE = { x0: 0.25, y0: 0.16, x1: 0.79, y1: 0.79 };
-const camActual = { z: 1, x: 0.5, y: 0.5 };
-const camObjetivo = { z: 1, x: 0.5, y: 0.5 };
-let camHold = 0;
-
-const imgStream = new Image();
-imgStream.alt = '';
-imgStream.style.cssText = 'position:absolute;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
-document.body.appendChild(imgStream);
-imgStream.onload = () => {
-  if (!frameOK) {
-    cv.style.display = 'block'; fondo.style.display = 'block';
-    $('#noframe').style.display = 'none'; frameOK = true;
-  }
-};
-imgStream.onerror = () => {
-  frameOK = false;
-  cv.style.display = 'none'; fondo.style.display = 'none';
-  $('#noframe').style.display = 'block';
-  setTimeout(() => { imgStream.src = STREAM_BASE + '/stream.mjpg?r=' + Date.now(); }, 1500);
-};
-function iniciarStream() {
-  if (!STREAM_BASE) return;
-  imgStream.src = STREAM_BASE + '/stream.mjpg?t=' + Date.now();
-}
-
-let fondoUlt = 0;
-function refrescarFondo() {
-  const ahora = Date.now();
-  if (ahora - fondoUlt < 4000) return;
-  fondoUlt = ahora;
-  fondo.src = STREAM_BASE + '/frame.jpg?t=' + ahora;
-}
-
-async function seguirAccion() {
-  try {
-    const r = await fetch(STREAM_BASE + '/stats', { cache: 'no-store' });
-    const s = await r.json();
-    if (s && typeof s.fps === 'number') window.__wbFps = s.fps;
-    if (s && s.power > 900 && s.cx > 0 && s.cy > 0) {
-      const rx = RECORTE.x1 - RECORTE.x0, ry = RECORTE.y1 - RECORTE.y0;
-      camObjetivo.x = Math.min(1, Math.max(0, (s.cx / 10000 - RECORTE.x0) / rx));
-      camObjetivo.y = Math.min(1, Math.max(0, (s.cy / 10000 - RECORTE.y0) / ry));
-      camObjetivo.z = 1.85;
-      camHold = Date.now() + 2800;
-      // avisa a la capa de efectos: la cámara ya está volando al punto, así que
-      // el impacto se pinta en el centro del mapa (que es donde cae la bomba)
-      if (Date.now() - (window.__wbUltimoImpacto || 0) > 1400) {
-        window.__wbUltimoImpacto = Date.now();
-        window.dispatchEvent(new CustomEvent('wb:impacto', {
-          detail: { power: Number(s.power) || 0, x: s.cx / 10000, y: s.cy / 10000 }
-        }));
-      }
-    }
-  } catch (e) { /* el stream puede no estar levantado */ }
-}
-setInterval(seguirAccion, 260);
-
-function cargarFrame() {
-  return new Promise(res => {
-    const iw = imgStream.naturalWidth, ih = imgStream.naturalHeight;
-    if (!imgStream.complete || !iw) { res(); return; }
-    if (Date.now() > camHold) { camObjetivo.z = 1; camObjetivo.x = 0.5; camObjetivo.y = 0.5; }
-    camActual.z += (camObjetivo.z - camActual.z) * 0.06;
-    camActual.x += (camObjetivo.x - camActual.x) * 0.06;
-    camActual.y += (camObjetivo.y - camActual.y) * 0.06;
-
-    const rx = Math.round((RECORTE.x1 - RECORTE.x0) * iw);
-    const ry = Math.round((RECORTE.y1 - RECORTE.y0) * ih);
-    const ox = Math.round(RECORTE.x0 * iw), oy = Math.round(RECORTE.y0 * ih);
-    if (cv.width !== rx || cv.height !== ry) { cv.width = rx; cv.height = ry; }
-
-    const sw = Math.max(8, rx / camActual.z), sh = Math.max(8, ry / camActual.z);
-    let sx = ox + camActual.x * rx - sw / 2;
-    let sy = oy + camActual.y * ry - sh / 2;
-    sx = Math.max(ox, Math.min(ox + rx - sw, sx));
-    sy = Math.max(oy, Math.min(oy + ry - sh, sy));
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(imgStream, sx, sy, sw, sh, 0, 0, rx, ry);
-    refrescarFondo();
-    frames++;
-    res();
-  });
-}
-async function bucleVideo() {
-  await cargarFrame();
-  setTimeout(bucleVideo, 30);
-}
-setInterval(() => {
-  const f = frames - framesUlt;
-  framesUlt = frames;
-  $('#c-fps').textContent = Math.round(window.__wbFps || f) + ' fps';
-}, 1000);
-
-/* ---------------- arranque ---------------- */
-aplicarTema(localStorage.getItem('wb4-tema') === 'claro');
-aplicarBloqueo(localStorage.getItem('wb4-lock') === '1');
-aplicarCine(localStorage.getItem('wb6-cine') === '1');
-cargarLayout();
-iniciarSplitters();
-$('#btn-theme').addEventListener('click', () => aplicarTema(!document.body.classList.contains('light')));
-$('#btn-lock').addEventListener('click', () => aplicarBloqueo(!document.body.classList.contains('locked')));
-$('#btn-cine').addEventListener('click', () => aplicarCine(!document.body.classList.contains('cine')));
-$('#btn-full').addEventListener('click', alternarFull);
-$('#btn-reset').addEventListener('click', () => { restaurarLayout(); location.reload(); });
-$('#v-cerrar').addEventListener('click', cerrarVictoria);
-$('#victoria').addEventListener('click', e => { if (e.target.id === 'victoria') cerrarVictoria(); });
-window.addEventListener('keydown', e => {
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const t = e.target;
-  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-  const k = String(e.key).toLowerCase();
-  if (k === 't') aplicarTema(!document.body.classList.contains('light'));
-  else if (k === 'l') aplicarBloqueo(!document.body.classList.contains('locked'));
-  else if (k === 'c') aplicarCine(!document.body.classList.contains('cine'));
-  else if (k === 'f') alternarFull();
-  else if (k === 'r') { restaurarLayout(); location.reload(); }
-  else if (k === 'escape') cerrarVictoria();
-  else return;
-  e.preventDefault();
-});
-resolverBase().then(() => {
-  iniciarStream();
-  bucleVideo();
-  ciclo();
-});
-</script>
-<script>
-/* ============================================================
-   Capa de espectáculo (v2). No reescribe el visor: lo envuelve.
-   renderState y renderFeed se sustituyen por versiones que primero
-   llaman a las originales y después pintan el HUD del show.
-   ============================================================ */
-(function () {
-  'use strict';
-  if (window.__showV2) return;
-  window.__showV2 = true;
-  const $ = s => document.querySelector(s);
-  const centro = $('#centro');
-  if (!centro) return;
-  const mapa = centro.querySelector('.mapa') || centro;
-
-  /* ---------- DOM ---------- */
-  const fx = document.createElement('div'); fx.id = 'showfx'; mapa.appendChild(fx);
-
-  const titular = document.createElement('div'); titular.id = 'titular';
-  titular.innerHTML = '<span class="kick">En directo</span><span class="tx">—</span>';
-  fx.appendChild(titular);
-
-  const splash = document.createElement('div'); splash.id = 'splash'; fx.appendChild(splash);
-
-  const narrador = document.createElement('div'); narrador.id = 'narrador'; fx.appendChild(narrador);
-
-  const tension = document.createElement('div'); tension.id = 'tension';
-  tension.innerHTML = '<div class="lab"><span>Tensión del combate</span><span class="v">0 %</span></div>' +
-    '<div class="bar"><i></i></div>';
-  fx.appendChild(tension);
-
-  // barra de moral dentro de cada panel (se mete donde estaba la de reparto)
-  ['rojo', 'azul'].forEach(lado => {
-    const panel = document.getElementById(lado);
-    if (!panel || panel.querySelector('.moral')) return;
-    const d = document.createElement('div'); d.className = 'moral';
-    d.innerHTML = '<div class="lab"><span>Moral</span><span class="v">—</span></div><div class="bar"><i></i></div>';
-    const ref = panel.querySelector('.share') || panel.querySelector('.meta');
-    if (ref && ref.parentNode) ref.parentNode.insertBefore(d, ref.nextSibling);
-    else panel.appendChild(d);
-  });
-
-  // reloj del directo dentro del chip EN DIRECTO
-  const live = $('#c-live');
-  const reloj = document.createElement('span'); reloj.className = 'reloj'; reloj.textContent = '';
-  if (live) live.appendChild(reloj);
-
-  /* ---------- estado local ---------- */
-  const moral = { rojo: null, azul: null };
-  let ultTitular = '', ultRonda = null, ultResultadoSeq = 0, arrancado = false;
-
-  /* ---------- pintores ---------- */
-  function pintarMoral() {
-    ['rojo', 'azul'].forEach(lado => {
-      const el = document.querySelector('#' + lado + ' .moral');
-      const v = moral[lado];
-      if (!el || v === null || !isFinite(v)) return;
-      el.querySelector('.bar i').style.width = Math.max(3, Math.min(100, v)) + '%';
-      el.querySelector('.v').textContent = Math.round(v) + ' %';
-      el.classList.toggle('baja', v < 35);
-    });
-  }
-
-  function flashTitular(txt, ronda) {
-    if (!txt || txt === ultTitular) return;
-    ultTitular = txt;
-    titular.querySelector('.tx').textContent = txt;
-    titular.querySelector('.kick').textContent = ronda ? 'Ronda ' + ronda : 'En directo';
-    titular.classList.remove('on');
-    void titular.offsetWidth;
-    titular.classList.add('on');
-    clearTimeout(flashTitular._t);
-    flashTitular._t = setTimeout(() => titular.classList.remove('on'), 9000);
-  }
-
-  function splashRonda(n) {
-    if (ultRonda === null) { ultRonda = n; return; }   // la primera carga no hace splash
-    if (n === ultRonda) return;
-    ultRonda = n;
-    if (!n || n <= 0) return;
-    splash.textContent = 'RONDA ' + n;
-    splash.classList.remove('on');
-    void splash.offsetWidth;
-    splash.classList.add('on');
-  }
-
-  function decirNarrador(txt) {
-    if (!txt) return;
-    narrador.textContent = txt;
-    narrador.classList.add('on');
-    clearTimeout(decirNarrador._t);
-    decirNarrador._t = setTimeout(() => narrador.classList.remove('on'), 7000);
-  }
-
-  function sacudir() {
-    document.body.classList.remove('sacude');
-    void document.body.offsetWidth;
-    document.body.classList.add('sacude');
-    setTimeout(() => document.body.classList.remove('sacude'), 540);
-  }
-
-  /** número de daño flotante sobre el mapa; lado = bando que lo recibe */
-  function numeroDaño(n, lado, intensidad) {
-    if (!n || n <= 0) return;
-    const d = document.createElement('div');
-    d.className = 'dmg ' + (lado === 'rojo' ? 'r' : 'a');
-    d.textContent = '−' + new Intl.NumberFormat('es-ES').format(n);
-    const w = centro.clientWidth, h = centro.clientHeight;
-    const grande = intensidad >= 0.6;
-    d.style.left = Math.round(w * (0.18 + Math.random() * 0.6)) + 'px';
-    d.style.top = Math.round(h * (0.18 + Math.random() * 0.5)) + 'px';
-    d.style.fontSize = grande ? '' : '0.78em';
-    fx.appendChild(d);
-    setTimeout(() => d.remove(), 1300);
-  }
-
-  function pintarReloj(st) {
-    if (!reloj) return;
-    const ini = Number(st && st.inicio_ms) || 0;
-    if (!ini) { reloj.textContent = ''; return; }
-    if (st.terminada) {
-      const dur = Number(st.resumen && st.resumen.duracion_s) || 0;
-      reloj.textContent = dur ? ' · ' + mmss(dur) : '';
-      return;
-    }
-    const ahora = Number(st.ahora_ms) || Date.now();
-    const seg = Math.max(0, Math.round((ahora - ini) / 1000));
-    reloj.textContent = ' · ' + mmss(seg);
-  }
-  function mmss(s) {
-    const m = Math.floor(s / 60), r = Math.round(s % 60);
-    return m + ':' + String(r).padStart(2, '0');
-  }
-
-  /* ---------- envoltorio de renderState ---------- */
-  const _renderState = window.renderState;
-  if (typeof _renderState === 'function') {
-    window.renderState = function (st) {
-      try { _renderState(st); } catch (e) { console.error('[show] renderState', e); }
-      try {
-        if (!st) return;
-        const d = st.drama || {};
-        if (d.moral) { moral.rojo = Number(d.moral.rojo); moral.azul = Number(d.moral.azul); pintarMoral(); }
-        if (isFinite(Number(d.tension))) {
-          const t = Math.max(0, Math.min(100, Number(d.tension)));
-          tension.querySelector('.bar i').style.width = t + '%';
-          tension.querySelector('.v').textContent = Math.round(t) + ' %';
-        }
-        if (d.titular) flashTitular(String(d.titular), Number(st.ronda) || 0);
-        if (d.narrador) decirNarrador(String(d.narrador));
-        splashRonda(Number(st.ronda) || 0);
-        pintarReloj(st);
-        arrancado = true;
-      } catch (e) { console.error('[show] hud', e); }
-    };
-  }
-
-  /* ---------- envoltorio de renderFeed: daño + sacudida ---------- */
-  const _renderFeed = window.renderFeed;
-  if (typeof _renderFeed === 'function') {
-    window.renderFeed = function (items, st) {
-      try { _renderFeed(items, st); } catch (e) { console.error('[show] renderFeed', e); }
-      try {
-        const arr = Array.isArray(items) ? items : [];
-        const nuevos = arr.filter(e => String(e.tipo) === 'resultado' &&
-          (Number(e.seq) || 0) > ultResultadoSeq);
-        if (!nuevos.length) return;
-        ultResultadoSeq = Math.max(ultResultadoSeq, ...nuevos.map(e => Number(e.seq) || 0));
-        let maxI = 0;
-        nuevos.slice(-2).forEach(e => {
-          const n = Number(e.bajas) || 0;
-          const i = Number(e.intensidad) || 0;
-          maxI = Math.max(maxI, i);
-          if (n > 0) numeroDaño(n, String(e.agente) === 'rojo' ? 'azul' : 'rojo', i);
-        });
-        if (maxI >= 0.62) sacudir();
-      } catch (e) { console.error('[show] fx', e); }
-    };
-  }
-
-  /* ---------- envoltorio de la victoria: titular y moral final ---------- */
-  const _mostrarVictoria = window.mostrarVictoria;
-  if (typeof _mostrarVictoria === 'function') {
-    window.mostrarVictoria = function (st, hist) {
-      try { _mostrarVictoria(st, hist); } catch (e) { console.error('[show] victoria', e); }
-      try {
-        if (!st || !st.terminada) return;
-        const v = $('#victoria');
-        if (!v || !v.classList.contains('on')) return;
-        const box = v.querySelector('.vic') || v;
-        if (box.querySelector('.vtitular')) return;
-        const d = st.drama || {};
-        const ext = document.createElement('div');
-        ext.className = 'vextra';
-        ext.innerHTML =
-          (d.titular ? '<p class="vtitular">«' + esc(d.titular) + '»</p>' : '') +
-          (d.narrador ? '<p class="vnarrador">' + esc(d.narrador) + '</p>' : '') +
-          (d.moral ? '<p class="vmoral">Moral final — ROJO ' + Math.round(Number(d.moral.rojo)) +
-            ' % · AZUL ' + Math.round(Number(d.moral.azul)) + ' %</p>' : '');
-        const cerrar = box.querySelector('.cerrar');
-        if (cerrar && cerrar.parentNode === box) box.insertBefore(ext, cerrar);
-        else box.appendChild(ext);
-      } catch (e) { console.error('[show] victoria extra', e); }
-    };
-  }
-})();
-</script>
 <script src="viewer-fx.js"></script>
 <script>
 /* ============================================================
-   Capa de efectos (ViewerFX). Se monta encima de todo lo anterior:
-   emojis que salen del chat y estallan en el mapa, impactos donde
-   cae la bomba, números de daño, destellos y sacudidas.
-   Si viewer-fx.js no está (por ejemplo abriendo el HTML con file://),
-   todo esto se desactiva sin romper el visor.
+   WorldBox AI Show · visor v3 "broadcast"
    ============================================================ */
 (function () {
   'use strict';
-  const $ = s => document.querySelector(s);
-  const mapa = $('#centro .mapa');
-  if (!mapa) return;
 
-  function arrancar() {
-    const FX = window.ViewerFX;
-    if (!FX || !FX.init || mapa.__fxListo) return;
-    mapa.__fxListo = true;
+  /* ------------------------------------------------------------
+     Utilidades
+     ------------------------------------------------------------ */
+  const $ = (s, r) => (r || document).querySelector(s);
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const easeInOutCubic = k => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+  const easeOutCubic = k => 1 - Math.pow(1 - k, 3);
+  const fmt = new Intl.NumberFormat('es-ES');
+  const fmtN = n => {
+    const v = Number(n);
+    return (n === null || n === undefined || !isFinite(v)) ? '—' : fmt.format(v);
+  };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const recortar = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  const ahora = () => (performance && performance.now ? performance.now() : Date.now());
+
+  const mqMovil = window.matchMedia('(max-width:999px)');
+  let ES_MOVIL = mqMovil.matches;
+  try { mqMovil.addEventListener('change', e => { ES_MOVIL = e.matches; }); }
+  catch (e) { try { mqMovil.addListener(e2 => { ES_MOVIL = e2.matches; }); } catch (e3) {} }
+
+  let PREFIERE_MENOS = false;
+  try { PREFIERE_MENOS = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  const CFG = {
+    pollMs: 900,
+    statsMs: 300,
+    maxChat: 60,
+    idaMs: 900,
+    vueltaMs: 900,
+    holdMs: 2800,
+    maxEfectos: 24,
+    qa: (function () {
+      try { return new URLSearchParams(location.search).get('qa') === '1'; } catch (e) { return false; }
+    })(),
+    debug: (function () {
+      try { return new URLSearchParams(location.search).get('debug') === '1'; } catch (e) { return false; }
+    })()
+  };
+
+  const RECORTE = { x0: 0.25, y0: 0.16, x1: 0.79, y1: 0.79 };
+  const VENTANA = { w: 1280, h: 720 };   // ventana capturada de WorldBox (px) para eventos crudos
+
+  /* ------------------------------------------------------------
+     Endpoints (window.__WB_ENDPOINTS__ / __WB_ENDPOINTS_READY__)
+     ------------------------------------------------------------ */
+  let BASE = '';
+  let STREAM_BASE = '';
+  let SIN_SENAL = false;
+  let ES_LOCAL = false;
+
+  async function resolverEndpoints() {
+    let ep = null;
     try {
-      FX.init({ map: mapa, chat: null, motion: 'full', maxEffects: 16, autoFly: false });
-    } catch (e) { console.error('[fx] init', e); return; }
+      if (window.__WB_ENDPOINTS_READY__) {
+        ep = await Promise.race([
+          Promise.resolve(window.__WB_ENDPOINTS_READY__),
+          new Promise(res => setTimeout(() => res(null), 1800))
+        ]);
+      }
+    } catch (e) { ep = null; }
+    if (!ep || typeof ep !== 'object') ep = window.__WB_ENDPOINTS__ || {};
+    const protocolo = location.protocol || '';
+    ES_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/i.test(location.hostname || '');
+    const porDefectoBase = protocolo === 'file:' ? 'http://localhost:8765' : '';
+    const porDefectoStream = protocolo === 'file:'
+      ? 'http://localhost:8767'
+      : (ES_LOCAL ? 'http://' + location.hostname + ':8767' : '');
+    const base = (ep.base !== undefined) ? ep.base : porDefectoBase;
+    const streamBase = (ep.streamBase !== undefined) ? ep.streamBase : porDefectoStream;
+    return { base: base, streamBase: streamBase, sinSenal: ep.base === '' };
+  }
 
-    const dentro = () => ({ xPct: 24 + Math.random() * 52, yPct: 20 + Math.random() * 55 });
+  const AVISO_DEFECTO =
+    'Sin conexión con el servidor del visor. Arráncalo con ' +
+    '<code>pwsh -File scripts\\20-wb-viewer-server.ps1</code> y abre ' +
+    '<code>http://localhost:8765/</code>.';
 
-    /* --- emoji suelto: sale volando y estalla en el mapa --- */
-    const _renderFeed = window.renderFeed;
-    let ultSeqFx = -1;
-    if (typeof _renderFeed === 'function') {
-      window.renderFeed = function (items, st) {
-        try { _renderFeed(items, st); } catch (e) { console.error('[fx] renderFeed', e); }
-        try {
-          const arr = Array.isArray(items) ? items : [];
-          const nuevos = arr.filter(e => (Number(e.seq) || 0) > ultSeqFx);
-          if (!nuevos.length) return;
-          ultSeqFx = Math.max(ultSeqFx, ...nuevos.map(e => Number(e.seq) || 0));
-          const lado = a => String(a).toLowerCase() === 'azul' ? 'azul' : 'rojo';
-          for (const e of nuevos.slice(-4)) {
-            const tipo = String(e.tipo || '');
-            const texto = String(e.texto || '').trim();
-            const soloEmoji = /^[\p{Extended_Pictographic}\u200d\uFE0F\s]+$/u.test(texto);
-            if ((tipo === 'emoji' || tipo === 'chat') && soloEmoji && texto) {
-              const desde = $('#feed-' + lado(e.agente)) || mapa;
-              const destino = dentro();
-              try {
-                FX.flyEmoji(texto, {
-                  fromEl: desde, to: destino, duration: 1500,
-                  size: 110, power: 1.2, color: lado(e.agente) === 'azul' ? '#38bdf8' : '#f87171'
-                });
-              } catch (err) { /* el efecto es opcional */ }
-              continue;
-            }
-            if (tipo === 'bomba') {
-              const d = dentro();
-              try { FX.spawnImpact(d.xPct, d.yPct, 1.6, { emoji: '💥' }); } catch (err) { }
-            }
-            if (tipo === 'resultado') {
-              const n = Number(e.bajas) || 0;
-              const i = Number(e.intensidad) || 0;
-              const d = dentro();
-              if (n > 0) { try { FX.spawnDamage(n, d.xPct, d.yPct, lado(e.agente) === 'rojo' ? 'azul' : 'rojo'); } catch (err) { } }
-              if (i >= 0.62) { try { FX.shake(Math.min(1, i)); FX.flash('#ef4444', { opacity: 0.22, duration: 420 }); } catch (err) { } }
-            }
-          }
-        } catch (e) { console.error('[fx] feed', e); }
-      };
-    }
+  /* ------------------------------------------------------------
+     Estado general
+     ------------------------------------------------------------ */
+  let estadoActual = null;
+  let ultimaRonda = null;
+  let ultimoSeq = -1;
+  let ultimoTitular = '';
+  let titTimer = null;
+  let splashTimer = null;
+  let victoriaSig = '';
+  let victoriaAbierta = false;
+  let fallos = 0;
+  let statsStream = { fps: 0 };
+  let tickerItems = [];
+  let ultimoPuntoVentana = null;   // % de la ventana capturada del último bombardeo
 
-    /* --- la bomba: impacto en el centro (la cámara ya está volando ahí) --- */
-    window.addEventListener('wb:impacto', ev => {
-      try {
-        const p = Number(ev && ev.detail && ev.detail.power) || 0;
-        FX.spawnImpact(50, 50, Math.min(3, 1 + p / 900), { emoji: '💥' });
-        if (p > 2200) FX.shake(0.85);
-      } catch (e) { console.error('[fx] impacto', e); }
+  /* ------------------------------------------------------------
+     Tema, cine, bloqueo, panel
+     ------------------------------------------------------------ */
+  const K_TEMA = 'wb7-tema';
+  const K_LOCK = 'wb7-lock';
+  const K_CINE = 'wb7-cine';
+  const K_PANEL = 'wb7-panel';
+  const K_SONIDO = 'wb7-sonido';
+
+  function aplicarTema(claro) {
+    document.body.classList.toggle('light', !!claro);
+    const b = $('#btn-theme');
+    if (b) b.textContent = claro ? '☀️' : '🌙';
+    try { localStorage.setItem(K_TEMA, claro ? '1' : '0'); } catch (e) {}
+  }
+  function aplicarCine(on) {
+    document.body.classList.toggle('cine', !!on);
+    const b = $('#btn-cine');
+    if (b) b.classList.toggle('on', !!on);
+    try { localStorage.setItem(K_CINE, on ? '1' : '0'); } catch (e) {}
+  }
+  function aplicarBloqueo(on) {
+    document.body.classList.toggle('locked', !!on);
+    const b = $('#btn-lock');
+    if (b) { b.textContent = on ? '🔒' : '🔓'; b.classList.toggle('on', !!on); }
+    try { localStorage.setItem(K_LOCK, on ? '1' : '0'); } catch (e) {}
+  }
+  function aplicarPanel(px) {
+    const max = Math.min(430, Math.round(window.innerWidth * 0.30));
+    const w = clamp(px || 318, 258, Math.max(280, max));
+    document.documentElement.style.setProperty('--panel-w', w + 'px');
+    /* En móvil el ancho de panel es 100%: no guardar ese valor para escritorio */
+    if (!ES_MOVIL) { try { localStorage.setItem(K_PANEL, String(w)); } catch (e) {} }
+  }
+
+  function iniciarSplitters() {
+    [['sp-rojo', 1], ['sp-azul', -1]].forEach(function (par) {
+      const el = document.getElementById(par[0]);
+      const signo = par[1];
+      if (!el) return;
+      el.addEventListener('pointerdown', function (ev) {
+        if (document.body.classList.contains('locked') || ES_MOVIL) return;
+        ev.preventDefault();
+        const x0 = ev.clientX;
+        const actual = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-w')) || 318;
+        try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+        function mover(e2) {
+          aplicarPanel(actual + (e2.clientX - x0) * signo);
+        }
+        function fin() {
+          el.removeEventListener('pointermove', mover);
+          el.removeEventListener('pointerup', fin);
+          el.removeEventListener('pointercancel', fin);
+        }
+        el.addEventListener('pointermove', mover);
+        el.addEventListener('pointerup', fin);
+        el.addEventListener('pointercancel', fin);
+      });
     });
-
-    /* --- victoria: destello del color del ganador --- */
-    const _victoria = window.mostrarVictoria;
-    if (typeof _victoria === 'function') {
-      window.mostrarVictoria = function (st, hist) {
-        try { _victoria(st, hist); } catch (e) { console.error('[fx] victoria', e); }
-        try {
-          if (!st || !st.terminada) return;
-          const g = String((st.resumen && st.resumen.ganador) || st.ganador || '').toLowerCase();
-          FX.flash(g === 'azul' ? '#38bdf8' : '#f87171', { opacity: 0.35, duration: 900 });
-        } catch (e) { }
-      };
-    }
-    window.__fxActivo = true;
   }
 
-  if (window.ViewerFX) arrancar();
-  else window.addEventListener('load', arrancar);
-})();
-</script>
-<script>
-/* ============================================================
-   MÁXIMO ESPECTÁCULO (capa añadida sobre ViewerFX).
-   Emojis de emoción grandes (80-160 px) y duraderos (2,5-4 s)
-   con halo, escombros en cada impacto y vuelo de emojis más
-   contundente. No toca el visor: envuelve la API de efectos.
-   ============================================================ */
-(function () {
-  'use strict';
-  const FX = window.ViewerFX;
-  if (!FX) return;
-  const EM = {
-    furia: ['😡', '🤬', '🔥'],
-    llanto: ['😭', '💧', '😢'],
-    burla: ['😏', '😂', '🤣'],
-    euforia: ['🤩', '🎉', '✨'],
-    panico: ['😱', '💀', '😨'],
-    golpe: ['💥', '🤬', '🔥'],
-    chulo: ['😎', '🔥', '💪'],
-    emoji: ['😱', '🔥', '💥']
-  };
-  const pick = a => a[Math.floor(Math.random() * a.length)];
-  const color = ag => String(ag).toLowerCase() === 'azul' ? '#38bdf8' : '#f87171';
-
-  // reacción de emoción: grande, larga y con halo del color del bando
-  const _reaccion = FX.spawnReaction.bind(FX);
-  FX.spawnReaction = function (emoji, x, y, opts) {
-    return _reaccion(emoji, x, y, Object.assign({ size: 120, duration: 3200 }, opts || {}));
-  };
-
-  // impacto: además de la explosión, escombros y chispas a los lados
-  const _impacto = FX.spawnImpact.bind(FX);
-  FX.spawnImpact = function (x, y, power, opts) {
-    const r = _impacto(x, y, power, opts);
-    const n = Math.min(16, 7 + Math.round((Number(power) || 1) * 4));
-    for (let i = 0; i < n; i++) {
-      setTimeout(() => {
-        try {
-          FX.spawnReaction(pick(['🪨', '🧱', '🔥', '💥', '💨']),
-            Math.max(2, Math.min(98, x + (Math.random() - 0.5) * 20)),
-            Math.max(2, Math.min(98, y + (Math.random() - 0.5) * 20)),
-            { size: 70 + Math.random() * 70, duration: 2600 + Math.random() * 1200, color: '#fb923c' });
-        } catch (e) { /* opcional */ }
-      }, i * 55);
-    }
-    return r;
-  };
-
-  // emoji que vuela del chat al mapa: más grande y más tiempo
-  const _vuela = FX.flyEmoji.bind(FX);
-  FX.flyEmoji = function (emoji, opts) {
-    return _vuela(emoji, Object.assign({}, opts || {}, { size: 130, duration: 2400 }));
-  };
-
-  // emojis de emoción ligados al tono de cada comentario del chat
-  const _renderFeed = window.renderFeed;
-  let ult = -1;
-  if (typeof _renderFeed === 'function') {
-    window.renderFeed = function (items, st) {
-      try { _renderFeed(items, st); } catch (e) { console.error('[show+] renderFeed', e); }
+  /* ------------------------------------------------------------
+     Sonido (WebAudio sintetizado, opcional y silenciado por defecto)
+     ------------------------------------------------------------ */
+  const sonido = (function () {
+    let ctx = null;
+    let activo = false;
+    try { activo = localStorage.getItem(K_SONIDO) === '1'; } catch (e) {}
+    function ac() {
+      if (!activo) return null;
       try {
-        const arr = Array.isArray(items) ? items : [];
-        const nuevos = arr.filter(e => (Number(e.seq) || 0) > ult &&
-          (String(e.tipo) === 'chat' || String(e.tipo) === 'emoji'));
-        if (!nuevos.length) return;
-        ult = Math.max(ult, ...nuevos.map(e => Number(e.seq) || 0));
-        nuevos.slice(-3).forEach((e, i) => {
-          const tono = String(e.tono || '').toLowerCase();
-          const lista = EM[tono] || (tono === 'emoji' ? EM.emoji : null);
-          if (!lista) return;
-          setTimeout(() => {
-            try {
-              FX.spawnReaction(pick(lista),
-                18 + Math.random() * 64, 16 + Math.random() * 60,
-                { size: 80 + Math.random() * 80, duration: 2500 + Math.random() * 1500, color: color(e.agente) });
-            } catch (err) { /* opcional */ }
-          }, i * 130);
+        if (!ctx) {
+          const C = window.AudioContext || window.webkitAudioContext;
+          if (!C) return null;
+          ctx = new C();
+        }
+        if (ctx.state === 'suspended') ctx.resume();
+        return ctx;
+      } catch (e) { return null; }
+    }
+    function ruido(c, dur, vol, corte) {
+      const n = Math.max(1, Math.floor(c.sampleRate * dur));
+      const buf = c.createBuffer(1, n, c.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.1);
+      const src = c.createBufferSource(); src.buffer = buf;
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = corte || 900;
+      const g = c.createGain(); g.gain.value = vol;
+      src.connect(f); f.connect(g); g.connect(c.destination);
+      src.start();
+    }
+    function nota(c, f0, t, dur, tipo, vol, f1) {
+      const o = c.createOscillator(); const g = c.createGain();
+      o.type = tipo || 'sine';
+      o.frequency.setValueAtTime(f0, t);
+      if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+    return {
+      get activo() { return activo; },
+      alternar() {
+        activo = !activo;
+        try { localStorage.setItem(K_SONIDO, activo ? '1' : '0'); } catch (e) {}
+        if (activo) ac();
+        actualizarBotonSonido();
+        return activo;
+      },
+      boom(power) {
+        const c = ac(); if (!c) return;
+        const t = c.currentTime; const p = clamp(power || 0.7, 0.3, 1);
+        nota(c, 130, t, 0.55, 'sine', 0.35 * p, 38);
+        ruido(c, 0.5, 0.3 * p, 1000);
+      },
+      ding() {
+        const c = ac(); if (!c) return;
+        const t = c.currentTime;
+        nota(c, 880, t, 0.16, 'triangle', 0.18);
+        nota(c, 1320, t + 0.09, 0.2, 'triangle', 0.14);
+      },
+      fanfarria() {
+        const c = ac(); if (!c) return;
+        const t = c.currentTime;
+        [523, 659, 784, 1047].forEach((f, i) => {
+          nota(c, f, t + i * 0.13, 0.32, 'triangle', 0.16);
+          nota(c, f * 2, t + i * 0.13, 0.22, 'sine', 0.07);
         });
-      } catch (e) { console.error('[show+] emoción', e); }
+      }
     };
+  })();
+
+  function actualizarBotonSonido() {
+    const b = $('#btn-sonido');
+    if (b) { b.textContent = sonido.activo ? '🔊' : '🔇'; b.classList.toggle('on', sonido.activo); }
   }
+
+  /* ------------------------------------------------------------
+     ViewerFX: v2 del contrato; adaptador para v1; ausencia tolerada
+     ------------------------------------------------------------ */
+  const FX = (function () {
+    const raw = window.ViewerFX;
+    const host = $('#fx-host');
+    if (!raw || !host) {
+      return { v2: false, invader() {}, impact() {}, damage() {}, sparks() {}, shake() {}, flash() {}, vignette() {}, confetti() {}, clear() {}, ok: false };
+    }
+    const esV2 = String(raw.version || '').charAt(0) === '2';
+    try {
+      if (esV2) raw.init({ map: host, motion: PREFIERE_MENOS ? 'lite' : 'full', maxEffects: CFG.maxEfectos });
+      else raw.init({ map: host, motion: PREFIERE_MENOS ? 'reduced' : 'full', maxEffects: CFG.maxEfectos });
+    } catch (e) {}
+    function v1reaccion(emoji, x, y) {
+      try { raw.spawnReaction(emoji, clamp(x, 4, 96), clamp(y, 4, 96), { duration: 2800 }); } catch (e) {}
+    }
+    return {
+      ok: true,
+      v2: esV2,
+      invader(emoji, o) {
+        o = o || {};
+        if (esV2) { try { raw.invader(emoji, o); } catch (e) {} }
+        else v1reaccion(emoji, o.side === 'azul' ? 68 : 32, 44);
+      },
+      impact(x, y, o) {
+        o = o || {};
+        if (esV2) { try { raw.impact(x, y, o); } catch (e) {} }
+        else { try { raw.spawnImpact(clamp(x, 2, 98), clamp(y, 2, 98), clamp(o.power || 0.7, 0.1, 1), { emoji: o.emoji || '💥' }); } catch (e) {} }
+      },
+      damage(n, x, y, side) {
+        if (esV2) { try { raw.damage(n, x, y, side); } catch (e) {} }
+        else { try { raw.spawnDamage(n, clamp(x, 4, 96), clamp(y, 4, 96), side); } catch (e) {} }
+      },
+      sparks(x, y, o) {
+        if (esV2) { try { raw.sparks(x, y, o || {}); } catch (e) {} }
+        else v1reaccion('✦', x, y);
+      },
+      shake(s, o) {
+        if (esV2) { try { raw.shake(s, o); } catch (e) {} }
+        else { try { raw.shake(s); } catch (e) {} }
+      },
+      flash(color, o) {
+        if (esV2) { try { raw.flash(color, o); } catch (e) {} }
+        else { try { raw.flash(color); } catch (e) {} }
+      },
+      vignette(nivel, o) {
+        if (esV2) { try { raw.vignette(nivel, o); } catch (e) {} }
+        else { try { raw.vignette(nivel); } catch (e) {} }
+      },
+      confetti(side, o) {
+        if (esV2) { try { raw.confetti(side, o || {}); return true; } catch (e) { return false; } }
+        return false;
+      },
+      clear() { try { raw.clear(); } catch (e) {} }
+    };
+  })();
+
+  /* ------------------------------------------------------------
+     Cámara del mapa (ida easeInOutCubic · hold 2,8 s · vuelta easeOutCubic 900 ms)
+     ------------------------------------------------------------ */
+  const CAM = {
+    x: 0.5, y: 0.5, z: 1,
+    fase: 'neutro',
+    t0: 0, dur: CFG.idaMs,
+    fx: 0.5, fy: 0.5, fz: 1,
+    tx: 0.5, ty: 0.5, tz: 1,
+    holdMs: CFG.holdMs, holdHasta: 0,
+    vx: 1, vy: 1,
+    ux: NaN, uy: NaN, uz: NaN   /* última cámara dibujada (para no redibujar de más) */
+  };
+  let ultimoFocoT = -1e9;
+  let ultimoFoco = { x: -9, y: -9 };
+
+  function foco(xPctVentana, yPctVentana, zoom, msHold, forzar) {
+    const rx = RECORTE.x1 - RECORTE.x0;
+    const ry = RECORTE.y1 - RECORTE.y0;
+    let tx = (Number(xPctVentana) / 100 - RECORTE.x0) / rx;
+    let ty = (Number(yPctVentana) / 100 - RECORTE.y0) / ry;
+    if (!isFinite(tx) || !isFinite(ty)) return;
+    tx = clamp(tx, 0.07, 0.93);
+    ty = clamp(ty, 0.07, 0.93);
+    const zmax = ES_MOVIL ? 1.6 : 1.7;
+    const tz = clamp(Number(zoom) || 1.6, 1.05, zmax);
+    const t = ahora();
+    if (!forzar && t - ultimoFocoT < 700 &&
+        Math.abs(tx - ultimoFoco.x) < 0.04 && Math.abs(ty - ultimoFoco.y) < 0.04) return;
+    ultimoFocoT = t;
+    ultimoFoco = { x: tx, y: ty };
+    CAM.fase = 'ida';
+    CAM.t0 = t;
+    CAM.dur = CFG.idaMs;
+    CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
+    CAM.tx = tx; CAM.ty = ty; CAM.tz = tz;
+    CAM.holdMs = Math.max(CFG.holdMs, Number(msHold) || 0);
+  }
+
+  function tickCamara(t) {
+    if (CAM.fase === 'ida') {
+      const k = clamp((t - CAM.t0) / CAM.dur, 0, 1);
+      const e = easeInOutCubic(k);
+      CAM.x = lerp(CAM.fx, CAM.tx, e);
+      CAM.y = lerp(CAM.fy, CAM.ty, e);
+      CAM.z = lerp(CAM.fz, CAM.tz, e);
+      if (k >= 1) { CAM.fase = 'hold'; CAM.holdHasta = t + CAM.holdMs; }
+    } else if (CAM.fase === 'hold') {
+      CAM.x = CAM.tx; CAM.y = CAM.ty; CAM.z = CAM.tz;
+      if (t >= CAM.holdHasta) {
+        CAM.fase = 'vuelta';
+        CAM.t0 = t;
+        CAM.dur = CFG.vueltaMs;
+        CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
+      }
+    } else if (CAM.fase === 'vuelta') {
+      const k = clamp((t - CAM.t0) / CAM.dur, 0, 1);
+      const e = easeOutCubic(k);
+      CAM.x = lerp(CAM.fx, 0.5, e);
+      CAM.y = lerp(CAM.fy, 0.5, e);
+      CAM.z = lerp(CAM.fz, 1, e);
+      if (k >= 1) CAM.fase = 'neutro';
+    } else if (!PREFIERE_MENOS) {
+      /* deriva lenta cuando no hay acción */
+      const s = t * 0.00006;
+      CAM.x = 0.5 + Math.sin(s) * 0.030;
+      CAM.y = 0.5 + Math.cos(s * 0.83) * 0.024;
+      CAM.z = 1 + Math.sin(s * 0.7) * 0.012;
+    } else {
+      CAM.x = 0.5; CAM.y = 0.5; CAM.z = 1;
+    }
+  }
+
+  /* Punto en % de la VENTANA capturada -> % de la pantalla con la cámara actual */
+  function aPantalla(xPctVentana, yPctVentana) {
+    const rx = RECORTE.x1 - RECORTE.x0;
+    const ry = RECORTE.y1 - RECORTE.y0;
+    const px = clamp((Number(xPctVentana) / 100 - RECORTE.x0) / rx, -0.2, 1.2);
+    const py = clamp((Number(yPctVentana) / 100 - RECORTE.y0) / ry, -0.2, 1.2);
+    let sx = ((px - CAM.x) * CAM.vx + 0.5) * 100;
+    let sy = ((py - CAM.y) * CAM.vy + 0.5) * 100;
+    if (!isFinite(sx) || !isFinite(sy) || sx < -12 || sx > 112 || sy < -12 || sy > 112) { sx = 50; sy = 50; }
+    return { x: clamp(sx, 3, 97), y: clamp(sy, 3, 97) };
+  }
+
+  /* ------------------------------------------------------------
+     Vídeo: MJPEG -> canvas con recorte + cámara; fallback frame.jpg
+     ------------------------------------------------------------ */
+  const cv = $('#frame');
+  const ctx = cv ? cv.getContext('2d') : null;
+  const imgStream = new Image();
+  const imgFrame = new Image();
+  let framesDibujados = 0;
+  let framesRaf = 0;
+  let fpsRaf = 0;
+  let fpsMedido = 0;
+  let ultimoDibujo = 0;
+  let tFps = 0;
+
+  function fuenteVideo() {
+    if (imgStream.complete && imgStream.naturalWidth > 0) return imgStream;
+    if (imgFrame.complete && imgFrame.naturalWidth > 0) return imgFrame;
+    return null;
+  }
+
+  function iniciarVideo() {
+    if (!ctx) return;
+    let usandoJpg = false;
+    function cargarJpg() {
+      if (!usandoJpg) return;
+      imgFrame.src = BASE + '/frame.jpg?t=' + Date.now();
+      setTimeout(cargarJpg, 1300);
+    }
+    function activarJpg() {
+      if (usandoJpg) return;
+      usandoJpg = true;
+      imgFrame.onload = function () {};
+      cargarJpg();
+    }
+    imgStream.onload = function () { /* primer fotograma del MJPEG */ };
+    imgStream.onerror = function () { activarJpg(); };
+    imgStream.src = STREAM_BASE + '/stream.mjpg?t=' + Date.now();
+    setTimeout(function () {
+      if (!(imgStream.complete && imgStream.naturalWidth > 0)) activarJpg();
+    }, 2600);
+  }
+
+  function dibujar() {
+    if (!ctx) return;
+    const escenario = $('#escenario');
+    const w = escenario.clientWidth || window.innerWidth;
+    const h = escenario.clientHeight || window.innerHeight;
+    /* dpr adaptativo: el canvas a 2x era el grueso del coste por frame */
+    const dprMax = ES_MOVIL ? 1.25 : 1.5;
+    const dpr = Math.min(dprMax, window.devicePixelRatio || 1);
+    const cw = Math.max(2, Math.round(w * dpr));
+    const ch = Math.max(2, Math.round(h * dpr));
+    if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+
+    const img = fuenteVideo();
+    const noframe = $('#noframe');
+    if (!img) {
+      if (noframe) noframe.classList.remove('oculto');
+      return;
+    }
+    if (noframe) noframe.classList.add('oculto');
+
+    /* Redibujado: con la cámara quieta basta con seguir el ritmo del stream;
+       con la cámara moviéndose se dibuja a rAF para que el movimiento sea fluido. */
+    const tDib = ahora();
+    const quieta = Math.abs(CAM.x - CAM.ux) < 0.0004 &&
+                   Math.abs(CAM.y - CAM.uy) < 0.0004 &&
+                   Math.abs(CAM.z - CAM.uz) < 0.0008;
+    const fpsRef = clamp(Number(statsStream.fps) || 15, 8, 30);
+    if (quieta && tDib - ultimoDibujo < 1000 / fpsRef) return;
+    ultimoDibujo = tDib;
+    CAM.ux = CAM.x; CAM.uy = CAM.y; CAM.uz = CAM.z;
+
+    const iw = img.naturalWidth;
+    const ih = img.naturalHeight;
+    const rx = (RECORTE.x1 - RECORTE.x0) * iw;
+    const ry = (RECORTE.y1 - RECORTE.y0) * ih;
+    const ox = RECORTE.x0 * iw;
+    const oy = RECORTE.y0 * ih;
+    const aspecto = w / h;
+
+    let sw = rx / CAM.z;
+    let sh = sw / aspecto;
+    if (sh > ry / CAM.z) { sh = ry / CAM.z; sw = sh * aspecto; }
+    CAM.vx = rx / sw;
+    CAM.vy = ry / sh;
+
+    const centroX = ox + CAM.x * rx;
+    const centroY = oy + CAM.y * ry;
+    let sx = clamp(centroX - sw / 2, ox, ox + rx - sw);
+    let sy = clamp(centroY - sh / 2, oy, oy + ry - sh);
+
+    /* Nitidez: en pantallas grandes el recorte se amplía mucho y el pixel-art de
+       WorldBox queda más limpio con muestreo nearest. Con la cámara acercada
+       (zoom transitorio) el nearest amplía los bloques del JPEG y se ve sucio,
+       así que ahí se suaviza. */
+    const ampliacion = cw / Math.max(1, sw);
+    const nitido = ampliacion > 2.45 && CAM.z < 1.3;
+    ctx.imageSmoothingEnabled = !nitido;
+    ctx.imageSmoothingQuality = 'high';
+    try { ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cw, ch); } catch (e) {}
+    framesDibujados++;
+  }
+
+  function bucle(t) {
+    framesRaf++;
+    tickCamara(t);
+    tickTicker(t);
+    dibujar();
+    if (!tFps) tFps = t;
+    if (t - tFps >= 1000) {
+      fpsMedido = Math.round(framesDibujados * 1000 / (t - tFps));
+      fpsRaf = Math.round(framesRaf * 1000 / (t - tFps));
+      window.__stage_raf = fpsRaf;
+      framesDibujados = 0;
+      framesRaf = 0;
+      tFps = t;
+      actualizarSenal();
+    }
+    requestAnimationFrame(bucle);
+  }
+
+  function actualizarSenal() {
+    const el = $('#ps-senal');
+    if (!el) return;
+    const fpsStream = Math.round(statsStream.fps || 0);
+    const fpsRender = Math.round(fpsMedido || 0);
+    window.__stage_fps = fpsRender;
+    window.__stage_fps_stream = fpsStream;
+    /* En público, «SEÑAL OK»; los fps reales solo en diagnóstico (?debug=1) */
+    if (CFG.debug) el.textContent = (fpsRender || fpsStream) > 0 ? (fpsRender || fpsStream) + ' fps' : '—';
+    else el.textContent = (fpsStream > 0 || ultimoDibujo > 0) ? 'OK' : '—';
+  }
+
+  /* ------------------------------------------------------------
+     Polling de datos
+     ------------------------------------------------------------ */
+  async function jget(ruta) {
+    const r = await fetch(BASE + ruta + (ruta.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
+
+  async function ciclo() {
+    if (SIN_SENAL) return;
+    try {
+      const par = await Promise.all([jget('/state.json'), jget('/feed.json')]);
+      fallos = 0;
+      ocultarAviso();
+      const st = par[0];
+      const fd = Array.isArray(par[1]) ? par[1] : [];
+      estadoActual = st;
+      renderState(st);
+      procesarFeed(fd, st);
+      procesarDrama(st);
+    } catch (e) {
+      fallos++;
+      if (fallos >= 2) marcarSinSenal();
+    }
+    setTimeout(ciclo, CFG.pollMs);
+  }
+
+  async function pollStats() {
+    if (SIN_SENAL) return;
+    try {
+      const r = await fetch(STREAM_BASE + '/stats?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) {
+        const s = await r.json();
+        if (s && typeof s.fps === 'number') { statsStream.fps = s.fps; actualizarSenal(); }
+        /* fallback de cámara: centroide de explosión de /stats (0..10000).
+           Solo si de verdad hay un pico nuevo y con enfriamiento largo para no dejar el zoom pegado. */
+        const lspike = Number(s && s.lspike);
+        if (s && Number(s.power) > 1200 && Number(s.cx) > 0 && Number(s.cy) > 0 &&
+            (!isFinite(lspike) || lspike >= 55)) {
+          const t = ahora();
+          if (t - ultimoFocoT > 7000 && CAM.fase === 'neutro') {
+            foco(Number(s.cx) / 100, Number(s.cy) / 100, 1.5, CFG.holdMs, true);
+            impactoCentral(clamp(Number(s.power) / 2600, 0.25, 0.85), { x: Number(s.cx) / 100, y: Number(s.cy) / 100 });
+          }
+        }
+      }
+    } catch (e) { /* el stream puede no estar levantado */ }
+    setTimeout(pollStats, CFG.statsMs);
+  }
+
+  /* ------------------------------------------------------------
+     Render del HUD
+     ------------------------------------------------------------ */
+  function ponerNum(el, v) {
+    if (!el) return;
+    const fin = Number(v);
+    if (v === null || v === undefined || !isFinite(fin)) { el.textContent = '—'; el.dataset.v = ''; return; }
+    const previo = String(el.textContent || '');
+    let antes = Number(previo.replace(/\./g, ''));
+    if (!isFinite(antes) || antes < 0) antes = 0;
+    if (el.dataset.v === String(fin)) return;      // mismo valor: no reanima
+    el.dataset.v = String(fin);
+    if (el.__raf) { cancelAnimationFrame(el.__raf); el.__raf = 0; }
+    if (el.__to) { clearTimeout(el.__to); el.__to = 0; }
+    if (previo === '—' || previo === '' || PREFIERE_MENOS) { el.textContent = fmtN(fin); return; }
+    const t0 = ahora();
+    const dur = 520;
+    function paso(t) {
+      let k = (t - t0) / dur;
+      if (!isFinite(k) || k < 0) k = 0; else if (k > 1) k = 1;
+      const e = 1 - Math.pow(1 - k, 3);
+      el.textContent = fmtN(Math.round(antes + (fin - antes) * e));
+      if (k < 1) el.__raf = requestAnimationFrame(paso);
+      else el.__raf = 0;
+    }
+    el.__raf = requestAnimationFrame(paso);
+    /* red de seguridad: con virtual-time o pestaña en segundo plano fija el valor final */
+    el.__to = setTimeout(function () { el.textContent = fmtN(fin); el.__raf = 0; }, dur + 160);
+  }
+
+  function renderState(st) {
+    if (!st) return;
+    const s = st.scoreboard || {};
+    const m = st.marcador || {};
+    const d = st.drama || {};
+    const fin = !!st.terminada;
+
+    const ronda = $('#c-ronda');
+    if (ronda) ronda.innerHTML = 'RONDA <b>' + fmtN(st.ronda || 0) + '/' + fmtN(st.rondas || 0) + '</b>';
+
+    sincronizarReloj(st);
+
+    const live = $('#c-live');
+    if (live) {
+      live.classList.toggle('fin', fin);
+      live.classList.remove('sin');
+      live.innerHTML = fin ? '<i></i>FINAL' : '<i></i>EN DIRECTO';
+    }
+    const est = $('#c-estado');
+    if (est) est.textContent = fin
+      ? ('GANA ' + String(st.ganador || '').toUpperCase())
+      : ('TURNO ' + String(st.turno || '—').toUpperCase());
+
+    ponerNum($('#s-rojo'), s.rojo ? s.rojo.unidades : null);
+    ponerNum($('#s-azul'), s.azul ? s.azul.unidades : null);
+
+    renderPanel('rojo', st);
+    renderPanel('azul', st);
+
+    /* tensión */
+    const tension = clamp(Number(d.tension) || 0, 0, 100);
+    const tbar = $('#tbar');
+    const tval = $('#tval');
+    const cajaT = $('#tension');
+    if (tbar) tbar.style.width = tension + '%';
+    if (tval) tval.textContent = Math.round(tension) + '%';
+    if (cajaT) {
+      cajaT.classList.toggle('alta', tension >= 70);
+      cajaT.classList.toggle('media', tension >= 40 && tension < 70);
+    }
+
+    /* stats compactos del pie */
+    const psCiudades = $('#ps-ciudades');
+    if (psCiudades) psCiudades.textContent = (s.rojo && s.azul)
+      ? fmtN(s.rojo.ciudades) + '–' + fmtN(s.azul.ciudades) : '—';
+    const res = st.resumen || {};
+    const golpe = (res.mayor_golpe && res.mayor_golpe.bajas) ? res.mayor_golpe : calcularMayorGolpe(st.historial);
+    const psGolpe = $('#ps-golpe');
+    if (psGolpe) psGolpe.textContent = (golpe && golpe.bajas)
+      ? fmtN(golpe.bajas) + ' ' + String(golpe.agente || '').toUpperCase() : '—';
+
+    /* titular */
+    if (d.titular) mostrarTitular(d.titular);
+
+    /* turno: indicador "escribiendo" */
+    const turno = String(st.turno || '').toLowerCase();
+    const er = $('#esc-rojo'), ea = $('#esc-azul');
+    if (er) er.classList.toggle('on', !fin && turno === 'rojo');
+    if (ea) ea.classList.toggle('on', !fin && turno === 'azul');
+
+    /* splash de ronda + victoria */
+    chequearRonda(st);
+    mostrarVictoria(st);
+
+    /* título de pestaña */
+    document.title = fin
+      ? 'FINAL · gana ' + String(st.ganador || '').toUpperCase() + ' · WorldBox AI Show'
+      : 'R' + (st.ronda || 0) + '/' + (st.rondas || 0) + ' · ' + fmtN(s.rojo ? s.rojo.unidades : null) +
+        ' vs ' + fmtN(s.azul ? s.azul.unidades : null) + ' · WorldBox AI Show';
+  }
+
+  function renderPanel(lado, st) {
+    const s = (st.scoreboard || {})[lado] || {};
+    const m = (st.marcador || {})[lado] || {};
+    const n = $('#n-' + lado);
+    if (n) n.textContent = s.nombre || m.nombre || '—';
+    ponerNum($('#u-' + lado), s.unidades);
+    ponerNum($('#b-' + lado), m.bajas);
+    ponerNum($('#pd-' + lado), m.perdidas);
+    ponerNum($('#ci-' + lado), s.ciudades);
+
+    const moral = (st.drama && st.drama.moral) ? Number(st.drama.moral[lado]) : NaN;
+    const caja = $('#mor-' + lado);
+    const barra = $('#m-' + lado);
+    const val = $('#mv-' + lado);
+    if (!caja || !barra || !val) return;
+    if (!isFinite(moral)) {
+      caja.className = 'p-moral';
+      barra.style.width = '0%';
+      val.textContent = '—';
+    } else {
+      const v = clamp(moral, 0, 100);
+      caja.className = 'p-moral ' + (v < 35 ? 'baja' : v < 65 ? 'media' : 'alta');
+      barra.style.width = v + '%';
+      val.textContent = Math.round(v) + '%';
+    }
+  }
+
+  function calcularMayorGolpe(hist) {
+    let pr = 0, pa = 0;
+    let mejor = { agente: '', bajas: 0, ronda: 0 };
+    (hist || []).forEach(function (h) {
+      const br = Math.max(0, (h.rojo_bajas || 0) - pr);
+      const ba = Math.max(0, (h.azul_bajas || 0) - pa);
+      pr = h.rojo_bajas || 0; pa = h.azul_bajas || 0;
+      if (br > mejor.bajas) mejor = { agente: 'rojo', bajas: br, ronda: h.ronda || 0 };
+      if (ba > mejor.bajas) mejor = { agente: 'azul', bajas: ba, ronda: h.ronda || 0 };
+    });
+    return mejor;
+  }
+
+  /* ------------------------------------------------------------
+     Reloj de partida
+     ------------------------------------------------------------ */
+  const reloj = { inicio: 0, desfase: 0, congelado: null };
+  function sincronizarReloj(st) {
+    const ini = Number(st.inicio_ms), aho = Number(st.ahora_ms);
+    if (isFinite(ini) && ini > 0 && isFinite(aho) && aho > 0) {
+      reloj.inicio = ini;
+      reloj.desfase = Date.now() - aho;
+    }
+    if (st.terminada) {
+      const d = st.resumen && Number(st.resumen.duracion_s);
+      reloj.congelado = (isFinite(d) && d > 0) ? d * 1000 : Math.max(0, msReloj());
+    } else {
+      reloj.congelado = null;
+    }
+  }
+  function msReloj() {
+    if (reloj.congelado !== null && reloj.congelado !== undefined) return reloj.congelado;
+    if (!reloj.inicio) return 0;
+    return Math.max(0, Date.now() - reloj.desfase - reloj.inicio);
+  }
+  function fmtReloj(ms) {
+    const s = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  function tickReloj() {
+    const rel = $('#c-reloj');
+    const txt = fmtReloj(msReloj());
+    if (rel) rel.innerHTML = '<b>' + txt + '</b>';
+    const dur = $('#ps-duracion');
+    if (dur) dur.textContent = txt;
+  }
+
+  /* ------------------------------------------------------------
+     Chat de los paneles
+     ------------------------------------------------------------ */
+  const EMOJI_SOLO = /^[\p{Extended_Pictographic}\u200d\uFE0F\u20E3\s]+$/u;
+  function pushChat(lado, e, animar) {
+    const cont = $('#chat-' + lado);
+    if (!cont) return;
+    const texto = String(e.texto || '').trim();
+    if (!texto) return;
+    const soloEmoji = EMOJI_SOLO.test(texto);
+    const d = document.createElement('div');
+    d.className = 'msg' + (soloEmoji ? ' emoji' : '') + ((Number(e.intensidad) || 0) >= 0.9 ? ' fuerte' : '');
+    if (animar && !PREFIERE_MENOS) d.classList.add('entra');
+    d.textContent = texto;
+    const pegado = (cont.scrollHeight - cont.scrollTop - cont.clientHeight) < 90;
+    cont.appendChild(d);
+    while (cont.children.length > CFG.maxChat) cont.removeChild(cont.firstChild);
+    if (pegado || !animar) cont.scrollTop = cont.scrollHeight;
+  }
+
+  /* ------------------------------------------------------------
+     Pista de guerra (ticker)
+     ------------------------------------------------------------ */
+  const ICONOS = { bomba: '💥', tropas: '🛡️', ronda: '🏁', info: '📣', titular: '📰', resultado: '📊' };
+  function esInteresante(e) {
+    return ['bomba', 'tropas', 'ronda', 'info', 'titular', 'resultado'].indexOf(String(e.tipo || '')) >= 0;
+  }
+  const TICKER = { offset: 0, mitad: 0, ultimoT: 0 };
+  function crearTick(e) {
+    const d = document.createElement('span');
+    d.className = 'tick';
+    const ico = document.createElement('span');
+    ico.className = 'ico';
+    ico.textContent = ICONOS[String(e.tipo)] || '•';
+    const ag = String(e.agente || '').toLowerCase();
+    const who = document.createElement('span');
+    who.className = 'who ' + (ag === 'rojo' ? 'r' : ag === 'azul' ? 'a' : 's');
+    who.textContent = ag === 'rojo' ? 'ROJO' : ag === 'azul' ? 'AZUL' : 'SISTEMA';
+    const tx = document.createElement('span');
+    tx.className = 'tx';
+    tx.textContent = recortar(e.texto, 130);
+    const hora = document.createElement('span');
+    hora.className = 'hora';
+    hora.textContent = String(e.t || '');
+    d.appendChild(ico); d.appendChild(who); d.appendChild(tx); d.appendChild(hora);
+    return d;
+  }
+  /* Reconstrucción completa: solo carga inicial o cambio de partida. */
+  function pintarTicker(items) {
+    const cont = $('#ticker');
+    if (!cont) return;
+    cont.textContent = '';
+    TICKER.offset = 0;
+    TICKER.ultimoT = 0;
+    if (!items || !items.length) { TICKER.mitad = 0; cont.style.transform = ''; return; }
+    for (let g = 0; g < 2; g++) {
+      const grupo = document.createElement('div');
+      grupo.className = 'tk-grupo';
+      items.forEach(function (e) { grupo.appendChild(crearTick(e)); });
+      cont.appendChild(grupo);
+    }
+    cont.style.transform = 'translate3d(0,0,0)';
+    const g0 = cont.firstChild;
+    TICKER.mitad = g0 ? g0.getBoundingClientRect().width + 26 : 0;
+  }
+  /* Evento nuevo: se AÑADE a las dos mitades sin reiniciar la animación. */
+  function agregarTicker(e) {
+    tickerItems.push(e);
+    const cont = $('#ticker');
+    const grupos = cont ? cont.children : [];
+    if (!cont || grupos.length !== 2) { pintarTicker(tickerItems); return; }
+    for (let g = 0; g < 2; g++) grupos[g].appendChild(crearTick(e));
+    if (tickerItems.length > 16) {
+      tickerItems.shift();
+      for (let g = 0; g < 2; g++) {
+        const gr = grupos[g];
+        if (gr.firstChild) gr.removeChild(gr.firstChild);
+      }
+    }
+    TICKER.mitad = grupos[0].getBoundingClientRect().width + 26;
+  }
+  /* Marquesina JS: desplazamiento continuo (la animación CSS se reiniciaba en cada evento). */
+  function tickTicker(t) {
+    const cont = $('#ticker');
+    if (!cont || !TICKER.mitad || PREFIERE_MENOS) return;
+    if (cont.matches && cont.matches(':hover')) { TICKER.ultimoT = t; return; }
+    if (!TICKER.ultimoT) { TICKER.ultimoT = t; return; }
+    const dt = Math.min(80, t - TICKER.ultimoT);
+    TICKER.ultimoT = t;
+    TICKER.offset -= 0.062 * dt;                 /* ~62 px/s */
+    if (TICKER.offset <= -TICKER.mitad) TICKER.offset += TICKER.mitad;
+    cont.style.transform = 'translate3d(' + TICKER.offset.toFixed(2) + 'px,0,0)';
+  }
+
+  /* ------------------------------------------------------------
+     Titular, splash, victoria
+     ------------------------------------------------------------ */
+  function mostrarTitular(txt) {
+    txt = String(txt || '').trim();
+    if (!txt || txt === ultimoTitular) return;
+    ultimoTitular = txt;
+    const el = $('#titular');
+    const p = $('#titular-txt');
+    if (!el || !p) return;
+    p.textContent = txt;
+    el.classList.remove('on', 'sale');
+    void el.offsetWidth;
+    el.classList.add('on');
+    if (titTimer) clearTimeout(titTimer);
+    titTimer = setTimeout(function () {
+      el.classList.remove('on');
+      el.classList.add('sale');
+    }, 8000);
+  }
+
+  function splashRonda(n) {
+    const el = $('#splash');
+    const num = $('#splash-num');
+    if (!el || !num) return;
+    num.textContent = String(n);
+    el.classList.remove('on');
+    void el.offsetWidth;
+    el.classList.add('on');
+    if (splashTimer) clearTimeout(splashTimer);
+    splashTimer = setTimeout(function () { el.classList.remove('on'); }, 2150);
+  }
+
+  function chequearRonda(st) {
+    const r = Number(st.ronda) || 0;
+    if (r > 0 && r !== ultimaRonda) {
+      const primera = (ultimaRonda === null);
+      ultimaRonda = r;
+      if (!(primera && (CFG.qa || st.terminada))) splashRonda(r);
+      if (!primera) sonido.ding();
+    }
+  }
+
+  function mostrarVictoria(st) {
+    if (!st || !st.terminada || !st.ganador) return;
+    const sig = 'fin|' + st.ganador + '|' + (st.rondas || 0) + '|' + ((st.historial || []).length);
+    if (sig === victoriaSig) return;
+    victoriaSig = sig;
+    if (CFG.qa) return;   // capturas de layout
+
+    const lado = String(st.ganador).toLowerCase() === 'rojo' ? 'rojo' : 'azul';
+    const s = st.scoreboard || {};
+    const m = st.marcador || {};
+    const res = st.resumen || {};
+    const g = s[lado] || {};
+    const gm = m[lado] || {};
+    const el = $('#victoria');
+    if (!el) return;
+
+    const nom = g.nombre || gm.nombre || lado.toUpperCase();
+    el.className = 'on ' + lado;
+    $('#v-sub').textContent = lado.toUpperCase() + ' · ' + nom;
+    $('#v-r').textContent = fmtN(s.rojo ? s.rojo.unidades : null);
+    $('#v-a').textContent = fmtN(s.azul ? s.azul.unidades : null);
+    $('#v-b').textContent = fmtN(gm.bajas);
+    const golpe = (res.mayor_golpe && res.mayor_golpe.bajas) ? res.mayor_golpe : calcularMayorGolpe(st.historial);
+    $('#v-g').textContent = (golpe && golpe.bajas) ? (fmtN(golpe.bajas) + ' ' + String(golpe.agente || '').toUpperCase()) : '—';
+    $('#v-racha').textContent = (res.racha && res.racha.rondas) ? (res.racha.rondas + ' rondas') : '—';
+    const dur = res.duracion_s ? fmtReloj(res.duracion_s * 1000) : fmtReloj(msReloj());
+    $('#v-d').textContent = dur;
+    victoriaAbierta = true;
+
+    /* confeti del color del ganador: la capa FX pasa por encima del takeover */
+    const fxHost = $('#fx-host');
+    if (fxHost) fxHost.style.zIndex = '70';
+    let confeti = false;
+    if (FX.ok) {
+      confeti = FX.confetti(lado, { count: 220 });
+      FX.flash(lado === 'rojo' ? '#ff4757' : '#3d9bff', { opacity: 0.22, duration: 900 });
+    }
+    if (!confeti) lluviaEmojis();
+    sonido.fanfarria();
+  }
+
+  function lluviaEmojis() {
+    const capa = $('#v-lluvia');
+    if (!capa) return;
+    capa.textContent = '';
+    const pool = ['🎉', '🎊', '🏆', '💥', '🔥', '😱', '😂', '💀', '🍿', '✨'];
+    for (let i = 0; i < 26; i++) {
+      const s = document.createElement('span');
+      s.textContent = pool[i % pool.length];
+      s.style.left = (Math.random() * 100) + '%';
+      s.style.animationDelay = (Math.random() * 1.2) + 's';
+      s.style.animationDuration = (2.2 + Math.random() * 2.4) + 's';
+      capa.appendChild(s);
+    }
+  }
+
+  function cerrarVictoria() {
+    const el = $('#victoria');
+    if (!el) return;
+    el.className = '';
+    victoriaAbierta = false;
+    const fxHost = $('#fx-host');
+    if (fxHost) fxHost.style.zIndex = '3';
+    const capa = $('#v-lluvia');
+    if (capa) capa.textContent = '';
+  }
+
+  /* ------------------------------------------------------------
+     Feed -> chat, ticker y efectos
+     ------------------------------------------------------------ */
+  function esChat(e) {
+    const t = String(e.tipo || '');
+    const a = String(e.agente || '').toLowerCase();
+    return (t === 'chat' || t === 'emoji') && (a === 'rojo' || a === 'azul');
+  }
+
+  /* Nueva partida: el feed vuelve a empezar su numeración (seq baja).
+     Sin esto, chat/ticker/efectos no entrarían hasta recargar la página. */
+  function reiniciarFeed() {
+    ultimoSeq = -1;
+    ultimoTitular = '';
+    ultimaRonda = null;
+    victoriaSig = '';
+    tickerItems = [];
+    pintarTicker([]);
+    ['chat-rojo', 'chat-azul'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '';
+    });
+  }
+
+  function procesarFeed(items, st) {
+    const maxSeq = items.reduce(function (m, e) { return Math.max(m, Number(e.seq) || 0); }, 0);
+    if (maxSeq > 0 && ultimoSeq > maxSeq) reiniciarFeed();
+    if (ultimoSeq < 0) {
+      /* carga inicial: pinta el chat reciente sin animación ni efectos */
+      items.forEach(function (e) { if (esChat(e)) pushChat(String(e.agente).toLowerCase(), e, false); });
+      const inter = items.filter(esInteresante).slice(-16);
+      pintarTicker(inter);
+      tickerItems = inter.slice();
+      ultimoSeq = maxSeq;
+      return;
+    }
+    if (maxSeq <= ultimoSeq) return;
+    const nuevos = items.filter(function (e) { return Number(e.seq) > ultimoSeq; });
+    ultimoSeq = maxSeq;
+    nuevos.forEach(function (e) {
+      if (esChat(e)) pushChat(String(e.agente).toLowerCase(), e, true);
+      if (esInteresante(e)) agregarTicker(e);
+      procesarEfecto(e, st);
+    });
+  }
+
+  const EMOCIONES = ['furia', 'llanto', 'burla', 'euforia', 'panico'];
+  const TABLA_EMO = [
+    ['furia', '😡😠🤬😤💢🔥💥'],
+    ['llanto', '😭😢🫠💧🥺😿😞😥'],
+    ['burla', '😂🤣😏😜🃏👎🤪😆😝'],
+    ['euforia', '🎉🎊🥳😎🏆✨💪🤩'],
+    ['panico', '😱😨😰💀👻⚠️😳🙀']
+  ];
+  function inferirEmocion(texto, tono) {
+    const t = String(texto || '');
+    for (let i = 0; i < TABLA_EMO.length; i++) {
+      const glifos = Array.from(TABLA_EMO[i][1]);
+      for (let j = 0; j < glifos.length; j++) {
+        if (glifos[j] && t.indexOf(glifos[j]) >= 0) return TABLA_EMO[i][0];
+      }
+    }
+    const ton = String(tono || '').toLowerCase();
+    if (ton === 'llanto' || ton === 'triste') return 'llanto';
+    if (ton === 'furia' || ton === 'chulo') return 'furia';
+    if (ton === 'euforia' || ton === 'fanfarron') return 'euforia';
+    if (ton === 'panico' || ton === 'miedo') return 'panico';
+    return 'burla';
+  }
+  function emocionDe(e) {
+    const em = String(e.emocion || '').toLowerCase().trim();
+    if (EMOCIONES.indexOf(em) >= 0) return em;
+    return inferirEmocion(e.texto, e.tono);
+  }
+  function poderDe(power) {
+    const p = String(power || '').toLowerCase();
+    if (p.indexOf('atomic') >= 0 || p.indexOf('nuclear') >= 0 || p.indexOf('czar') >= 0) return 1.0;
+    if (p.indexOf('napalm') >= 0 || p.indexOf('fire') >= 0) return 0.78;
+    return 0.62;
+  }
+  /* El impacto se pinta donde está el objetivo de cámara en pantalla, no siempre
+     en el centro: con zoom, el centro de la pantalla no es el punto bombardeado. */
+  function impactoCentral(power, punto) {
+    setTimeout(function () {
+      const p = clamp(Number(power) || 0.7, 0.3, 1);
+      let pt = { x: 50, y: 50 };
+      if (punto && Number(punto.x) > 0 && Number(punto.y) > 0) {
+        pt = aPantalla(Number(punto.x), Number(punto.y));
+      }
+      FX.impact(pt.x, pt.y, {
+        power: p,
+        emoji: '💥',
+        debris: true,
+        shake: clamp(0.35 + p * 0.6, 0, 1)
+      });
+    }, 620);
+  }
+  function sacudirPanel(lado) {
+    if (PREFIERE_MENOS) return;
+    const p = $('#p-' + lado);
+    if (!p) return;
+    p.classList.remove('sacudida');
+    void p.offsetWidth;
+    p.classList.add('sacudida');
+    setTimeout(function () { p.classList.remove('sacudida'); }, 500);
+  }
+  function procesarEfecto(e, st) {
+    const tipo = String(e.tipo || '');
+    const ag = String(e.agente || '').toLowerCase();
+    if (tipo === 'bomba') {
+      const cam = e.camara;
+      if (cam && Number(cam.x) > 0 && Number(cam.y) > 0) {
+        ultimoPuntoVentana = { x: Number(cam.x), y: Number(cam.y) };
+        foco(Number(cam.x), Number(cam.y), Number(cam.zoom) || 1.8, Number(cam.ms) || 0, false);
+      }
+      const poder = poderDe(e.power);
+      impactoCentral(poder, (cam && Number(cam.x) > 0 && Number(cam.y) > 0) ? { x: Number(cam.x), y: Number(cam.y) } : null);
+      sacudirPanel(ag === 'azul' ? 'rojo' : 'azul');
+      sonido.boom(poder);
+    } else if (tipo === 'emoji') {
+      const lado = ag === 'azul' ? 'azul' : 'rojo';
+      FX.invader(String(e.texto || '😤'), {
+        side: lado,
+        emotion: emocionDe(e),
+        duration: 3200
+      });
+    } else if (tipo === 'tropas') {
+      const x = Number(e.x), y = Number(e.y);
+      if (isFinite(x) && isFinite(y) && x > 0 && y > 0) {
+        const p = aPantalla(x / VENTANA.w * 100, y / VENTANA.h * 100);
+        FX.sparks(p.x, p.y, { count: clamp(Math.round((Number(e.count) || 20) / 4), 8, 26) });
+      }
+    } else if (tipo === 'resultado') {
+      const lado = ag === 'azul' ? 'azul' : 'rojo';
+      const n = Number(e.bajas) || 0;
+      if (n > 0) {
+        const base = ultimoPuntoVentana || { x: lado === 'rojo' ? 32 : 68, y: 44 };
+        const p = aPantalla(base.x, base.y);
+        FX.damage(n, p.x, p.y, lado);
+      }
+    } else if (tipo === 'ronda') {
+      sonido.ding();
+    }
+  }
+
+  /* drama.impacto del estado también puede disparar cámara (si el feed no lo hizo) */
+  let ultimoCamTick = -1;
+  let ultimoImpTick = -1;
+  function procesarDrama(st) {
+    const d = st && st.drama;
+    if (!d) return;
+    if (ultimoCamTick < 0) {
+      /* primera lectura: sincroniza contadores para no disparar efectos viejos */
+      ultimoCamTick = Number(d.camara && d.camara.tick) || 0;
+      ultimoImpTick = Number(d.impacto && d.impacto.tick) || 0;
+      return;
+    }
+    const cam = d.camara;
+    if (cam && Number(cam.tick) > ultimoCamTick && Number(cam.x) > 0 && Number(cam.y) > 0) {
+      ultimoCamTick = Number(cam.tick);
+      const t = ahora();
+      if (t - ultimoFocoT > 700) {
+        foco(Number(cam.x), Number(cam.y), Number(cam.zoom) || 1.8, Number(cam.ms) || 0, false);
+      }
+    }
+    const imp = d.impacto;
+    if (imp && Number(imp.tick) > ultimoImpTick && Number(imp.x) > 0 && Number(imp.y) > 0) {
+      ultimoImpTick = Number(imp.tick);
+      const t = ahora();
+      if (t - ultimoFocoT > 700) {
+        const p = aPantalla(Number(imp.x), Number(imp.y));
+        FX.impact(p.x, p.y, { power: clamp(Number(imp.poder) || 0.7, 0.25, 1), emoji: '💥', debris: true });
+        ultimoPuntoVentana = { x: Number(imp.x), y: Number(imp.y) };
+      }
+    }
+  }
+
+  /* ------------------------------------------------------------
+     Aviso de conexión / modo sin señal
+     ------------------------------------------------------------ */
+  function mostrarAviso(html) {
+    const a = $('#aviso');
+    if (!a) return;
+    a.innerHTML = html || window.__WB_AVISO__ || AVISO_DEFECTO;
+    a.classList.add('on');
+  }
+  /* Fallo en caliente (túnel muerto / servidor caído): el HUD no puede quedarse
+     «EN DIRECTO» con reloj a 00:00 y una píldora vacía. */
+  function marcarSinSenal(html) {
+    const live = $('#c-live');
+    if (live) { live.innerHTML = '<i></i>SIN SEÑAL'; live.className = 'chip-live sin'; }
+    const est = $('#c-estado');
+    if (est) est.textContent = 'SIN CONEXIÓN';
+    const rel = $('#c-reloj');
+    if (rel) rel.innerHTML = '<b>—</b>';
+    const noframe = $('#noframe');
+    if (noframe) {
+      const b = noframe.querySelector('b');
+      const s = noframe.querySelector('span');
+      if (b) b.textContent = 'SIN SEÑAL';
+      if (s) s.textContent = 'Esperando al servidor del visor…';
+    }
+    mostrarAviso(html);
+  }
+  function ocultarAviso() {
+    const a = $('#aviso');
+    if (a) a.classList.remove('on');
+  }
+
+  function modoSinSenal() {
+    document.body.classList.add('sin-senal');
+    const live = $('#c-live');
+    if (live) { live.innerHTML = '<i></i>SIN SEÑAL'; live.className = 'chip-live sin'; }
+    const est = $('#c-estado');
+    if (est) est.textContent = 'SIN CONEXIÓN';
+    const ronda = $('#c-ronda');
+    if (ronda) ronda.innerHTML = 'RONDA <b>—</b>';
+    const rel = $('#c-reloj');
+    if (rel) rel.innerHTML = '<b>—</b>';
+    const noframe = $('#noframe');
+    if (noframe) {
+      const b = noframe.querySelector('b');
+      const s = noframe.querySelector('span');
+      const i = noframe.querySelector('i');
+      if (b) b.textContent = 'SIN SEÑAL';
+      if (s) s.textContent = 'El directo no está disponible ahora mismo.';
+      if (i) i.style.display = 'none';
+      noframe.classList.remove('oculto');
+    }
+    ['s-rojo', 's-azul', 'u-rojo', 'u-azul', 'b-rojo', 'b-azul', 'pd-rojo', 'pd-azul',
+     'ci-rojo', 'ci-azul', 'tval', 'ps-ciudades', 'ps-golpe', 'ps-duracion', 'ps-senal'].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '—';
+    });
+    mostrarAviso(window.__WB_AVISO__ || AVISO_DEFECTO);
+  }
+
+  /* ------------------------------------------------------------
+     Pantalla completa
+     ------------------------------------------------------------ */
+  async function alternarFull() {
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else await document.exitFullscreen();
+    } catch (e) {}
+  }
+
+  /* ------------------------------------------------------------
+     Arranque
+     ------------------------------------------------------------ */
+  function conectarBotones() {
+    const bt = $('#btn-theme');
+    if (bt) bt.addEventListener('click', function () {
+      aplicarTema(!document.body.classList.contains('light'));
+    });
+    const bc = $('#btn-cine');
+    if (bc) bc.addEventListener('click', function () {
+      aplicarCine(!document.body.classList.contains('cine'));
+    });
+    const bf = $('#btn-full');
+    if (bf) bf.addEventListener('click', alternarFull);
+    const bs = $('#btn-sonido');
+    if (bs) bs.addEventListener('click', function () { sonido.alternar(); });
+    const br = $('#btn-reset');
+    if (br) br.addEventListener('click', function () {
+      try { localStorage.removeItem(K_PANEL); } catch (e) {}
+      location.reload();
+    });
+    const vc = $('#v-cerrar');
+    if (vc) vc.addEventListener('click', cerrarVictoria);
+    const vic = $('#victoria');
+    if (vic) vic.addEventListener('click', function (e) { if (e.target === vic) cerrarVictoria(); });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const k = String(e.key || '').toLowerCase();
+      if (k === 't') aplicarTema(!document.body.classList.contains('light'));
+      else if (k === 'l') aplicarBloqueo(!document.body.classList.contains('locked'));
+      else if (k === 'c') aplicarCine(!document.body.classList.contains('cine'));
+      else if (k === 'f') alternarFull();
+      else if (k === 'r') { try { localStorage.removeItem(K_PANEL); } catch (err) {} location.reload(); }
+      else if (k === 'm') sonido.alternar();
+      else if (k === 'escape') cerrarVictoria();
+      else return;
+      e.preventDefault();
+    });
+  }
+
+  (async function arrancar() {
+    /* tema / cine / bloqueo / panel persistidos */
+    let temaClaro = false, cine = false, bloqueo = false;
+    try {
+      temaClaro = localStorage.getItem(K_TEMA) === '1';
+      cine = localStorage.getItem(K_CINE) === '1';
+      bloqueo = localStorage.getItem(K_LOCK) === '1';
+    } catch (e) {}
+    try {
+      const q = new URLSearchParams(location.search);
+      if (q.get('tema') === 'claro') temaClaro = true;
+    } catch (e) {}
+    aplicarTema(temaClaro);
+    aplicarCine(cine);
+    aplicarBloqueo(bloqueo);
+    actualizarBotonSonido();
+    let panelGuardado = null;
+    try { panelGuardado = parseFloat(localStorage.getItem(K_PANEL)); } catch (e) {}
+    aplicarPanel(isFinite(panelGuardado) && panelGuardado > 0 ? panelGuardado : 318);
+    iniciarSplitters();
+    conectarBotones();
+    tickReloj();
+
+    const ep = await resolverEndpoints();
+    BASE = ep.base;
+    STREAM_BASE = ep.streamBase;
+    SIN_SENAL = ep.sinSenal;
+
+    if (SIN_SENAL) { modoSinSenal(); return; }
+
+    iniciarVideo();
+    ciclo();
+    pollStats();
+    setInterval(tickReloj, 500);
+    requestAnimationFrame(bucle);
+
+    /* si el endpoint de datos no responde, el aviso ya lo cubre `ciclo` */
+    setTimeout(function () { if (fallos >= 2) marcarSinSenal(); }, 2600);
+  })();
 })();
 </script>
 </body>

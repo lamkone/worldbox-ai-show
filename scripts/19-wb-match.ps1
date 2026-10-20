@@ -381,11 +381,14 @@ function New-Plan {
     $destino = '*'
   }
   # cada tanto, en vez de frase, la IA lanza una emoción suelta (emoji solo)
-  if ((Get-Random -Maximum 100) -lt 32) {
+  if ((Get-Random -Maximum 100) -lt 45) {
     $emoji = Get-EmojiDrama -Agente $Agente -Contexto $ctx -ConModelo:([bool]($script:Tension -gt 45))
     if (-not $emoji) { $emoji = if ($Agente -eq 'rojo') { '😤' } else { '🙄' } }
     # emoción real: es lo que usa el visor para elegir el efecto (llanto, furia...)
-    $emocion = if ($ratio -lt 0.6) { 'sufrimiento' } elseif ($ratio -gt 1.8) { 'soberbia' } elseif ($script:Tension -gt 65) { 'tensión' } else { 'chulería' }
+    # OJO: estos nombres los usa el visor como clase CSS de animación
+    # (.invasor.furia / .llanto / .burla / .euforia / .panico). Si no coinciden,
+    # el visor tiene que adivinar la emoción por el glifo.
+    $emocion = Get-EmocionDeEmoji $emoji
     $plan += [pscustomobject]@{ accion = 'emoji'; to = $destino; texto = $emoji; tono = 'emoji'
       intensidad = [math]::Round([math]::Max(0.55, [math]::Min(1.0, $script:Tension / 100 + 0.45)), 2)
       emocion = $emocion }
@@ -852,7 +855,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
         'emoji' {
           $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono 'emoji' -Tipo 'emoji' `
             -Intensidad $(if ($p.PSObject.Properties['intensidad']) { [double]$p.intensidad } else { 0.6 }) `
-            -Emocion 'golpe'
+            -Emocion (Get-EmocionDeEmoji $p.texto)
         }
       }
       # ritmo de retransmisión: deja respirar cada acción para que el visor la muestre sola
@@ -942,9 +945,9 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
         rival = if ($victima -eq 'rojo') { $despues[$ReinoAzul] } else { $despues[$ReinoRojo] }
       }
       $ctxV = Get-ContextoDrama -Agente $victima -Obs $obsV -BajasTurno $perdidas -PerdidasTurno $bajas -GolpeRival $ultimaNota
-      if ((Get-Random -Maximum 100) -lt 35) {
+      if ((Get-Random -Maximum 100) -lt 55) {
         $em = Get-EmojiDrama -Agente $victima -Contexto $ctxV -ConModelo:([bool]($intens -gt 0.6))
-        $null = Send-Chat -Agente $victima -A '*' -Texto $em -Tono 'emoji' -Tipo 'emoji' -Intensidad ([math]::Max(0.5, $intens)) -Emocion 'dolor'
+        $null = Send-Chat -Agente $victima -A '*' -Texto $em -Tono 'emoji' -Tipo 'emoji' -Intensidad ([math]::Max(0.5, $intens)) -Emocion (Get-EmocionDeEmoji $em)
       } else {
         $repV = Get-Replica -Agente $victima -Tipo 'golpe' -Contexto $ctxV -UltimoRival $ultimaNota
         $null = Send-Chat -Agente $victima -A $agente -Texto $repV.texto -Tono 'golpe' -Intensidad ([math]::Max(0.4, $intens))
@@ -1003,6 +1006,42 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
   $script:TitularActual = $titular
   Add-Feed -Agente 'sistema' -Tipo 'titular' -Texto $titular -Extra @{ ronda = $idxRonda }
   Add-ShowEvent -Tipo 'titular' -Agente 'sistema' -Texto $titular | Out-Null
+
+  # --- pique de cierre de ronda -------------------------------------------
+  # El dueño se quejó de que entre ronda y ronda el chat se quedaba muerto.
+  # Al cerrar cada ronda los dos bandos se dicen algo: ROJO abre y AZUL
+  # contesta a lo que ha dicho ROJO, así la ronda termina con pulla y no en
+  # silencio. Va en try/catch: si el cerebro está lento, la partida sigue.
+  try {
+    $tipoRB = if ($dominio -eq 'rojo') { 'burla' } elseif ($dominio -eq 'azul') { 'nervios' } else { 'turno' }
+    $uR = [int]$snap[$ReinoRojo].unidades
+    $uA = [int]$snap[$ReinoAzul].unidades
+    $ctxRB = Get-ContextoDrama -Agente 'rojo' -Obs $null -BajasTurno $bR -PerdidasTurno $bA
+    $ctxRB['ronda'] = $idxRonda
+    $ratioRB = if ($uA -gt 0) { [double]$uR / [double]$uA } else { 2.0 }
+    $rbRojo = Get-Replica -Agente 'rojo' -Tipo $tipoRB -Contexto $ctxRB -UltimoRival '' -Ratio $ratioRB
+    if ($rbRojo -and $rbRojo.texto) {
+      $null = Send-Chat -Agente 'rojo' -A 'azul' -Texto $rbRojo.texto -Tono $rbRojo.tono -Intensidad 0.85
+    }
+    $ctxRB2 = Get-ContextoDrama -Agente 'azul' -Obs $null -BajasTurno $bA -PerdidasTurno $bR
+    $ctxRB2['ronda'] = $idxRonda
+    $ratioRB2 = if ($uR -gt 0) { [double]$uA / [double]$uR } else { 2.0 }
+    $ultimoRB = if ($rbRojo) { [string]$rbRojo.texto } else { '' }
+    $rbAzul = Get-Replica -Agente 'azul' -Tipo $tipoRB -Contexto $ctxRB2 -UltimoRival $ultimoRB -Ratio $ratioRB2
+    if ($rbAzul -and $rbAzul.texto) {
+      $null = Send-Chat -Agente 'azul' -A 'rojo' -Texto $rbAzul.texto -Tono $rbAzul.tono -Intensidad 0.85
+    }
+    # emoji de cierre: el que va perdiendo la ronda suelta su emoción
+    $perdedor = if ($dominio -eq 'rojo') { 'azul' } elseif ($dominio -eq 'azul') { 'rojo' } else { '' }
+    if ($perdedor) {
+      $emRB = Get-EmojiDrama -Agente $perdedor -Contexto $(if ($perdedor -eq 'rojo') { $ctxRB } else { $ctxRB2 }) -ConModelo:$false
+      if (-not $emRB) { $emRB = if ($perdedor -eq 'rojo') { '😤' } else { '🙄' } }
+      $null = Send-Chat -Agente $perdedor -A '*' -Texto $emRB -Tono 'emoji' -Tipo 'emoji' -Intensidad 0.9 -Emocion (Get-EmocionDeEmoji $emRB)
+    }
+  } catch {
+    Write-Output ('[ronda] sin pique de cierre: ' + $_.Exception.Message)
+  }
+
   [void]$script:Historial.Add([ordered]@{
     ronda          = $idxRonda
     rojo_unidades  = $snap[$ReinoRojo].unidades

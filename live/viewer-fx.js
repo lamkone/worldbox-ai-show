@@ -1,85 +1,76 @@
 /*!
- * viewer-fx.js — capa de efectos de espectáculo + chat en vivo para el visor
- * de "WorldBox AI Show".
+ * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v2.0.0)
+ * ============================================================================
+ * ÚNICA capa de efectos sobre el mapa. Sin dependencias, sin módulos ES, sin
+ * CDN, sin build: funciona con <script src="viewer-fx.js"> tanto por HTTP como
+ * con file://. Inyecta sus estilos una sola vez (<style id="vfx2-css">).
  *
- * SIN dependencias, SIN build, SIN imports. Se puede cargar con una etiqueta
- * <script src="viewer-fx.js"><\/script> (incluso abriendo el HTML con file://)
- * o pegando este fichero entero dentro de un <script> en el HTML: no contiene
- * la secuencia de cierre de etiqueta (escrita aquí como <\/script>) ni imports.
- * Inyecta sus propios estilos en una única etiqueta <style id="vfx-css">.
+ * API (contrato SHOW-V3 §3):
+ * ----------------------------------------------------------------------------
+ *   ViewerFX.version;                                   // '2.0.0'
+ *   ViewerFX.init({ map: Element, motion: 'full'|'lite', maxEffects: 24 });
  *
- * API pública: window.ViewerFX
- * ---------------------------------------------------------------------------
- *   ViewerFX.init({ map: '#stream', chat: '#chat-host' });   // opcional
+ *   // Emoji invasor gigante, animación propia por emoción
+ *   ViewerFX.invader(emoji, { side, emotion, size, duration, text });
  *
- *   // Reacción flotante sobre el mapa (xPct/yPct: 0..100 del mapa visible)
- *   ViewerFX.spawnReaction('🔥', 52, 41);
+ *   // Impacto en % del mapa (0..100): onda, escombros, chispas, destello
+ *   ViewerFX.impact(xPct, yPct, { power, color, emoji, debris, shake });
  *
- *   // Impacto / explosión. power: 0..1 (si pasas el conteo crudo de /stats,
- *   // que es > 1, se normaliza dividiendo entre 600)
- *   ViewerFX.spawnImpact(62.5, 31.2, 0.8);
+ *   ViewerFX.damage(n, xPct, yPct, side);       // número flotante
+ *   ViewerFX.sparks(xPct, yPct, { color, count });
+ *   ViewerFX.shake(strength, { duration });     // 0..1
+ *   ViewerFX.flash(color, { opacity, duration });
+ *   ViewerFX.vignette(level, { color, duration });
+ *   ViewerFX.confetti(side, { count });         // 'rojo'|'azul'|'mix'
+ *   ViewerFX.clear();
  *
- *   // Emoji gigante que sale del chat, cruza el visor y estalla en el mapa
- *   ViewerFX.flyEmoji('💥', { to: { xPct: 62.5, yPct: 31.2 }, power: 0.9 });
+ * Compatibilidad con la API v1 que usa el visor actual (alias a lo nuevo):
+ *   spawnImpact(x,y,power,opts), spawnDamage(n,x,y,side,opts), flyEmoji(emoji,opts),
+ *   flash, vignette, shake, spawnReaction, tremblePanel, focus, setMap, getMapEl,
+ *   setMotion.
  *
- *   // Chat: mensajes nuevos abajo, autoscroll, sin etiqueta "a todos"
- *   ViewerFX.pushChat({ name: 'ROJO', emoji: '😤', text: 'Te borro del mapa',
- *                       color: '#ff5d5d', para: 'azul' });
- *
- *   // Combate
- *   ViewerFX.spawnDamage(1240, 60, 45, 'rojo');   // número de daño flotante
- *   ViewerFX.flash('#ff5d5d');                   // flash a pantalla completa
- *   ViewerFX.vignette(0.6);                      // viñeta roja (0 = quitar)
- *   ViewerFX.shake(0.8);                         // sacudida de pantalla
- *   ViewerFX.tremblePanel('azul');               // tiembla el panel golpeado
- *
- *   // Cámara cinematográfica opcional (el Lead decide cuándo llamarla)
- *   ViewerFX.focus('#stream', 62.5, 31.2, 1.8, 1400);
- * ---------------------------------------------------------------------------
- * Coordenadas: xPct/yPct son porcentaje 0..100 del CONTENIDO VISIBLE del
- * elemento mapa. Se tiene en cuenta object-fit: contain / cover (usa
- * naturalWidth/naturalHeight de <img>/<video> y width/height de <canvas>),
- * así que los centroides del stream (cx/cy de /stats, normalizados x10000)
- * se pasan tal cual: xPct = cx/100, yPct = cy/100.
- *
- * Todo es tolerante: si el mapa o el contenedor de chat aún no existen, las
- * funciones no lanzan y el chat se monta en un panel flotante por defecto.
- * No escribe nada en la consola.
+ * Reglas que cumple este fichero:
+ *   - Solo transform/opacity en animaciones CSS (más hue-rotate del arcoíris,
+ *     pedido explícitamente por el contrato para euforia).
+ *   - Un único canvas de partículas con un único bucle rAF (arranca/para solo).
+ *   - Tope de efectos simultáneos (maxEffects) y de partículas (MAXP).
+ *   - prefers-reduced-motion -> modo lite automático.
+ *   - DPR-aware (canvas escalado por devicePixelRatio, tope 2.5).
+ *   - Todo k = (t - t0)/dur se clampea a [0,1] (relojes raros / virtual time).
+ *   - Nunca escribe en consola; los fallos son silenciosos.
+ *   - Coordenadas xPct/yPct = 0..100 del contenido VISIBLE del mapa
+ *     (respeta object-fit: contain / cover de <img>/<video>/<canvas>).
  */
 (function (global) {
   'use strict';
 
-  if (global.ViewerFX && global.ViewerFX.__vfx) return; // idempotente
+  var VERSION = '2.0.0';
+  if (global.ViewerFX && global.ViewerFX.__vfx === VERSION) return;
 
-  var VERSION = '1.0.0';
   var doc = global.document;
   if (!doc) return;
 
-  /* ======================================================================
+  /* ==========================================================================
    * Utilidades
-   * ==================================================================== */
+   * ======================================================================== */
 
-  function num(v, def) {
+  function num(v, d) {
     var n = Number(v);
-    return isFinite(n) ? n : def;
+    return isFinite(n) ? n : d;
   }
 
   function clamp(n, a, b) {
+    n = Number(n);
+    if (!isFinite(n)) return a;
     return n < a ? a : (n > b ? b : n);
   }
 
-  function rnd(a, b) {
-    return a + Math.random() * (b - a);
-  }
+  function rnd(a, b) { return a + Math.random() * (b - a); }
 
-  function now() {
-    return (global.performance && global.performance.now)
-      ? global.performance.now()
-      : Date.now();
-  }
+  function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
 
-  function makeEl(cls, tag) {
-    var el = doc.createElement(tag || 'div');
+  function make(tag, cls) {
+    var el = doc.createElement(tag);
     if (cls) el.className = cls;
     return el;
   }
@@ -89,276 +80,305 @@
     if (typeof v === 'string') {
       try { return doc.querySelector(v); } catch (e) { return null; }
     }
-    if (v.nodeType === 1) return v;
-    if (v.el && v.el.nodeType === 1) return v.el;
-    return null;
-  }
-
-  function centerOf(r) {
-    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  }
-
-  function shorten(s, n) {
-    s = String(s == null ? '' : s);
-    return s.length > n ? s.slice(0, n - 1) + '…' : s;
-  }
-
-  function pad2(n) {
-    return n < 10 ? '0' + n : '' + n;
-  }
-
-  function timeStr() {
-    var d = new Date();
-    return pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds());
+    return (v.nodeType === 1) ? v : null;
   }
 
   function fmtNum(n) {
-    try { return Math.round(n).toLocaleString('es-ES'); } catch (e) { return String(Math.round(n)); }
+    var v = Math.abs(Number(n) || 0);
+    try { return v.toLocaleString('es-ES'); } catch (e) { return String(Math.round(v)); }
   }
 
-  function toRgba(c, a) {
-    c = String(c == null ? '' : c).trim();
-    var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(c);
-    if (!m) return c; // ya es rgba()/hsl()/nombre
-    var h = m[1];
-    if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
-    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' +
-      parseInt(h.slice(4, 6), 16) + ',' + a + ')';
+  function nowMs() {
+    try {
+      return (global.performance && global.performance.now) ? global.performance.now() : Date.now();
+    } catch (e) { return Date.now(); }
   }
 
-  var reducedMQ = null;
-  try {
-    reducedMQ = global.matchMedia ? global.matchMedia('(prefers-reduced-motion: reduce)') : null;
-  } catch (e) { reducedMQ = null; }
+  var raf = (typeof global.requestAnimationFrame === 'function')
+    ? function (fn) { return global.requestAnimationFrame(fn); }
+    : function (fn) { return setTimeout(function () { fn(nowMs()); }, 16); };
+  var caf = (typeof global.cancelAnimationFrame === 'function')
+    ? function (id) { return global.cancelAnimationFrame(id); }
+    : function (id) { return clearTimeout(id); };
 
-  function reduced() {
-    return !!(reducedMQ && reducedMQ.matches);
-  }
-
-  /* Permite forzar el drama aunque el sistema tenga "reducir movimiento":
-     'auto' respeta el sistema, 'full' fuerza animaciones, 'reduced' las evita. */
-  function motionAllows() {
-    if (CFG.motion === 'full') return true;
-    if (CFG.motion === 'reduced') return false;
-    return !reduced();
-  }
-
-  /* ======================================================================
-   * Configuración
-   * ==================================================================== */
+  /* ==========================================================================
+   * Configuración y estado
+   * ======================================================================== */
 
   var CFG = {
-    map: null,          // selector o elemento del mapa
-    chat: null,         // selector o elemento contenedor del chat
-    z: 58,              // z-index de la capa de efectos (victoria suele ir a 60)
-    maxEffects: 44,     // nodos máximos en la capa (recorte de seguridad)
-    maxChatLines: 140,  // líneas máximas en el chat
-    autoFly: true,      // volar emoji automáticamente al recibir un emoji suelto
-    motion: 'auto'      // 'auto' | 'full' | 'reduced' (ver motionAllows)
+    map: null,
+    motion: 'auto',   // 'auto' | 'full' | 'lite' | 'reduced'
+    maxEffects: 24
   };
 
-  var styleEl = null;
-  var overlay = null;
+  var lite = false;
+  var stage = null;      // capa absoluta dentro del mapa
+  var dom = null;        // capa DOM de efectos
+  var canvas = null;     // canvas único de partículas
+  var ctx = null;
+  var screen = null;     // capa fija a pantalla completa (flash + viñeta)
+  var vigEl = null;
+  var DPR = 1;
+  var VIEW = { w: 1280, h: 720 };
+  var roots = [];        // raíces de efecto para el tope maxEffects
+  var timers = [];
+  var intervals = [];
+  var P = [];            // partículas
+  var MAXP = 720;
+  var rafId = 0;
+  var lastT = 0;
 
-  /* ======================================================================
-   * Estilos (una única etiqueta <style id="vfx-css">)
-   * ==================================================================== */
+  var mq = null;
+  try {
+    mq = global.matchMedia ? global.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  } catch (e) { mq = null; }
 
-  var CSS = [
-    /* ---------- capa de efectos ---------- */
-    '.vfx-layer{position:fixed;inset:0;z-index:58;pointer-events:none;overflow:hidden;contain:layout style paint}',
-
-    /* reacción flotante */
-    '.vfx-reaction{position:absolute;transform:translate(-50%,-50%);line-height:1;user-select:none;will-change:transform,opacity;',
-    'filter:drop-shadow(0 6px 16px rgba(0,0,0,.55));animation:vfxSubir 1.6s cubic-bezier(.2,.8,.2,1) forwards}',
-    '@keyframes vfxSubir{0%{opacity:0;transform:translate(-50%,-50%) translateY(12px) scale(.5) rotate(0deg)}',
-    '15%{opacity:1;transform:translate(-50%,-50%) translateY(-2px) scale(1.12) rotate(var(--vfx-rot,0deg))}',
-    '62%{opacity:.95;transform:translate(-50%,-50%) translateY(-42px) scale(1) rotate(var(--vfx-rot,0deg))}',
-    '100%{opacity:0;transform:translate(-50%,-50%) translateY(-80px) scale(.88) rotate(var(--vfx-rot,0deg))}}',
-
-    /* impacto: destello, anillos, chispas, boom, retícula */
-    '.vfx-flash{position:absolute;border-radius:50%;transform:translate(-50%,-50%);pointer-events:none;mix-blend-mode:screen;',
-    'background:radial-gradient(circle,#fff 0%,var(--vfx-c,#ffd36b) 28%,rgba(255,150,60,.45) 55%,rgba(255,120,40,.12) 70%,transparent 76%);',
-    'animation:vfxFlash .58s cubic-bezier(.2,.8,.3,1) forwards}',
-    '@keyframes vfxFlash{0%{opacity:0;transform:translate(-50%,-50%) scale(.2)}14%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(1.6)}}',
-
-    '.vfx-ring{position:absolute;border-radius:50%;transform:translate(-50%,-50%);border:3px solid var(--vfx-c,#ffd36b);',
-    'box-shadow:0 0 30px var(--vfx-c,#ffd36b),inset 0 0 22px rgba(255,255,255,.45);',
-    'animation:vfxRing .66s cubic-bezier(.15,.7,.3,1) forwards}',
-    '@keyframes vfxRing{0%{opacity:.95;transform:translate(-50%,-50%) scale(.16)}100%{opacity:0;transform:translate(-50%,-50%) scale(1)}}',
-
-    '.vfx-spark{position:absolute;width:7px;height:7px;border-radius:50%;transform:translate(-50%,-50%);',
-    'background:radial-gradient(circle,#fff 0%,var(--vfx-c,#ffcf6b) 52%,transparent 72%);',
-    'animation:vfxSpark .72s cubic-bezier(.15,.7,.35,1) forwards}',
-    '@keyframes vfxSpark{0%{opacity:1;transform:translate(-50%,-50%) translate(0,0) scale(1.25)}',
-    '100%{opacity:0;transform:translate(-50%,-50%) translate(var(--vfx-dx,0px),var(--vfx-dy,0px)) scale(.3)}}',
-
-    '.vfx-boom{position:absolute;transform:translate(-50%,-50%);line-height:1;user-select:none;will-change:transform,opacity;',
-    'filter:drop-shadow(0 10px 28px rgba(0,0,0,.6));animation:vfxBoom .82s cubic-bezier(.2,.9,.25,1) forwards}',
-    '@keyframes vfxBoom{0%{opacity:0;transform:translate(-50%,-50%) scale(.18) rotate(-20deg)}',
-    '20%{opacity:1;transform:translate(-50%,-50%) scale(1.2) rotate(7deg)}',
-    '46%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0deg)}',
-    '100%{opacity:0;transform:translate(-50%,-50%) scale(1.55) rotate(10deg)}}',
-
-    '.vfx-reticle{position:absolute;transform:translate(-50%,-50%);border-radius:50%;border:2px solid var(--vfx-c,#ffd36b);',
-    'box-shadow:0 0 18px var(--vfx-c,#ffd36b),inset 0 0 12px rgba(255,255,255,.35);animation:vfxRet .95s ease-out forwards}',
-    '.vfx-reticle::before,.vfx-reticle::after{content:"";position:absolute;left:50%;top:50%;background:var(--vfx-c,#ffd36b);',
-    'transform:translate(-50%,-50%);border-radius:2px;box-shadow:0 0 8px var(--vfx-c,#ffd36b)}',
-    '.vfx-reticle::before{width:130%;height:2px}',
-    '.vfx-reticle::after{width:2px;height:130%}',
-    '@keyframes vfxRet{0%{opacity:0;transform:translate(-50%,-50%) scale(1.7)}16%{opacity:1;transform:translate(-50%,-50%) scale(.86)}',
-    '72%{opacity:.9;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.2)}}',
-
-    /* números de daño */
-    '.vfx-dmg{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;user-select:none;will-change:transform,opacity;',
-    'font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:900;letter-spacing:-.02em;',
-    'color:#fff;text-shadow:0 3px 18px rgba(0,0,0,.85),0 0 3px rgba(0,0,0,.7);animation:vfxDmg 1.3s cubic-bezier(.15,.85,.3,1) forwards}',
-    '@keyframes vfxDmg{0%{opacity:0;transform:translate(-50%,-50%) translateY(16px) scale(.55)}',
-    '16%{opacity:1;transform:translate(-50%,-50%) translateY(0) scale(1.22)}',
-    '54%{opacity:1;transform:translate(-50%,-50%) translateY(-34px) scale(1)}',
-    '100%{opacity:0;transform:translate(-50%,-50%) translateY(-82px) scale(.94)}}',
-    '.vfx-dmg-r{color:#ff9a9a;text-shadow:0 3px 18px rgba(0,0,0,.85),0 0 18px rgba(255,60,60,.75)}',
-    '.vfx-dmg-a{color:#a9c8ff;text-shadow:0 3px 18px rgba(0,0,0,.85),0 0 18px rgba(70,130,255,.75)}',
-
-    /* flash a pantalla completa */
-    '.vfx-flashfull{position:fixed;inset:0;pointer-events:none;z-index:62;background:var(--vfx-c,#fff);opacity:0;',
-    'animation:vfxFull .44s ease-out forwards}',
-    '@keyframes vfxFull{0%{opacity:.4}100%{opacity:0}}',
-
-    /* viñeta */
-    '.vfx-vignette{position:fixed;inset:0;pointer-events:none;z-index:44;opacity:0;transition:opacity .55s ease;',
-    'background:radial-gradient(ellipse at 50% 50%,transparent 40%,var(--vfx-vig,rgba(255,40,40,.30)) 72%,var(--vfx-vig2,rgba(190,10,20,.62)) 100%)}',
-
-    /* sacudidas */
-    '.vfx-shake{animation:vfxShake .46s cubic-bezier(.36,.07,.19,.97)}',
-    '.vfx-shake-hard{animation:vfxShakeHard .56s cubic-bezier(.36,.07,.19,.97)}',
-    '@keyframes vfxShake{0%,100%{transform:translate(0,0)}14%{transform:translate(-5px,3px)}30%{transform:translate(4px,-4px)}',
-    '46%{transform:translate(-3px,-2px)}62%{transform:translate(3px,3px)}80%{transform:translate(-2px,1px)}}',
-    '@keyframes vfxShakeHard{0%,100%{transform:translate(0,0) rotate(0deg)}10%{transform:translate(-13px,8px) rotate(-.4deg)}',
-    '24%{transform:translate(12px,-10px) rotate(.4deg)}38%{transform:translate(-10px,-7px) rotate(-.3deg)}',
-    '54%{transform:translate(9px,8px) rotate(.3deg)}70%{transform:translate(-6px,4px) rotate(-.15deg)}86%{transform:translate(3px,-2px)}}',
-    '.vfx-temblor{animation:vfxTemblor .52s cubic-bezier(.36,.07,.19,.97)}',
-    '@keyframes vfxTemblor{0%,100%{transform:translate(0,0)}20%{transform:translate(-7px,3px)}40%{transform:translate(6px,-4px)}',
-    '60%{transform:translate(-5px,2px)}80%{transform:translate(3px,-1px)}}',
-
-    /* emoji volador */
-    '.vfx-fly{position:fixed;z-index:72;pointer-events:none;user-select:none;line-height:1;will-change:transform,opacity;',
-    'filter:drop-shadow(0 12px 26px rgba(0,0,0,.55)) drop-shadow(0 0 26px rgba(255,190,90,.35))}',
-
-    /* ---------- chat ---------- */
-    '.vfx-chat{--vfx-rojo:#ff5d5d;--vfx-azul:#4d8dff;position:relative;display:flex;flex-direction:column;height:100%;min-height:0;',
-    'font-family:inherit;color:#eaeff7;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015)),rgba(6,9,15,.86);',
-    'border:1px solid rgba(255,255,255,.09);border-radius:18px;overflow:hidden;',
-    'box-shadow:0 24px 60px -30px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.06);',
-    'backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}',
-    '.vfx-chat-flotante{position:fixed;left:16px;bottom:16px;z-index:57;width:min(360px,calc(100vw - 32px));height:min(46vh,430px);pointer-events:auto}',
-    '.vfx-chat.min .vfx-chat-body{display:none}',
-    '.vfx-chat.min{height:auto!important;min-height:0}',
-    '.vfx-chat-h{display:flex;align-items:center;gap:8px;padding:9px 11px;border-bottom:1px solid rgba(255,255,255,.08);',
-    'background:linear-gradient(180deg,rgba(255,255,255,.045),transparent);flex:0 0 auto}',
-    '.vfx-chat-dot{width:7px;height:7px;border-radius:50%;background:#ff5d5d;box-shadow:0 0 10px #ff5d5d;',
-    'animation:vfxPulso 1.4s ease-in-out infinite;flex:0 0 auto}',
-    '@keyframes vfxPulso{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.82)}}',
-    '.vfx-chat-t{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:#8792a6;font-weight:700}',
-    '.vfx-chat-n{margin-left:auto;font-size:9.5px;color:#5d687b;font-variant-numeric:tabular-nums}',
-    '.vfx-chat-b{width:24px;height:24px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.1);',
-    'background:rgba(255,255,255,.04);color:#8792a6;border-radius:8px;font-size:13px;line-height:1;cursor:pointer;padding:0;flex:0 0 auto}',
-    '.vfx-chat-b:hover{color:#eaeff7;border-color:rgba(255,255,255,.22)}',
-    '.vfx-chat-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px 10px 12px;',
-    'display:flex;flex-direction:column;gap:7px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}',
-    '.vfx-chat-body::-webkit-scrollbar{width:8px}',
-    '.vfx-chat-body::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:8px}',
-    '.vfx-chat-body::-webkit-scrollbar-track{background:transparent}',
-    '.vfx-chat-nuevos{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:none;',
-    'padding:5px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.16);background:rgba(10,14,22,.94);',
-    'color:#eaeff7;font:600 10.5px/1 inherit;cursor:pointer;z-index:3;box-shadow:0 8px 20px -8px rgba(0,0,0,.8)}',
-    '.vfx-chat-nuevos.on{display:block}',
-    '.vfx-line{display:flex;gap:8px;align-items:flex-start;animation:vfxLineIn .34s cubic-bezier(.2,.8,.2,1)}',
-    '.vfx-line.vfx-instant{animation:none}',
-    '@keyframes vfxLineIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}',
-    '.vfx-av{width:26px;height:26px;border-radius:9px;flex:0 0 auto;display:grid;place-items:center;font-size:11px;font-weight:800;',
-    'color:#fff;background:linear-gradient(140deg,var(--vfx-c,#6b7789),rgba(255,255,255,.22));box-shadow:0 4px 12px -4px rgba(0,0,0,.65)}',
-    '.vfx-bub{min-width:0;max-width:calc(100% - 36px);background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);',
-    'border-radius:13px;border-top-left-radius:5px;padding:6px 10px}',
-    '.vfx-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px}',
-    '.vfx-name{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--vfx-c,#8792a6)}',
-    '.vfx-to{font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--vfx-c,#8792a6);border:1px solid currentColor;',
-    'border-radius:999px;padding:0 5px;opacity:.85;white-space:nowrap;line-height:1.5}',
-    '.vfx-time{font-size:9px;color:#5d687b;font-variant-numeric:tabular-nums;margin-left:auto}',
-    '.vfx-tx{font-size:12.5px;line-height:1.42;overflow-wrap:anywhere}',
-    '.vfx-quote{display:block;font-size:10.5px;color:#8792a6;border-left:2px solid var(--vfx-c,#6b7789);padding-left:6px;',
-    'margin-bottom:3px;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}',
-    '.vfx-line.vfx-emoji-only .vfx-bub{background:none;border:0;padding:0}',
-    '.vfx-line.vfx-emoji-only .vfx-tx{font-size:40px;line-height:1.05;filter:drop-shadow(0 8px 16px rgba(0,0,0,.5));',
-    'animation:vfxEmojiVivo 1.7s ease-in-out infinite}',
-    '@keyframes vfxEmojiVivo{0%,100%{transform:scale(1) rotate(0deg)}50%{transform:scale(1.1) rotate(-3deg)}}',
-    '.vfx-line.vfx-sys{opacity:.92}',
-    '.vfx-line.vfx-sys .vfx-bub{background:rgba(255,255,255,.03)}',
-    '.vfx-line.vfx-t-golpe .vfx-bub{border-color:rgba(255,93,93,.55);background:rgba(255,93,93,.10);',
-    'animation:vfxLineGolpe .5s cubic-bezier(.2,.8,.2,1)}',
-    '@keyframes vfxLineGolpe{0%{transform:translateX(0)}25%{transform:translateX(-5px)}50%{transform:translateX(4px)}75%{transform:translateX(-2px)}100%{transform:translateX(0)}}',
-    '.vfx-line.vfx-t-burla .vfx-bub{border-color:rgba(255,93,93,.32)}',
-    '.vfx-line.vfx-t-nervios .vfx-bub{border-color:rgba(255,190,90,.5);animation:vfxLineNervios .55s ease-in-out 3}',
-    '@keyframes vfxLineNervios{0%,100%{transform:translateX(0)}30%{transform:translateX(-2px)}70%{transform:translateX(2px)}}',
-    '.vfx-line.vfx-t-llanto .vfx-bub{border-color:rgba(77,141,255,.45);background:rgba(77,141,255,.10)}',
-    '.vfx-line.vfx-fuerte .vfx-bub{box-shadow:0 0 0 1px rgba(255,255,255,.04),0 8px 24px -14px rgba(0,0,0,.85)}',
-
-    /* tema claro del visor (body.light) */
-    'body.light .vfx-chat{background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(255,255,255,.87));',
-    'border-color:rgba(16,24,40,.12);color:#101828;box-shadow:0 20px 50px -30px rgba(16,24,40,.45),inset 0 1px 0 #fff}',
-    'body.light .vfx-chat-t,body.light .vfx-chat-n,body.light .vfx-time{color:#5b6779}',
-    'body.light .vfx-chat-b{color:#5b6779;border-color:rgba(16,24,40,.12);background:rgba(16,24,40,.04)}',
-    'body.light .vfx-bub{background:rgba(16,24,40,.035);border-color:rgba(16,24,40,.10)}',
-    'body.light .vfx-chat-nuevos{background:#fff;border-color:rgba(16,24,40,.14);color:#101828}',
-    'body.light .vfx-quote{color:#5b6779}',
-
-    /* responsive */
-    '@media (max-width:1100px){.vfx-chat-flotante{left:10px;right:10px;width:auto;height:min(42vh,360px)}}',
-    '@media (max-width:640px){.vfx-chat-flotante{left:8px;right:8px;bottom:8px;height:min(38vh,310px);border-radius:16px}',
-    '.vfx-chat-t{font-size:9px;letter-spacing:.13em}.vfx-tx{font-size:12px}.vfx-line.vfx-emoji-only .vfx-tx{font-size:34px}',
-
-    /* accesibilidad: menos movimiento */
-    '@media (prefers-reduced-motion:reduce){.vfx-line,.vfx-line.vfx-emoji-only .vfx-tx{animation:none}',
-    '.vfx-reaction,.vfx-boom,.vfx-flash,.vfx-ring,.vfx-spark,.vfx-reticle,.vfx-dmg,.vfx-flashfull{animation-duration:.22s!important}',
-    '.vfx-shake,.vfx-shake-hard,.vfx-temblor{animation-duration:.22s!important}}'
-  ].join('');
-
-  function ensureStyles() {
-    if (styleEl && styleEl.parentNode) return styleEl;
-    var prev = doc.getElementById('vfx-css');
-    if (prev) { styleEl = prev; return styleEl; }
-    if (!doc.head && !doc.documentElement) return null;
-    styleEl = doc.createElement('style');
-    styleEl.id = 'vfx-css';
-    styleEl.textContent = CSS;
-    (doc.head || doc.documentElement).appendChild(styleEl);
-    return styleEl;
+  function computeLite() {
+    if (CFG.motion === 'lite' || CFG.motion === 'reduced') return true;
+    if (CFG.motion === 'full') return false;
+    return !!(mq && mq.matches);
   }
 
-  /* ======================================================================
-   * Mapa: localización, object-fit y conversión de porcentajes
-   * ==================================================================== */
+  /* ==========================================================================
+   * Temporizadores (centralizados para que clear() los mate todos)
+   * ======================================================================== */
+
+  function later(fn, ms) {
+    var id = setTimeout(function () {
+      var i = timers.indexOf(id);
+      if (i >= 0) timers.splice(i, 1);
+      try { fn(); } catch (e) { /* silencioso */ }
+    }, Math.max(0, ms));
+    timers.push(id);
+    return id;
+  }
+
+  function every(fn, ms) {
+    var id = setInterval(function () {
+      try { fn(); } catch (e) { /* silencioso */ }
+    }, Math.max(16, ms));
+    intervals.push(id);
+    return id;
+  }
+
+  function stopEvery(id) {
+    try { clearInterval(id); } catch (e) { /* nada */ }
+    var i = intervals.indexOf(id);
+    if (i >= 0) intervals.splice(i, 1);
+  }
+
+  function clearTimers() {
+    var i;
+    for (i = 0; i < timers.length; i++) { try { clearTimeout(timers[i]); } catch (e) { /* nada */ } }
+    timers.length = 0;
+    for (i = 0; i < intervals.length; i++) { try { clearInterval(intervals[i]); } catch (e) { /* nada */ } }
+    intervals.length = 0;
+  }
+
+  /* ==========================================================================
+   * Estilos (una sola vez)
+   * ======================================================================== */
+
+  function ensureStyles() {
+    if (doc.getElementById('vfx2-css')) return;
+    var css = [
+      /* ---- capas ---- */
+      '#vfx2-stage{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:60;',
+      'contain:layout style paint;transform:translateZ(0)}',
+      '#vfx2-stage.vfx2-fixed{position:fixed;z-index:9997}',
+      '.vfx2-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}',
+      '.vfx2-dom{position:absolute;inset:0;pointer-events:none}',
+      '#vfx2-screen{position:fixed;inset:0;pointer-events:none;z-index:9998;overflow:hidden}',
+
+      /* ---- invasor ---- */
+      '.vfx2-inv{position:absolute;pointer-events:none;will-change:transform,opacity;z-index:6}',
+      '.vfx2-inv-center{position:absolute;left:0;top:0;transform:translate(-50%,-50%)}',
+      '.vfx2-inv-enter{position:relative;animation:vfx2-in .46s cubic-bezier(.18,1.3,.4,1) both}',
+      '.vfx2-inv-body{position:relative;display:flex;flex-direction:column;align-items:center;',
+      'transform-origin:50% 88%;will-change:transform}',
+      '.vfx2-inv-face{position:relative;display:flex;align-items:center;justify-content:center}',
+      '.vfx2-inv-glow{position:absolute;left:50%;top:50%;width:calc(var(--size) * 2.1);',
+      'height:calc(var(--size) * 2.1);transform:translate(-50%,-50%);border-radius:50%;',
+      'background:radial-gradient(circle,var(--glow) 0%,rgba(0,0,0,0) 62%);opacity:.46;',
+      'filter:blur(18px);animation:vfx2-pulse 1.6s ease-in-out infinite;pointer-events:none}',
+      '.vfx2-inv-tag{position:relative;font:900 13px/1 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
+      'letter-spacing:.24em;text-transform:uppercase;color:var(--c);padding:6px 12px 5px;border-radius:999px;',
+      'background:rgba(6,9,16,.62);border:1px solid var(--c);box-shadow:0 0 14px var(--glow),inset 0 0 10px rgba(0,0,0,.5);',
+      'margin-bottom:10px;white-space:nowrap;text-indent:.24em}',
+      '.vfx2-inv-emoji{position:relative;font-size:var(--size);line-height:.92;',
+      'filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 30px var(--glow));',
+      'will-change:transform,filter}',
+      '.vfx2-inv-text{position:relative;margin-top:12px;max-width:calc(var(--size) * 3.4);',
+      'font:800 clamp(15px,1.9vw,30px)/1.18 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
+      'color:#fff;text-align:center;font-style:italic;letter-spacing:.01em;',
+      'text-shadow:0 2px 0 rgba(0,0,0,.85),0 0 20px var(--glow),0 4px 18px rgba(0,0,0,.7);',
+      'animation:vfx2-textin .5s cubic-bezier(.2,1.4,.4,1) .14s both}',
+      '.vfx2-inv.vfx2-out .vfx2-inv-enter{animation:vfx2-out .34s ease-in forwards}',
+
+      /* entrada por emoción (--s0 SIEMPRE 1: en el primer frame ya se ve a tamaño final) */
+      '.vfx2-inv-furia{--dx:-180px;--dy:0px;--s0:1;--r0:-10deg}',
+      '.vfx2-inv-llanto{--dx:0px;--dy:-210px;--s0:1;--r0:0deg}',
+      '.vfx2-inv-burla{--dx:0px;--dy:0px;--s0:1;--r0:-30deg}',
+      '.vfx2-inv-euforia{--dx:0px;--dy:170px;--s0:1;--r0:8deg}',
+      '.vfx2-inv-panico{--dx:170px;--dy:0px;--s0:1;--r0:0deg}',
+
+      /* animación de cada emoción (lo que las hace inconfundibles) */
+      '.vfx2-inv-furia .vfx2-inv-body{animation:vfx2-furia .32s linear infinite;transform-origin:50% 90%}',
+      '.vfx2-inv-furia .vfx2-inv-glow{background:radial-gradient(circle,#ff3b30 0%,rgba(255,80,0,.55) 34%,rgba(0,0,0,0) 66%)}',
+      '.vfx2-inv-llanto .vfx2-inv-body{animation:vfx2-llanto 3.1s ease-in-out infinite;transform-origin:50% 85%}',
+      '.vfx2-inv-llanto .vfx2-inv-emoji{filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 34px var(--glow)) saturate(.75)}',
+      '.vfx2-inv-burla .vfx2-inv-body{animation:vfx2-burla 1.12s cubic-bezier(.34,0,.4,1) infinite;transform-origin:50% 100%}',
+      '.vfx2-inv-euforia .vfx2-inv-body{animation:vfx2-euforia 1.22s cubic-bezier(.4,0,.4,1) infinite;transform-origin:50% 100%}',
+      '.vfx2-inv-euforia .vfx2-inv-glow{background:conic-gradient(from 0deg,#ff3b30,#ffd60a,#34d399,#38bdf8,#a78bfa,#ff3b30);filter:blur(26px);opacity:.55}',
+      '.vfx2-inv-euforia .vfx2-inv-emoji{animation:vfx2-rainbow 2.4s linear infinite}',
+      '.vfx2-inv-panico .vfx2-inv-body{animation:vfx2-panico .42s steps(1,end) infinite}',
+      '.vfx2-inv-panico .vfx2-inv-emoji{animation:vfx2-flicker .9s steps(1,end) infinite;',
+      'text-shadow:-4px 0 rgba(255,0,80,.9),4px 0 rgba(0,240,255,.9)}',
+      '.vfx2-inv-panico .vfx2-inv-tag{animation:vfx2-flicker 1.1s steps(1,end) infinite}',
+
+      /* ---- impacto ---- */
+      '.vfx2-fx{position:absolute}',
+      '.vfx2-pt{width:0;height:0;left:0;top:0}',
+      '.vfx2-ring{position:absolute;left:0;top:0;width:var(--s);height:var(--s);border-radius:50%;',
+      'border:var(--bw) solid var(--c);transform:translate(-50%,-50%) scale(.55);opacity:1;',
+      'box-shadow:0 0 30px var(--c),0 0 60px var(--c),inset 0 0 24px var(--c);',
+      'animation:vfx2-ring var(--d) cubic-bezier(.12,.7,.3,1) var(--delay,0s) forwards;',
+      'will-change:transform,opacity}',
+      '.vfx2-core{position:absolute;left:0;top:0;width:var(--s);height:var(--s);border-radius:50%;',
+      'background:radial-gradient(circle,#fff 0%,#fff3c4 16%,var(--c) 46%,rgba(255,120,0,.55) 62%,rgba(0,0,0,0) 76%);',
+      'transform:translate(-50%,-50%) scale(.9);opacity:1;animation:vfx2-core .85s ease-out forwards;',
+      'mix-blend-mode:screen;will-change:transform,opacity}',
+      '.vfx2-boom{position:absolute;left:0;top:0;font-size:var(--fs);line-height:1;',
+      'transform:translate(-50%,-50%) scale(1) rotate(-8deg);opacity:1;',
+      'animation:vfx2-boom 1s cubic-bezier(.16,1.25,.3,1) forwards;',
+      'filter:drop-shadow(0 6px 18px rgba(0,0,0,.6));will-change:transform,opacity}',
+
+      /* ---- número de daño (grande, contundente, legible de un vistazo) ---- */
+      '.vfx2-dmg{position:absolute;font:900 var(--fs,60px)/1 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
+      'letter-spacing:-.035em;transform:translate(-50%,-50%);white-space:nowrap;will-change:transform,opacity;',
+      'animation:vfx2-dmg 1.9s cubic-bezier(.16,.9,.2,1) forwards;font-variant-numeric:tabular-nums;',
+      'paint-order:stroke fill}',
+      '.vfx2-dmg-r{color:#fff4f4;-webkit-text-stroke:2.5px #4a0a0a;',
+      'text-shadow:-3px -3px 0 #5b0d0d,3px -3px 0 #5b0d0d,-3px 3px 0 #5b0d0d,3px 3px 0 #5b0d0d,0 6px 0 #3d0505,0 0 30px rgba(255,70,60,.95),0 10px 26px rgba(0,0,0,.85)}',
+      '.vfx2-dmg-a{color:#eef9ff;-webkit-text-stroke:2.5px #04283a;',
+      'text-shadow:-3px -3px 0 #06344d,3px -3px 0 #06344d,-3px 3px 0 #06344d,3px 3px 0 #06344d,0 6px 0 #041f30,0 0 30px rgba(56,189,248,.95),0 10px 26px rgba(0,0,0,.85)}',
+
+      /* ---- reacciones / vuelo (compat v1) ---- */
+      '.vfx2-react{position:absolute;transform:translate(-50%,-50%);line-height:1;',
+      'animation:vfx2-react 1.35s ease-out forwards;will-change:transform,opacity;',
+      'filter:drop-shadow(0 6px 16px rgba(0,0,0,.5))}',
+      '.vfx2-fly{position:absolute;transform:translate(-50%,-50%);line-height:1;z-index:7;',
+      'filter:drop-shadow(0 10px 22px rgba(0,0,0,.55));will-change:transform,opacity}',
+
+      /* ---- pantalla completa ---- */
+      '.vfx2-flash{position:absolute;inset:0;background:var(--c);opacity:0;',
+      'animation:vfx2-flash var(--d,.42s) ease-out forwards;will-change:opacity}',
+      '.vfx2-vignette{position:absolute;inset:0;opacity:0;transition:opacity .45s ease;',
+      'background:radial-gradient(ellipse at center,rgba(0,0,0,0) 42%,var(--c) 100%)}',
+
+      /* ---- lite ---- */
+      '.vfx2-lite .vfx2-inv-body,.vfx2-lite .vfx2-inv-emoji,.vfx2-lite .vfx2-inv-glow,',
+      '.vfx2-lite .vfx2-inv-tag,.vfx2-lite .vfx2-inv-text{animation:none!important}',
+      '.vfx2-lite .vfx2-inv-enter{animation:vfx2-in .3s ease-out both}',
+
+      /* ---- keyframes ---- */
+      '@keyframes vfx2-in{0%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)}',
+      '20%{opacity:1;transform:translate(calc(var(--dx,0px) * .1),calc(var(--dy,0px) * .1)) scale(1.1) rotate(calc(var(--r0,0deg) * .5))}',
+      '46%{opacity:1;transform:translate(0,0) scale(.975) rotate(0deg)}',
+      '72%{opacity:1;transform:translate(0,0) scale(1.02) rotate(0deg)}',
+      '100%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)}}',
+      '@keyframes vfx2-out{0%{opacity:1;transform:scale(1) translateY(0)}100%{opacity:0;transform:scale(.72) translateY(-18px)}}',
+      '@keyframes vfx2-textin{0%{opacity:1;transform:translateY(0) scale(.94)}100%{opacity:1;transform:translateY(0) scale(1)}}',
+      '@keyframes vfx2-pulse{0%,100%{opacity:.42;transform:translate(-50%,-50%) scale(.94)}50%{opacity:.72;transform:translate(-50%,-50%) scale(1.08)}}',
+      '@keyframes vfx2-furia{',
+      '0%,100%{transform:translate(0,0) rotate(0deg) scale(1)}',
+      '8%{transform:translate(-9px,3px) rotate(-2.6deg) scale(1.03)}',
+      '16%{transform:translate(8px,-4px) rotate(2.6deg) scale(.98)}',
+      '24%{transform:translate(-7px,2px) rotate(-2deg) scale(1.04)}',
+      '32%{transform:translate(9px,3px) rotate(2.2deg) scale(1)}',
+      '40%{transform:translate(-5px,-2px) rotate(-1.6deg) scale(1.02)}',
+      '48%{transform:translate(6px,2px) rotate(1.8deg) scale(.99)}',
+      '56%{transform:translate(-8px,0) rotate(-2.2deg) scale(1.03)}',
+      '64%{transform:translate(7px,3px) rotate(2.2deg) scale(1)}',
+      '72%{transform:translate(-4px,-3px) rotate(-1.2deg) scale(1.02)}',
+      '80%{transform:translate(5px,2px) rotate(1.4deg) scale(1)}',
+      '90%{transform:translate(-2px,0) rotate(-.6deg) scale(1)}}',
+      '@keyframes vfx2-llanto{0%,100%{transform:translate(0,0) rotate(-2deg) scale(1,1)}',
+      '25%{transform:translate(-7px,16px) rotate(-4.5deg) scale(1.01,.98)}',
+      '50%{transform:translate(0,30px) rotate(1deg) scale(1,.96)}',
+      '75%{transform:translate(7px,16px) rotate(3.5deg) scale(1.01,.98)}}',
+      '@keyframes vfx2-burla{0%,100%{transform:translate(0,0) scale(1,1) rotate(-5deg)}',
+      '12%{transform:translate(0,-36px) scale(.9,1.12) rotate(-12deg)}',
+      '24%{transform:translate(0,0) scale(1.22,.78) rotate(-2deg)}',
+      '36%{transform:translate(0,-12px) scale(.96,1.05) rotate(4deg)}',
+      '48%{transform:translate(0,0) scale(1.08,.94) rotate(10deg)}',
+      '60%{transform:translate(0,-42px) scale(.92,1.1) rotate(16deg)}',
+      '72%{transform:translate(0,0) scale(1.18,.82) rotate(6deg)}',
+      '86%{transform:translate(0,-6px) scale(1,1) rotate(-1deg)}}',
+      '@keyframes vfx2-euforia{0%,100%{transform:translate(0,0) scale(1,1) rotate(0)}',
+      '10%{transform:translate(0,-18px) scale(1.06,.94) rotate(-2deg)}',
+      '35%{transform:translate(0,-88px) scale(.97,1.04) rotate(-4deg)}',
+      '50%{transform:translate(0,-98px) scale(1,1) rotate(0)}',
+      '68%{transform:translate(0,-10px) scale(1.1,.9) rotate(2deg)}',
+      '82%{transform:translate(0,0) scale(.94,1.08) rotate(0)}',
+      '92%{transform:translate(0,-28px) scale(1.02,.98) rotate(-1deg)}}',
+      '@keyframes vfx2-rainbow{0%{filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 30px var(--glow)) hue-rotate(0deg)}',
+      '100%{filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 30px var(--glow)) hue-rotate(360deg)}}',
+      '@keyframes vfx2-panico{0%{transform:translate(0,0)}10%{transform:translate(-11px,4px)}',
+      '20%{transform:translate(9px,-5px)}30%{transform:translate(-6px,-3px)}',
+      '40%{transform:translate(12px,5px)}50%{transform:translate(-8px,2px)}',
+      '60%{transform:translate(4px,-6px)}70%{transform:translate(-11px,4px)}',
+      '80%{transform:translate(7px,3px)}90%{transform:translate(-5px,-4px)}100%{transform:translate(0,0)}}',
+      '@keyframes vfx2-flicker{0%,44%{opacity:1}46%{opacity:.3}48%{opacity:1}72%{opacity:.55}74%{opacity:1}100%{opacity:1}}',
+      '@keyframes vfx2-ring{0%{transform:translate(-50%,-50%) scale(.55);opacity:1}',
+      '30%{transform:translate(-50%,-50%) scale(.78);opacity:.95}',
+      '100%{transform:translate(-50%,-50%) scale(1.08);opacity:0}}',
+      '@keyframes vfx2-core{0%{transform:translate(-50%,-50%) scale(.9);opacity:1}',
+      '26%{transform:translate(-50%,-50%) scale(1.02);opacity:1}',
+      '100%{transform:translate(-50%,-50%) scale(1.3);opacity:0}}',
+      '@keyframes vfx2-boom{0%{transform:translate(-50%,-50%) scale(1) rotate(-8deg);opacity:1}',
+      '20%{transform:translate(-50%,-52%) scale(1.16) rotate(4deg);opacity:1}',
+      '60%{transform:translate(-50%,-58%) scale(1.02) rotate(0)}',
+      '100%{transform:translate(-50%,-78%) scale(.86) rotate(8deg);opacity:0}}',
+      '@keyframes vfx2-dmg{0%{transform:translate(-50%,-50%) scale(1.05);opacity:1}',
+      '16%{transform:translate(calc(-50% + var(--arc,0px)),-66%) scale(1.22) rotate(-1.5deg);opacity:1}',
+      '34%{transform:translate(calc(-50% + var(--arc,0px) * .6),-78%) scale(1.04);opacity:1}',
+      '62%{transform:translate(calc(-50% + var(--arc,0px) * .3),-92%) scale(1);opacity:1}',
+      '100%{transform:translate(-50%,-130%) scale(.94);opacity:0}}',
+      '@keyframes vfx2-react{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}',
+      '18%{opacity:1;transform:translate(-50%,-70%) scale(1.1)}',
+      '100%{opacity:0;transform:translate(-50%,-210%) scale(.9)}}',
+      '@keyframes vfx2-flash{0%{opacity:var(--o,.35)}14%{opacity:var(--o,.35)}100%{opacity:0}}'
+    ].join('');
+    var st = make('style');
+    st.id = 'vfx2-css';
+    st.appendChild(doc.createTextNode(css));
+    (doc.head || doc.documentElement).appendChild(st);
+  }
+
+  /* ==========================================================================
+   * Geometría: mapa -> coordenadas de la capa
+   * ======================================================================== */
 
   function getMap() {
     var el = resolveEl(CFG.map);
     if (el) return el;
-    var qs = ['[data-vfx-map]', '.mapa #stream', '.mapa #frame', '#stream', '#frame',
-      '.mapa video', '.mapa img:not(#fondo)', '.mapa canvas', '.mapa', '#centro'];
+    var qs = ['[data-vfx-map]', '.mapa #frame', '.mapa video', '.mapa img',
+      '.mapa canvas', '.mapa', '#stream', '#frame', '#centro'];
     for (var i = 0; i < qs.length; i++) {
       try {
         el = doc.querySelector(qs[i]);
         if (el) return el;
-      } catch (e) { /* selector no soportado: seguir */ }
+      } catch (e) { /* selector no soportado */ }
     }
     return null;
   }
 
-  /* Busca el hijo "media" visible que representa el mapa dentro de un contenedor
-     (ignora fondos difuminados o capas decorativas). */
   function mediaChild(el) {
     var list;
     try { list = el.querySelectorAll('img, video, canvas'); } catch (e) { return null; }
-    var er = el.getBoundingClientRect();
+    var er;
+    try { er = el.getBoundingClientRect(); } catch (e) { return null; }
     var best = null, bestArea = 0;
     for (var i = 0; i < list.length; i++) {
       var m = list[i];
@@ -379,6 +399,7 @@
     return best;
   }
 
+  /* Rect del contenido visible (respeta object-fit contain/cover). */
   function contentRect(el) {
     var r = el.getBoundingClientRect();
     var out = { left: r.left, top: r.top, width: r.width, height: r.height, el: el };
@@ -390,7 +411,6 @@
     else if (tag === 'VIDEO') { iw = el.videoWidth || 0; ih = el.videoHeight || 0; }
     else if (tag === 'CANVAS') { iw = el.width || 0; ih = el.height || 0; }
     if (!iw || !ih) {
-      // Contenedor: usar el hijo media visible (p.ej. .mapa > canvas#frame).
       var child = mediaChild(el);
       if (child) {
         var cr = child.getBoundingClientRect();
@@ -406,11 +426,9 @@
       }
     }
     if (!iw || !ih || !r.width || !r.height) return out;
-
     var fit = 'fill';
     try { fit = (global.getComputedStyle(media).objectFit || 'fill').toLowerCase(); } catch (e) { fit = 'fill'; }
-    if (fit !== 'contain' && fit !== 'cover') return out; // fill / none / scale-down ≈ caja
-
+    if (fit !== 'contain' && fit !== 'cover') return out;
     var s = fit === 'cover'
       ? Math.max(r.width / iw, r.height / ih)
       : Math.min(r.width / iw, r.height / ih);
@@ -422,1024 +440,1000 @@
     return out;
   }
 
-  function mapRect() {
+  function mapHost() {
     var el = getMap();
+    if (!el) return null;
+    var tag = (el.tagName || '').toUpperCase();
+    if (tag === 'IMG' || tag === 'VIDEO' || tag === 'CANVAS') {
+      return el.parentElement || el;
+    }
+    return el;
+  }
+
+  function mapRect() {
+    var el = mapHost();
     if (el) {
       var r = contentRect(el);
       if (r && r.width >= 8 && r.height >= 8) return r;
     }
-    // Fallback tolerante: zona central del viewport.
     var w = global.innerWidth || 1280;
     var h = global.innerHeight || 720;
     return { left: w * 0.10, top: h * 0.10, width: w * 0.80, height: h * 0.72, el: null };
   }
 
+  /* Punto en coordenadas de viewport. */
   function punto(xPct, yPct) {
     var r = mapRect();
     var x = clamp(num(xPct, 50), -25, 125);
     var y = clamp(num(yPct, 50), -25, 125);
-    return {
-      x: r.left + (x / 100) * r.width,
-      y: r.top + (y / 100) * r.height,
-      pctX: x,
-      pctY: y,
-      rect: r
-    };
+    return { x: r.left + (x / 100) * r.width, y: r.top + (y / 100) * r.height, pctX: x, pctY: y, rect: r };
   }
 
-  function pctFromPoint(x, y) {
-    var r = mapRect();
-    return {
-      xPct: r.width ? ((x - r.left) / r.width) * 100 : 50,
-      yPct: r.height ? ((y - r.top) / r.height) * 100 : 50
-    };
+  /* Punto de viewport -> coordenadas locales de la capa FX. */
+  function stagePoint(p) {
+    if (!stage) return { x: p.x, y: p.y };
+    var sr = stage.getBoundingClientRect();
+    return { x: p.x - sr.left, y: p.y - sr.top };
   }
 
-  /* ======================================================================
-   * Capa de efectos
-   * ==================================================================== */
+  /* ==========================================================================
+   * Capas
+   * ======================================================================== */
 
-  function ensureOverlay() {
-    if (overlay && overlay.parentNode) return overlay;
+  function sizeCanvas() {
+    if (!canvas || !stage) return;
+    var w = stage.clientWidth || (global.innerWidth || 1280);
+    var h = stage.clientHeight || (global.innerHeight || 720);
+    var dpr = clamp(global.devicePixelRatio || 1, 1, 2.5);
+    var pw = Math.max(1, Math.round(w * dpr));
+    var ph = Math.max(1, Math.round(h * dpr));
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+    }
+    DPR = dpr;
+    VIEW.w = w; VIEW.h = h;
+    if (ctx) { try { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); } catch (e) { /* nada */ } }
+  }
+
+  function ensureStage() {
+    var host = mapHost();
+    var fixed = false;
+    if (!host) { host = doc.body; fixed = true; }
+    if (!host) return null;
+    if (stage && stage.parentNode === host) { sizeCanvas(); return stage; }
+
+    if (stage && stage.parentNode) {
+      try { stage.parentNode.removeChild(stage); } catch (e) { /* nada */ }
+    }
+    stage = make('div');
+    stage.id = 'vfx2-stage';
+    if (fixed) stage.className = 'vfx2-fixed';
+    stage.setAttribute('aria-hidden', 'true');
+    canvas = make('canvas', 'vfx2-canvas');
+    dom = make('div', 'vfx2-dom');
+    stage.appendChild(canvas);
+    stage.appendChild(dom);
+    host.appendChild(stage);
+
+    if (!fixed) {
+      try {
+        var cs = global.getComputedStyle(host);
+        if (cs && cs.position === 'static') host.style.position = 'relative';
+      } catch (e) { /* nada */ }
+    }
+    try { ctx = canvas.getContext('2d'); } catch (e) { ctx = null; }
+    stage.classList.toggle('vfx2-lite', lite);
+    sizeCanvas();
+    return stage;
+  }
+
+  function ensureScreen() {
+    if (screen && screen.parentNode) return screen;
     if (!doc.body) return null;
-    var prev = doc.getElementById('vfx-layer');
-    if (prev) {
-      overlay = prev;
-    } else {
-      overlay = makeEl('vfx-layer');
-      overlay.id = 'vfx-layer';
-      overlay.setAttribute('aria-hidden', 'true');
-      doc.body.appendChild(overlay);
+    screen = make('div');
+    screen.id = 'vfx2-screen';
+    screen.setAttribute('aria-hidden', 'true');
+    doc.body.appendChild(screen);
+    return screen;
+  }
+
+  function ensureReady() {
+    ensureStyles();
+    var st = ensureStage();
+    ensureScreen();
+    return !!st;
+  }
+
+  /* ==========================================================================
+   * Tope de efectos
+   * ======================================================================== */
+
+  function maxRoots() { return Math.max(4, Math.round(clamp(num(CFG.maxEffects, 24), 4, 80))); }
+
+  function track(el) {
+    roots.push(el);
+    var max = maxRoots();
+    while (roots.length > max) {
+      var old = roots.shift();
+      try { if (old.parentNode) old.parentNode.removeChild(old); } catch (e) { /* nada */ }
+      if (old && old.__stop) { try { old.__stop(); } catch (e) { /* nada */ } }
     }
-    overlay.style.zIndex = String(CFG.z);
-    return overlay;
   }
 
-  function trimOverlay() {
-    if (!overlay) return;
-    var max = Math.max(8, num(CFG.maxEffects, 44));
-    while (overlay.children.length > max) overlay.removeChild(overlay.firstElementChild);
+  function untrack(el) {
+    var i = roots.indexOf(el);
+    if (i >= 0) roots.splice(i, 1);
   }
 
-  function autoRemove(el, ms) {
-    setTimeout(function () {
-      try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* nada */ }
-    }, Math.max(80, num(ms, 1200)));
+  function removeEl(el) {
+    if (!el) return;
+    try { if (el.__stop) el.__stop(); } catch (e) { /* nada */ }
+    try { if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* nada */ }
+    untrack(el);
   }
 
-  function normPower(p) {
-    var n = Number(p);
-    if (!isFinite(n)) return 0.6;
-    if (n > 1) n = n / 600; // conteo crudo de píxeles del detector (/stats)
-    return clamp(n, 0.12, 1);
-  }
+  /* ==========================================================================
+   * Partículas (canvas único + un único rAF)
+   * ======================================================================== */
 
-  /* ---------- reacción flotante ---------- */
+  var spawnDrawId = 0;
 
-  function spawnReaction(emoji, xPct, yPct, opts) {
-    if (!ensureReady() || !overlay) return null;
-    var o = opts || {};
-    var p = punto(xPct, yPct);
-    var el = makeEl('vfx-reaction');
-    el.textContent = String(emoji == null ? '✨' : emoji).slice(0, 12);
-    el.style.left = p.x + 'px';
-    el.style.top = p.y + 'px';
-    el.style.fontSize = clamp(num(o.size, 30 + Math.random() * 16), 16, 110) + 'px';
-    el.style.setProperty('--vfx-rot', rnd(-14, 14).toFixed(1) + 'deg');
-    var dur = clamp(num(o.duration, 1500 + rnd(-180, 420)), 650, 12000);
-    el.style.animationDuration = Math.round(dur) + 'ms';
-    if (o.delay) el.style.animationDelay = Math.round(num(o.delay, 0)) + 'ms';
-    if (o.color) el.style.filter = 'drop-shadow(0 0 16px ' + o.color + ') drop-shadow(0 6px 14px rgba(0,0,0,.5))';
-    overlay.appendChild(el);
-    trimOverlay();
-    autoRemove(el, dur + 900 + num(o.delay, 0));
-    return el;
-  }
-
-  /* ---------- impacto / explosión ---------- */
-
-  function addFlash(x, y, size, color) {
-    var f = makeEl('vfx-flash');
-    f.style.left = x + 'px';
-    f.style.top = y + 'px';
-    f.style.width = f.style.height = Math.max(40, size) + 'px';
-    if (color) f.style.setProperty('--vfx-c', color);
-    overlay.appendChild(f);
-    autoRemove(f, 1000);
-  }
-
-  function addRing(x, y, size, color, dur, delay) {
-    var r = makeEl('vfx-ring');
-    r.style.left = x + 'px';
-    r.style.top = y + 'px';
-    r.style.width = r.style.height = Math.max(24, size) + 'px';
-    if (color) {
-      r.style.borderColor = color;
-      r.style.setProperty('--vfx-c', color);
+  function addP(p) {
+    if (!ctx || !stage) return;
+    if (P.length >= MAXP) P.shift();
+    P.push(p);
+    startLoop();
+    // Primer frame garantizado: si el rAF no llega a correr (headless/virtual-time,
+    // pestaña en segundo plano) pintamos igualmente la posición de nacimiento.
+    if (!spawnDrawId) {
+      spawnDrawId = later(function () {
+        spawnDrawId = 0;
+        if (P.length) drawP();
+      }, 16);
     }
-    r.style.animationDuration = num(dur, 0.66) + 's';
-    if (delay) r.style.animationDelay = Math.round(num(delay, 0)) + 'ms';
-    overlay.appendChild(r);
-    autoRemove(r, num(dur, 0.66) * 1000 + 700 + num(delay, 0));
   }
 
-  function spawnImpact(xPct, yPct, power, opts) {
-    if (!ensureReady() || !overlay) return null;
-    var o = opts || {};
-    var p = punto(xPct, yPct);
-    var pw = normPower(power);
-    var color = o.color || (pw >= 0.62 ? '#ff8a3d' : '#ffd36b');
-    var r0 = 34 + pw * 150;
+  function startLoop() {
+    if (rafId) return;
+    lastT = 0;
+    rafId = raf(loop);
+  }
 
-    addFlash(p.x, p.y, r0 * 2.1, color);
-    addRing(p.x, p.y, r0, color, 0.66, 0);
-    addRing(p.x, p.y, r0 * 0.7, '#ffffff', 0.5, 55);
+  function loop(t) {
+    rafId = 0;
+    if (!P.length) {
+      if (ctx) { try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { /* nada */ } }
+      return;
+    }
+    if (!lastT) lastT = t;
+    // Clamp defensivo: con virtual-time o pestañas dormidas dt puede ser enorme.
+    var dt = clamp((t - lastT) / 1000, 0, 0.05);
+    lastT = t;
+    stepP(dt);
+    drawP();
+    rafId = raf(loop);
+  }
 
-    var n = Math.round(9 + pw * 16);
+  function stepP(dt) {
+    for (var i = P.length - 1; i >= 0; i--) {
+      var p = P[i];
+      p.life -= dt * 1000;
+      if (p.life <= 0) { P.splice(i, 1); continue; }
+      if (p.g) p.vy += p.g * dt;
+      if (p.drag != null) {
+        var d = Math.pow(p.drag, dt * 60);
+        p.vx *= d;
+        p.vy *= d;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.vr) p.rot += p.vr * dt;
+      if (p.sway) p.x += Math.sin((p.ttl - p.life) * 0.006 + p.phase) * p.sway * dt * 60;
+      if (p.floor && p.y > p.floor) {
+        p.y = p.floor;
+        p.vy *= -0.42;
+        p.vx *= 0.78;
+        if (Math.abs(p.vy) < 30) p.vy = 0;
+      }
+      if (p.y > VIEW.h + 120 || p.x < -160 || p.x > VIEW.w + 160) {
+        P.splice(i, 1);
+      }
+    }
+  }
+
+  function drawP() {
+    if (!ctx) return;
+    try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { return; }
+    var i, p;
+    ctx.globalCompositeOperation = 'source-over';
+    for (i = 0; i < P.length; i++) {
+      p = P[i];
+      if (p.blend === 'lighter') continue;
+      drawOne(p);
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    for (i = 0; i < P.length; i++) {
+      p = P[i];
+      if (p.blend !== 'lighter') continue;
+      drawOne(p);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  function drawOne(p) {
+    // k clampeado a [0,1]: la vida restante nunca da alfa fuera de rango.
+    var k = clamp(p.life / p.ttl, 0, 1);
+    var a = k * (p.alpha != null ? p.alpha : 1);
+    if (a <= 0) return;
+    ctx.globalAlpha = clamp(a, 0, 1);
+    if (p.type === 'rect' || p.type === 'confetti') {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.62);
+      ctx.restore();
+      return;
+    }
+    if (p.type === 'tear') {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, p.size * 0.42, p.size, 0, 0, 6.2832);
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+    if (p.type === 'spark') {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = p.size;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x - p.vx * 0.035, p.y - p.vy * 0.035);
+      ctx.stroke();
+      return;
+    }
+    if (p.type === 'star') {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      var s = p.size;
+      ctx.moveTo(0, -s);
+      ctx.lineTo(s * 0.34, 0);
+      ctx.lineTo(0, s);
+      ctx.lineTo(-s * 0.34, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, 6.2832);
+    ctx.fill();
+  }
+
+  /* ---- generadores de partículas ---- */
+
+  function burstSparks(x, y, color, count, power) {
+    var n = Math.round(count * (lite ? 0.35 : 1));
+    var pw = clamp(power, 0, 1);
     for (var i = 0; i < n; i++) {
-      var a = Math.random() * Math.PI * 2;
-      var d = r0 * (0.55 + Math.random() * 0.95);
-      var sp = makeEl('vfx-spark');
-      sp.style.left = p.x + 'px';
-      sp.style.top = p.y + 'px';
-      sp.style.setProperty('--vfx-dx', (Math.cos(a) * d).toFixed(1) + 'px');
-      sp.style.setProperty('--vfx-dy', (Math.sin(a) * d).toFixed(1) + 'px');
-      sp.style.setProperty('--vfx-c', color);
-      sp.style.animationDelay = Math.round(Math.random() * 45) + 'ms';
-      var sz = 4 + Math.random() * (5 + pw * 5);
-      sp.style.width = sp.style.height = sz.toFixed(1) + 'px';
-      overlay.appendChild(sp);
-      autoRemove(sp, 1200);
+      var a = rnd(0, 6.2832);
+      var rad = rnd(4, 26 + pw * 96);          // nacen ya esparcidas: se lee como explosión
+      var sp = rnd(160, 520) * (0.55 + pw);
+      var ttl = rnd(360, 900);
+      addP({
+        type: 'spark', x: x + Math.cos(a) * rad, y: y + Math.sin(a) * rad * 0.72,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 80,
+        g: 700, drag: 0.93, size: rnd(2.2, 4.6), color: color,
+        life: ttl, ttl: ttl, blend: 'lighter', alpha: rnd(0.8, 1)
+      });
     }
-
-    var em = o.emoji || (pw >= 0.5 ? '💥' : '✨');
-    var b = makeEl('vfx-boom');
-    b.textContent = em;
-    b.style.left = p.x + 'px';
-    b.style.top = p.y + 'px';
-    b.style.fontSize = Math.round(30 + pw * 54) + 'px';
-    overlay.appendChild(b);
-    autoRemove(b, 1400);
-
-    if (pw >= 0.28 && o.reticle !== false) {
-      var rt = makeEl('vfx-reticle');
-      var rs = Math.round(52 + pw * 46);
-      rt.style.left = p.x + 'px';
-      rt.style.top = p.y + 'px';
-      rt.style.width = rt.style.height = rs + 'px';
-      rt.style.setProperty('--vfx-c', color);
-      overlay.appendChild(rt);
-      autoRemove(rt, 1500);
-    }
-
-    trimOverlay();
-    return null;
   }
 
-  /* ---------- números de daño ---------- */
+  function burstDebris(x, y, count, power, colors) {
+    var n = Math.round(count * (lite ? 0.4 : 1));
+    var pw = clamp(power, 0, 1);
+    for (var i = 0; i < n; i++) {
+      var a = rnd(0, 6.2832);
+      var rad = rnd(14, 40 + pw * 120);
+      var ttl = rnd(750, 1550);
+      addP({
+        type: 'rect', x: x + Math.cos(a) * rad, y: y + Math.sin(a) * rad * 0.62,
+        vx: rnd(-340, 340) * (0.5 + pw * 0.8),
+        vy: rnd(-680, -150) * (0.5 + pw * 0.8),
+        g: 1050, drag: 0.992, size: rnd(10, 24),
+        rot: rnd(0, 6.28), vr: rnd(-11, 11),
+        color: pick(colors), floor: y + rnd(40, 210),
+        life: ttl, ttl: ttl, alpha: 0.98
+      });
+    }
+  }
 
-  function spawnDamage(n, xPct, yPct, side, opts) {
-    if (!ensureReady() || !overlay) return null;
-    var val = Number(n);
-    if (!isFinite(val) || val === 0) return null;
+  function embers(x, y, count) {
+    var n = lite ? Math.max(1, count >> 1) : count;
+    for (var i = 0; i < n; i++) {
+      var ttl = rnd(480, 1050);
+      addP({
+        type: 'dot', x: x + rnd(-10, 10), y: y + rnd(-6, 14),
+        vx: rnd(-34, 34), vy: rnd(-190, -70),
+        g: -46, drag: 0.97, size: rnd(1.4, 4),
+        color: pick(['#ff3b30', '#ff8a3d', '#ffd36b', '#ffb703']),
+        life: ttl, ttl: ttl, blend: 'lighter', alpha: rnd(0.6, 1)
+      });
+    }
+  }
+
+  function tears(x, y, count) {
+    var n = lite ? Math.max(1, count >> 1) : count;
+    for (var i = 0; i < n; i++) {
+      var ttl = rnd(520, 1050);
+      addP({
+        type: 'tear', x: x + rnd(-72, 72), y: y + rnd(-58, 34),
+        vx: rnd(-34, 34), vy: rnd(80, 230),
+        g: 780, drag: 0.999, size: rnd(2, 4.6),
+        rot: 0, vr: rnd(-1.2, 1.2),
+        color: pick(['#7dd3fc', '#38bdf8', '#bae6fd']),
+        life: ttl, ttl: ttl, alpha: rnd(0.55, 0.9)
+      });
+    }
+  }
+
+  function stars(x, y, count, color) {
+    var n = lite ? Math.max(1, count >> 1) : count;
+    for (var i = 0; i < n; i++) {
+      var ttl = rnd(380, 820);
+      addP({
+        type: 'star', x: x + rnd(-16, 16), y: y + rnd(-12, 12),
+        vx: rnd(-70, 70), vy: rnd(-150, -20),
+        g: 240, drag: 0.97, size: rnd(3, 7),
+        rot: rnd(0, 6.28), vr: rnd(-5, 5),
+        color: color || pick(['#fde047', '#f0abfc', '#67e8f9', '#86efac']),
+        life: ttl, ttl: ttl, blend: 'lighter', alpha: rnd(0.8, 1)
+      });
+    }
+  }
+
+  function glitchBits(x, y, count) {
+    var n = lite ? Math.max(1, count >> 1) : count;
+    for (var i = 0; i < n; i++) {
+      var ttl = rnd(240, 560);
+      addP({
+        type: 'rect', x: x + rnd(-96, 96), y: y + rnd(-76, 76),
+        vx: rnd(-260, 260), vy: rnd(-160, 160),
+        g: 0, drag: 0.9, size: rnd(1.8, 4.6),
+        rot: rnd(0, 6.28), vr: rnd(-14, 14),
+        color: pick(['#a78bfa', '#c4b5fd', '#22d3ee', '#f472b6', '#ffffff']),
+        life: ttl, ttl: ttl, blend: 'lighter', alpha: rnd(0.5, 0.9)
+      });
+    }
+  }
+
+  function confettiRain(side, count) {
+    var colsR = ['#ff2d2d', '#ff8a1f', '#ffd60a', '#ff5ea8', '#ffffff', '#ff4d4d'];
+    var colsA = ['#22d3ee', '#38bdf8', '#60a5fa', '#a78bfa', '#e0f2fe', '#ffffff'];
+    var cols = side === 'rojo' ? colsR : (side === 'azul' ? colsA : colsR.concat(colsA, ['#ffd700', '#34d399', '#f472b6']));
+    var n = Math.round((count || 80) * (lite ? 0.3 : 1));
+    var inView = Math.max(1, Math.round(n * 0.55));   // mayoría ya dentro: estallido instantáneo
+    for (var i = 0; i < n; i++) {
+      var x = (side === 'rojo') ? rnd(-20, VIEW.w * 0.55)
+        : (side === 'azul') ? rnd(VIEW.w * 0.45, VIEW.w + 20)
+          : rnd(-20, VIEW.w + 20);
+      var ttl = rnd(2600, 4600);
+      var y = i < inView ? rnd(-VIEW.h * 0.05, VIEW.h * 0.52) : rnd(-VIEW.h * 0.18, -10);
+      addP({
+        type: 'confetti', x: x, y: y,
+        vx: rnd(-70, 70), vy: rnd(160, 340),
+        g: 420, drag: 0.997, size: rnd(9, 17),
+        rot: rnd(0, 6.28), vr: rnd(-9, 9),
+        sway: rnd(22, 60), phase: rnd(0, 6.28),
+        color: pick(cols), life: ttl, ttl: ttl, alpha: 0.98
+      });
+    }
+  }
+
+  /* ==========================================================================
+   * Invasor (emoji gigante con emoción)
+   * ======================================================================== */
+
+  var EM = {
+    furia: {
+      c: '#ff4d4d', glow: 'rgba(255,59,48,.85)', tag: 'FURIA', emoji: '\uD83D\uDE21',
+      dx: '-180px', dy: '0px', s0: '1', r0: '-10deg', every: 110
+    },
+    llanto: {
+      c: '#38bdf8', glow: 'rgba(56,189,248,.8)', tag: 'LLANTO', emoji: '\uD83D\uDE2D',
+      dx: '0px', dy: '-210px', s0: '1', r0: '0deg', every: 150
+    },
+    burla: {
+      c: '#facc15', glow: 'rgba(250,204,21,.8)', tag: 'BURLA', emoji: '\uD83D\uDE02',
+      dx: '0px', dy: '0px', s0: '1', r0: '-30deg', every: 175
+    },
+    euforia: {
+      c: '#c084fc', glow: 'rgba(192,132,252,.9)', tag: 'EUFORIA', emoji: '\uD83E\uDD29',
+      dx: '0px', dy: '170px', s0: '1', r0: '8deg', every: 150
+    },
+    panico: {
+      c: '#a78bfa', glow: 'rgba(167,139,250,.9)', tag: 'P\u00C1NICO', emoji: '\uD83D\uDE31',
+      dx: '170px', dy: '0px', s0: '1', r0: '0deg', every: 90
+    }
+  };
+
+  function normEmotion(e) {
+    var s = String(e || '').toLowerCase();
+    return EM[s] ? s : 'furia';
+  }
+
+  function normSide(s) {
+    return String(s || '').toLowerCase() === 'azul' ? 'azul' : 'rojo';
+  }
+
+  function defaultSize() {
+    var w = global.innerWidth || 1280;
+    return clamp(w * 0.22, 96, 340);
+  }
+
+  function emitFor(emotion, pt, size) {
+    if (emotion === 'furia') {
+      embers(pt.x + rnd(-size * 0.42, size * 0.42), pt.y + size * 0.45, 2);
+    } else if (emotion === 'llanto') {
+      tears(pt.x + rnd(-size * 0.3, size * 0.3), pt.y + size * 0.18, 2);
+    } else if (emotion === 'burla') {
+      stars(pt.x + rnd(-size * 0.5, size * 0.5), pt.y + rnd(-size * 0.2, size * 0.3), 2, '#fde047');
+    } else if (emotion === 'euforia') {
+      stars(pt.x + rnd(-size * 0.5, size * 0.5), pt.y + rnd(-size * 0.5, size * 0.05), 2);
+    } else {
+      glitchBits(pt.x + rnd(-size * 0.5, size * 0.5), pt.y + rnd(-size * 0.35, size * 0.35), 3);
+    }
+  }
+
+  function startEmitter(emotion, pt, size) {
+    if (lite) return null;
+    var stop = false;
+    var id = every(function () {
+      if (stop) return;
+      emitFor(emotion, pt, size);
+    }, EM[emotion].every);
+    return function () {
+      stop = true;
+      stopEvery(id);
+    };
+  }
+
+  function invader(emoji, opts) {
     var o = opts || {};
-    var p = punto(xPct, yPct);
-    var el = makeEl('vfx-dmg');
-    var prefix = o.prefix != null ? String(o.prefix) : '−';
-    el.textContent = prefix + fmtNum(Math.abs(val));
-    el.style.left = p.x + 'px';
-    el.style.top = p.y + 'px';
-    if (side === 'rojo') el.classList.add('vfx-dmg-r');
-    else if (side === 'azul') el.classList.add('vfx-dmg-a');
-    var mag = clamp(Math.log(Math.max(1, Math.abs(val))) / Math.LN10 / 2.2, 0, 1);
-    el.style.fontSize = Math.round(num(o.size, 24 + mag * 32)) + 'px';
-    if (o.delay) el.style.animationDelay = Math.round(num(o.delay, 0)) + 'ms';
-    overlay.appendChild(el);
-    trimOverlay();
-    autoRemove(el, 1700 + num(o.delay, 0));
+    if (!ensureReady()) return null;
+
+    var emotion = normEmotion(o.emotion);
+    var side = normSide(o.side);
+    var dur = clamp(num(o.duration, 3200), 900, 15000);
+    var size = clamp(num(o.size, defaultSize()), 64, 520);
+    var narrow = (global.innerWidth || 1280) < 720;
+    var xPct = narrow ? 50 : (side === 'azul' ? 62 : 38);
+    var p = punto(xPct, narrow ? 46 : 44);
+    var sp = stagePoint(p);
+
+    var meta = EM[emotion];
+    var el = make('div', 'vfx2-inv vfx2-inv-' + emotion);
+    el.style.left = sp.x + 'px';
+    el.style.top = sp.y + 'px';
+    el.style.setProperty('--size', size + 'px');
+    el.style.setProperty('--c', meta.c);
+    el.style.setProperty('--glow', meta.glow);
+
+    var center = make('div', 'vfx2-inv-center');
+    var enter = make('div', 'vfx2-inv-enter');
+    var body = make('div', 'vfx2-inv-body');
+    var face = make('div', 'vfx2-inv-face');
+    var glow = make('div', 'vfx2-inv-glow');
+    var tag = make('div', 'vfx2-inv-tag');
+    tag.textContent = meta.tag;
+    var em = make('div', 'vfx2-inv-emoji');
+    em.textContent = emoji || meta.emoji;
+
+    // Glow + emoji en el mismo wrapper: el halo queda SIEMPRE centrado detrás de la cara.
+    face.appendChild(glow);
+    face.appendChild(em);
+    body.appendChild(tag);
+    body.appendChild(face);
+    if (o.text) {
+      var txt = make('div', 'vfx2-inv-text');
+      txt.textContent = String(o.text);
+      body.appendChild(txt);
+    }
+    enter.appendChild(body);
+    center.appendChild(enter);
+    el.appendChild(center);
+    dom.appendChild(el);
+    track(el);
+
+    // Ráfaga inicial + emisor continuo de partículas de la emoción.
+    emitFor(emotion, sp, size);
+    emitFor(emotion, sp, size);
+    if (emotion === 'euforia') confettiRain(side, 46);
+    el.__stop = startEmitter(emotion, sp, size);
+
+    later(function () { el.classList.add('vfx2-out'); }, Math.max(160, dur - 360));
+    later(function () { removeEl(el); }, dur);
     return el;
   }
 
-  /* ---------- flash de pantalla completa ---------- */
+  /* ==========================================================================
+   * Impacto
+   * ======================================================================== */
+
+  function debrisColors(color) {
+    var base = ['#8b5e34', '#b45309', '#d97706', '#6b7280', '#9ca3af', '#d1d5db', '#57534e'];
+    if (color) base.push(color, '#ffd36b', '#ffffff');
+    return base;
+  }
+
+  function impact(xPct, yPct, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+
+    var power = clamp(num(o.power, 1), 0, 1);
+    var color = o.color || (power >= 0.7 ? '#ff7a2d' : '#ffd36b');
+    var p = punto(xPct, yPct);
+    var sp = stagePoint(p);
+
+    var root = make('div', 'vfx2-fx vfx2-pt');
+    root.style.left = sp.x + 'px';
+    root.style.top = sp.y + 'px';
+    dom.appendChild(root);
+    track(root);
+
+    var base = 90 + power * 230;
+
+    var core = make('div', 'vfx2-core');
+    core.style.setProperty('--s', (base * 0.82).toFixed(0) + 'px');
+    core.style.setProperty('--c', color);
+    root.appendChild(core);
+
+    var i;
+    for (i = 0; i < 3; i++) {
+      var ring = make('div', 'vfx2-ring');
+      ring.style.setProperty('--s', (base * (1.45 + i * 0.55)).toFixed(0) + 'px');
+      ring.style.setProperty('--bw', (9 - i * 2).toFixed(1) + 'px');
+      ring.style.setProperty('--c', i === 1 ? '#ffffff' : color);
+      ring.style.setProperty('--d', (0.9 + i * 0.16).toFixed(2) + 's');
+      ring.style.setProperty('--delay', (i * 0.05).toFixed(2) + 's');
+      root.appendChild(ring);
+    }
+
+    var boom = make('div', 'vfx2-boom');
+    boom.textContent = o.emoji || (power >= 0.5 ? '\uD83D\uDCA5' : '\u2728');
+    boom.style.setProperty('--fs', Math.round(56 + power * 64) + 'px');
+    root.appendChild(boom);
+
+    burstSparks(sp.x, sp.y, color, Math.round(26 + power * 44), power);
+    if (o.debris !== false) {
+      burstDebris(sp.x, sp.y, Math.round(22 + power * 30), power, debrisColors(color));
+    }
+    if (power >= 0.55) {
+      flash(color, { opacity: 0.08 + power * 0.13, duration: 420 });
+    }
+    var sh = o.shake != null ? num(o.shake, 0) : (0.25 + power * 0.65);
+    if (sh > 0.02) shake(sh, { duration: 420 + power * 320 });
+
+    later(function () { removeEl(root); }, 1650);
+    return root;
+  }
+
+  /* ==========================================================================
+   * Número de daño
+   * ======================================================================== */
+
+  function damage(n, xPct, yPct, side, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var v = Number(n);
+    if (!isFinite(v) || v === 0) return null;
+
+    var p = punto(xPct, yPct);
+    var sp = stagePoint(p);
+    var azul = normSide(side) === 'azul';
+    var el = make('div', 'vfx2-dmg ' + (azul ? 'vfx2-dmg-a' : 'vfx2-dmg-r'));
+    var prefix = o.prefix != null ? String(o.prefix) : '\u2212';
+    el.textContent = prefix + fmtNum(v);
+    el.style.left = sp.x + 'px';
+    el.style.top = sp.y + 'px';
+    var mag = clamp(Math.log(Math.max(1, Math.abs(v))) / Math.LN10 / 2.6, 0, 1);
+    el.style.setProperty('--fs', Math.round(num(o.size, 56 + mag * 16)) + 'px');
+    el.style.setProperty('--arc', ((azul ? -1 : 1) * rnd(14, 30)).toFixed(0) + 'px');
+    dom.appendChild(el);
+    track(el);
+
+    burstSparks(sp.x, sp.y, azul ? '#7dd3fc' : '#fca5a5', 12, 0.45);
+    later(function () { removeEl(el); }, 2050);
+    return el;
+  }
+
+  /* ==========================================================================
+   * Sacudida / destello / viñeta / confeti / chispas
+   * ======================================================================== */
+
+  var shakeEls = [];
+
+  function shake(strength, opts) {
+    var o = opts || {};
+    var s = clamp(num(strength, 0.5), 0, 1);
+    if (s <= 0.01) return null;
+    if (lite) s *= 0.28;
+
+    var target = resolveEl(o.target) || mapHost() || doc.body;
+    if (!target || !target.animate) return null;
+
+    var dur = clamp(num(o.duration, 380 + s * 320), 120, 2000);
+    var amp = 3 + s * 15;
+    var frames = [];
+    var steps = 11;
+    for (var i = 0; i <= steps; i++) {
+      var k = i / steps;
+      var decay = 1 - k;
+      var dx = Math.sin(k * 47.0) * amp * decay;
+      var dy = Math.cos(k * 39.0) * amp * 0.7 * decay;
+      var rot = Math.sin(k * 53.0) * (s * 0.9) * decay;
+      frames.push({ transform: 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px) rotate(' + rot.toFixed(3) + 'deg)' });
+    }
+    try {
+      var anim = target.animate(frames, {
+        duration: dur,
+        easing: 'linear',
+        composite: 'add'
+      });
+      try { anim.id = 'vfx2-shake'; } catch (e) { /* nada */ }
+      shakeEls.push(target);
+      anim.onfinish = function () {
+        var j = shakeEls.indexOf(target);
+        if (j >= 0) shakeEls.splice(j, 1);
+      };
+      return target;
+    } catch (e) {
+      // Navegador sin composite 'add': reintento simple sin composición.
+      try { target.animate(frames, { duration: dur, easing: 'linear' }); } catch (e2) { /* nada */ }
+      return target;
+    }
+  }
 
   function flash(color, opts) {
-    if (!ensureReady() || !doc.body) return null;
     var o = opts || {};
-    var f = makeEl('vfx-flashfull');
-    f.style.setProperty('--vfx-c', color || '#ffffff');
-    if (o.z != null) f.style.zIndex = String(o.z);
-    doc.body.appendChild(f);
-    autoRemove(f, 800);
+    if (!ensureReady() || !screen) return null;
+    var f = make('div', 'vfx2-flash');
+    f.style.setProperty('--c', color || '#ffffff');
+    f.style.setProperty('--o', String(clamp(num(o.opacity, 0.35), 0, 1)));
+    var dur = clamp(num(o.duration, 420), 80, 3000);
+    f.style.setProperty('--d', dur + 'ms');
+    screen.appendChild(f);
+    later(function () { try { if (f.parentNode) f.parentNode.removeChild(f); } catch (e) { /* nada */ } }, dur + 80);
     return f;
   }
 
-  /* ---------- viñeta (alguien va perdiendo) ---------- */
-
   function vignette(level, opts) {
-    if (!ensureReady() || !doc.body) return null;
     var o = opts || {};
-    var v = doc.getElementById('vfx-vignette');
-    if (!v) {
-      v = makeEl('vfx-vignette');
-      v.id = 'vfx-vignette';
-      v.setAttribute('aria-hidden', 'true');
-      doc.body.appendChild(v);
+    if (!ensureReady() || !screen) return null;
+    if (!vigEl || !vigEl.parentNode) {
+      vigEl = make('div', 'vfx2-vignette');
+      screen.appendChild(vigEl);
     }
     if (o.color) {
-      v.style.setProperty('--vfx-vig', toRgba(o.color, 0.30));
-      v.style.setProperty('--vfx-vig2', toRgba(o.color, 0.62));
+      try {
+        var c = String(o.color);
+        vigEl.style.setProperty('--c', c);
+      } catch (e) { /* nada */ }
+    } else if (!vigEl.style.getPropertyValue('--c')) {
+      vigEl.style.setProperty('--c', 'rgba(255,45,45,.85)');
     }
     var lv = clamp(num(level, 0), 0, 1);
-    v.style.opacity = String(lv <= 0.01 ? 0 : lv);
-    return v;
-  }
-
-  /* ---------- sacudidas ---------- */
-
-  var shakeTimer = null;
-  var shakeEl = null;
-
-  function shake(strength, opts) {
-    if (!ensureReady()) return null;
-    var o = opts || {};
-    var s = clamp(num(strength, 0.5), 0, 1);
-    var target = resolveEl(o.target) || doc.getElementById('app') || doc.querySelector('#centro') || doc.body;
-    if (!target) return null;
-    var hard = s >= 0.62;
-    var cls = hard ? 'vfx-shake-hard' : 'vfx-shake';
-    if (shakeEl && shakeEl !== target) {
-      shakeEl.classList.remove('vfx-shake', 'vfx-shake-hard');
+    vigEl.style.opacity = String(lv <= 0.01 ? 0 : lv);
+    if (o.duration != null && lv > 0) {
+      var d = clamp(num(o.duration, 1200), 100, 20000);
+      later(function () { if (vigEl) vigEl.style.opacity = '0'; }, d);
     }
-    shakeEl = target;
-    target.classList.remove('vfx-shake', 'vfx-shake-hard');
-    void target.offsetWidth; // reinicia la animación
-    target.classList.add(cls);
-    if (shakeTimer) clearTimeout(shakeTimer);
-    shakeTimer = setTimeout(function () {
-      try { target.classList.remove('vfx-shake', 'vfx-shake-hard'); } catch (e) { /* nada */ }
-    }, hard ? 620 : 520);
-    return target;
+    return vigEl;
   }
 
-  var temblorTimers = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function confetti(side, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    confettiRain(normSide(side) === 'azul' ? 'azul' : (String(side).toLowerCase() === 'mix' ? 'mix' : 'rojo'), num(o.count, 90));
+    return true;
+  }
+
+  function sparks(xPct, yPct, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var p = punto(xPct, yPct);
+    var sp = stagePoint(p);
+    var count = clamp(num(o.count, 26), 1, 140);
+    burstSparks(sp.x, sp.y, o.color || '#ffd36b', count, 0.55);
+    stars(sp.x, sp.y, Math.round(count * 0.4), o.color || '#fde047');
+    return true;
+  }
+
+  /* ==========================================================================
+   * Compatibilidad con la API v1 del visor actual
+   * ======================================================================== */
+
+  function compatPower(p) {
+    var n = Number(p);
+    if (!isFinite(n)) n = 0.6;
+    if (n > 1) n = n / 3;
+    return clamp(n, 0.15, 1);
+  }
+
+  function spawnImpact(xPct, yPct, power, opts) {
+    var o = opts || {};
+    return impact(xPct, yPct, {
+      power: compatPower(power),
+      color: o.color,
+      emoji: o.emoji,
+      debris: o.debris !== false,
+      shake: o.shake
+    });
+  }
+
+  function spawnDamage(n, xPct, yPct, side, opts) {
+    return damage(n, xPct, yPct, side, opts);
+  }
+
+  function spawnReaction(emoji, xPct, yPct, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var p = punto(xPct, yPct);
+    var sp = stagePoint(p);
+    var el = make('div', 'vfx2-react');
+    el.textContent = emoji || '\u2728';
+    el.style.left = sp.x + 'px';
+    el.style.top = sp.y + 'px';
+    el.style.fontSize = clamp(num(o.size, 46), 18, 140) + 'px';
+    dom.appendChild(el);
+    track(el);
+    later(function () { removeEl(el); }, 1400);
+    return el;
+  }
+
+  function flyEmoji(emoji, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+
+    var fromEl = resolveEl(o.fromEl) || dom;
+    var sr;
+    try { sr = stage.getBoundingClientRect(); } catch (e) { return null; }
+    var sx = VIEW.w / 2, sy = VIEW.h * 0.8;
+    try {
+      var fr = fromEl.getBoundingClientRect();
+      if (fr && fr.width) {
+        sx = fr.left + fr.width / 2 - sr.left;
+        sy = fr.top + fr.height / 2 - sr.top;
+      }
+    } catch (e) { /* usa el centro */ }
+
+    var to = o.to || {};
+    var p = punto(num(to.xPct, 50), num(to.yPct, 50));
+    var tx = p.x - sr.left;
+    var ty = p.y - sr.top;
+
+    var size = clamp(num(o.size, 100), 24, 320);
+    var el = make('div', 'vfx2-fly');
+    el.textContent = emoji || '\uD83D\uDCA5';
+    el.style.fontSize = size + 'px';
+    el.style.left = sx + 'px';
+    el.style.top = sy + 'px';
+    dom.appendChild(el);
+    track(el);
+
+    var dur = clamp(num(o.duration, 1200), 300, 4000);
+    var midX = (sx + tx) / 2 + rnd(-70, 70);
+    var midY = Math.min(sy, ty) - rnd(50, 140);
+    var mx = (midX - sx).toFixed(1);
+    var my = (midY - sy).toFixed(1);
+    var ex = (tx - sx).toFixed(1);
+    var ey = (ty - sy).toFixed(1);
+
+    try {
+      el.animate([
+        { transform: 'translate(-50%,-50%) scale(.5) rotate(-20deg)', opacity: 0, offset: 0 },
+        { transform: 'translate(-50%,-50%) scale(1.1) rotate(6deg)', opacity: 1, offset: 0.18 },
+        { transform: 'translate(calc(-50% + ' + mx + 'px),calc(-50% + ' + my + 'px)) scale(1) rotate(12deg)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(calc(-50% + ' + ex + 'px),calc(-50% + ' + ey + 'px)) scale(1.15) rotate(-6deg)', opacity: 1, offset: 0.92 },
+        { transform: 'translate(calc(-50% + ' + ex + 'px),calc(-50% + ' + ey + 'px)) scale(.3) rotate(0deg)', opacity: 0, offset: 1 }
+      ], { duration: dur, easing: 'cubic-bezier(.3,.6,.3,1)', fill: 'forwards' });
+    } catch (e) {
+      el.style.opacity = '0';
+    }
+
+    later(function () {
+      removeEl(el);
+      impact(p.pctX, p.pctY, {
+        power: compatPower(o.power),
+        color: o.color,
+        emoji: '\uD83D\uDCA5',
+        debris: true,
+        shake: 0.45
+      });
+    }, dur);
+    return el;
+  }
 
   function tremblePanel(side, opts) {
-    if (!ensureReady()) return null;
     var o = opts || {};
     var s = String(side || '').toLowerCase();
     var el = resolveEl(o.el) ||
       (s ? doc.getElementById(s) : null) ||
       (s ? doc.querySelector('[data-lado="' + s + '"]') : null) ||
-      (s ? doc.querySelector('.panel-' + s) : null) ||
-      (s ? doc.querySelector('aside.' + s) : null);
+      (s ? doc.querySelector('.panel-' + s) : null);
     if (!el) return null;
-    el.classList.remove('vfx-temblor');
-    void el.offsetWidth;
-    el.classList.add('vfx-temblor');
-    var old = temblorTimers ? temblorTimers.get(el) : null;
-    if (old) clearTimeout(old);
-    var t = setTimeout(function () { try { el.classList.remove('vfx-temblor'); } catch (e) { /* nada */ } }, 600);
-    if (temblorTimers) temblorTimers.set(el, t);
+    shake(0.45, { target: el, duration: 520 });
     return el;
-  }
-
-  /* ---------- zoom cinematográfico (opcional, lo llama el Lead) ---------- */
-
-  var focusTimer = null;
-  var focusAnim = null;
-  var focusPrev = null;
-
-  function focusCleanup() {
-    if (focusPrev && focusPrev.parent) {
-      try { focusPrev.parent.style.overflow = focusPrev.overflow; } catch (e) { /* nada */ }
-    }
-    focusPrev = null;
-  }
-
-  function stopFocusAnim() {
-    if (focusAnim) {
-      try { focusAnim.cancel(); } catch (e) { /* nada */ }
-      focusAnim = null;
-    }
-    focusCleanup();
   }
 
   function focus(el, xPct, yPct, zoom, ms) {
     if (!ensureReady()) return null;
-    var cont = resolveEl(el) || getMap();
+    var cont = resolveEl(el) || mapHost();
     if (!cont) return null;
-    // Si nos pasan el contenedor del mapa, se escala su media (img/canvas) para
-    // que el recorte del contenedor evite que el zoom se salga del visor.
     var t = mediaChild(cont) || cont;
-    var z = clamp(num(zoom, 1.6), 1, 4);
-    var dur = clamp(num(ms, 1100), 150, 20000);
-    var er = t.getBoundingClientRect();
-    if (!er.width || !er.height) return null;
-    var r = contentRect(t);
+    var z = clamp(num(zoom, 1.6), 1, 3.2);
+    var dur = clamp(num(ms, 1200), 300, 9000);
+    var er, r;
+    try {
+      er = t.getBoundingClientRect();
+      if (!er.width || !er.height) return null;
+      r = contentRect(t);
+    } catch (e) { return null; }
     var lx = (r.left - er.left) + (clamp(num(xPct, 50), 0, 100) / 100) * r.width;
     var ly = (r.top - er.top) + (clamp(num(yPct, 50), 0, 100) / 100) * r.height;
     var tx = (1 - z) * (lx - er.width / 2);
     var ty = (1 - z) * (ly - er.height / 2);
-    var to = 'translate(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px) scale(' + z.toFixed(3) + ')';
-    var st = t.style;
-    var ease = 'cubic-bezier(.22,.8,.24,1)';
-    var inRatio = 0.3;
-    var outStart = 0.72;
-
-    stopFocusAnim();
-    if (focusTimer) { clearTimeout(focusTimer); focusTimer = null; }
-    st.transformOrigin = '50% 50%';
-    st.willChange = 'transform';
-
-    // Recorta el contenedor mientras dura el zoom para que el escalado no rompa el layout.
-    var par = t.parentElement;
-    if (par && par !== doc.body && par !== doc.documentElement) {
-      focusPrev = { parent: par, overflow: par.style.overflow };
-      try { par.style.overflow = 'hidden'; } catch (e) { focusPrev = null; }
-    }
-
-    // Sin WAAPI o con movimiento reducido: se aplica el encuadre y se retira.
-    if (!t.animate || !motionAllows()) {
-      st.transform = to;
-      focusTimer = setTimeout(function () {
-        try { st.transform = ''; st.willChange = ''; } catch (e) { /* nada */ }
-        focusCleanup();
-      }, Math.max(140, dur));
-      return t;
-    }
-
     try {
-      var a = t.animate([
-        { transform: 'none', offset: 0, easing: ease },
-        { transform: to, offset: inRatio },
-        { transform: to, offset: outStart, easing: 'ease-in' },
-        { transform: 'none', offset: 1 }
-      ], { duration: dur, fill: 'forwards' });
-      focusAnim = a;
-      a.onfinish = function () {
-        try { a.cancel(); } catch (e) { /* nada */ }
-        if (focusAnim === a) focusAnim = null;
-        try { st.willChange = ''; } catch (e) { /* nada */ }
-        focusCleanup();
-      };
-    } catch (e) {
-      st.transform = to;
-      focusTimer = setTimeout(function () {
-        try { st.transform = ''; st.willChange = ''; } catch (e2) { /* nada */ }
-        focusCleanup();
-      }, Math.max(140, dur));
-    }
+      t.animate([
+        { transform: 'translate(0,0) scale(1)' },
+        { transform: 'translate(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px) scale(' + z.toFixed(3) + ')', offset: 0.3 },
+        { transform: 'translate(' + tx.toFixed(2) + 'px,' + ty.toFixed(2) + 'px) scale(' + z.toFixed(3) + ')', offset: 0.7 },
+        { transform: 'translate(0,0) scale(1)' }
+      ], { duration: dur, easing: 'ease-in-out', fill: 'none' });
+    } catch (e) { /* nada */ }
     return t;
   }
 
-  /* ---------- contrato drama del motor: { camara, impacto } ---------- */
+  /* ==========================================================================
+   * clear()
+   * ======================================================================== */
 
-  var lastCamKey = '';
-  var lastHitKey = '';
-  var lastHitAt = -1e9;
-
-  /**
-   * Interpreta el objeto `drama` del motor y lanza los efectos que toquen.
-   * Defensivo: si `camara`/`impacto` faltan o vienen raros, no hace nada.
-   *
-   *   ViewerFX.applyDrama(state.drama)
-   *   ViewerFX.applyDrama(state.drama, { tiles: 575, zoom: 1.9, map: '#mapa' })
-   *
-   * x/y llegan en tiles del mundo (0..575) y se convierten a porcentaje del
-   * mapa visible. Con `pct:true` se interpretan ya como 0..100.
-   * Devuelve { camera:bool, impact:bool }.
-   */
-  function applyDrama(d, opts) {
-    if (!d || typeof d !== 'object') return null;
-    var o = opts || {};
-    var out = { camera: false, impact: false };
-    if (!ensureReady()) return out;
-
-    var t = resolveEl(o.map) || getMap() || null;
-    var tiles = num(o.tiles, 575) || 575;
-    function toPct(v) {
-      var n = num(v, NaN);
-      if (!isFinite(n)) return null;
-      if (o.pct) return clamp(n, 0, 100);
-      return clamp((n / tiles) * 100, 0, 100);
+  function clear() {
+    clearTimers();
+    P.length = 0;
+    spawnDrawId = 0;
+    if (ctx) {
+      try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { /* nada */ }
     }
-    // `box` permite declarar el sub-rectángulo (en %) del frame que ocupa el
-    // mapa del mundo, por si el stream lleva marcos/UI alrededor.
-    var bx = 0, by = 0, bw = 100, bh = 100;
-    if (o.box && typeof o.box === 'object') {
-      bx = clamp(num(o.box.x, 0), 0, 100);
-      by = clamp(num(o.box.y, 0), 0, 100);
-      bw = clamp(num(o.box.w, 100), 1, 100);
-      bh = clamp(num(o.box.h, 100), 1, 100);
+    if (dom) {
+      while (dom.firstChild) {
+        try { dom.removeChild(dom.firstChild); } catch (e) { break; }
+      }
     }
-    function mapX(p) { return bx + (p / 100) * bw; }
-    function mapY(p) { return by + (p / 100) * bh; }
-
-    var c = d.camara;
-    if (!c || typeof c !== 'object') {
-      lastCamKey = '';
-    } else {
-      var cx = toPct(c.x);
-      var cy = toPct(c.y);
-      if (cx != null) cx = mapX(cx);
-      if (cy != null) cy = mapY(cy);
-      if (cx != null && cy != null && t) {
-        var zoom = clamp(num(c.zoom, o.zoom || 1.8), 1, 4);
-        var ms = clamp(num(c.ms, 1400), 150, 20000);
-        var ck = [Math.round(cx * 10), Math.round(cy * 10), zoom.toFixed(2), Math.round(ms)].join('|');
-        if (ck !== lastCamKey && zoom > 1.01) {
-          lastCamKey = ck;
-          focus(t, cx, cy, zoom, ms);
-          out.camera = true;
+    roots.length = 0;
+    if (screen) {
+      var kids = screen.children;
+      for (var i = kids.length - 1; i >= 0; i--) {
+        if (kids[i] !== vigEl) {
+          try { screen.removeChild(kids[i]); } catch (e) { /* nada */ }
         }
       }
     }
-
-    var im = d.impacto;
-    if (!im || typeof im !== 'object') {
-      lastHitKey = '';
-    } else {
-      var ix = toPct(im.x);
-      var iy = toPct(im.y);
-      if (ix != null) ix = mapX(ix);
-      if (iy != null) iy = mapY(iy);
-      if (ix != null && iy != null) {
-        var power = num(im.poder, 0.7);
-        var ik = [Math.round(ix * 10), Math.round(iy * 10), Math.round(power * 100)].join('|');
-        if (ik !== lastHitKey || (now() - lastHitAt) > 1200) {
-          lastHitKey = ik;
-          lastHitAt = now();
-          spawnImpact(ix, iy, power, {});
-          out.impact = true;
-        }
-      }
-    }
-    return out;
-  }
-
-  /** Olvida el último drama procesado (p.ej. al empezar partida nueva). */
-  function resetDrama() {
-    lastCamKey = '';
-    lastHitKey = '';
-    lastHitAt = -1e9;
-    return true;
-  }
-
-  /* ======================================================================
-   * Emoji volador: sale del chat, cruza el visor y estalla en el mapa
-   * ==================================================================== */
-
-  var lastFlyAt = -1e9;
-
-  function flyEmoji(emoji, opts) {
-    if (!ensureReady()) return null;
-    if (!overlay) ensureOverlay();
-    if (!overlay || !doc.body) return null;
-
-    var o = opts || {};
-    var txt = String(emoji == null ? '💥' : emoji).slice(0, 12);
-
-    // Origen: línea del chat / panel / punto libre / borde del mapa.
-    var src = null;
-    var fromEl = resolveEl(o.fromEl);
-    if (fromEl) {
-      var fr = fromEl.getBoundingClientRect();
-      if (fr.width || fr.height) src = centerOf(fr);
-    }
-    if (!src && o.from && isFinite(num(o.from.x, NaN)) && isFinite(num(o.from.y, NaN))) {
-      src = { x: num(o.from.x, 0), y: num(o.from.y, 0) };
-    }
-    if (!src && chat.body && chat.body.lastElementChild) {
-      src = centerOf(chat.body.lastElementChild.getBoundingClientRect());
-    }
-    if (!src && chat.panel) src = centerOf(chat.panel.getBoundingClientRect());
-    if (!src) {
-      var mr = mapRect();
-      src = { x: mr.left + mr.width * 0.16, y: mr.top + mr.height * 0.5 };
-    }
-
-    // Destino: porcentaje del mapa, elemento o punto aleatorio dentro del mapa.
-    var tp;
-    if (o.to && isFinite(num(o.to.xPct, NaN))) {
-      tp = { xPct: num(o.to.xPct, 50), yPct: num(o.to.yPct, 50) };
-    } else {
-      var toEl = resolveEl(o.toEl);
-      if (toEl) {
-        var tr = toEl.getBoundingClientRect();
-        var c = centerOf(tr);
-        tp = pctFromPoint(c.x, c.y);
-      } else {
-        tp = { xPct: rnd(16, 84), yPct: rnd(20, 80) };
-      }
-    }
-    var dst = punto(tp.xPct, tp.yPct);
-
-    var power = o.power != null ? normPower(o.power) : 0.55 + Math.random() * 0.3;
-
-    // Accesibilidad: sin vuelo, impacto directo con el emoji en el punto.
-    if (!motionAllows()) {
-      spawnImpact(tp.xPct, tp.yPct, power, { color: o.color, emoji: o.impactEmoji || txt.slice(0, 4) });
-      return null;
-    }
-
-    var dx = dst.x - src.x;
-    var dy = dst.y - src.y;
-    var dist = Math.sqrt(dx * dx + dy * dy);
-    var size = clamp(num(o.size, 46), 22, 110);
-    var zEnd = clamp(num(o.scale, 3.4 + dist / 300), 1.5, 8);
-    var dur = clamp(num(o.duration, 380 + dist * 0.55), 420, 1300);
-    var lift = Math.min(90, dist * 0.16);
-
-    var el = doc.createElement('span');
-    el.className = 'vfx-fly';
-    el.textContent = txt;
-    el.style.fontSize = size + 'px';
-    el.style.left = src.x + 'px';
-    el.style.top = src.y + 'px';
-    el.style.transform = 'translate(-50%,-50%) scale(.8)';
-    if (o.color) {
-      el.style.filter += ' drop-shadow(0 0 22px ' + o.color + ')';
-    }
-    doc.body.appendChild(el);
-
-    var frames = [
-      { transform: 'translate(-50%,-50%) scale(.8) rotate(-10deg)', opacity: 0.85, offset: 0 },
-      {
-        transform: 'translate(-50%,-50%) translate(' + (dx * 0.55).toFixed(1) + 'px,' +
-          (dy * 0.55 - lift).toFixed(1) + 'px) scale(' + (zEnd * 0.55).toFixed(2) + ') rotate(14deg)',
-        opacity: 1, offset: 0.5
-      },
-      {
-        transform: 'translate(-50%,-50%) translate(' + dx.toFixed(1) + 'px,' +
-          dy.toFixed(1) + 'px) scale(' + zEnd.toFixed(2) + ') rotate(-8deg)',
-        opacity: 1, offset: 1
-      }
-    ];
-
-    var anim = null;
-    if (el.animate) {
-      try {
-        anim = el.animate(frames, {
-          duration: dur,
-          easing: 'cubic-bezier(.32,.06,.62,1)',
-          fill: 'forwards'
-        });
-      } catch (e) { anim = null; }
-    }
-
-    // Estela: copias retrasadas y difuminadas.
-    if (dist > 130) {
-      var ghosts = Math.min(5, Math.max(2, Math.round(dist / 140)));
-      var ghostFrames = frames.map(function (f) { return { transform: f.transform, offset: f.offset }; });
-      for (var i = 1; i <= ghosts; i++) {
-        (function (i) {
-          var g = el.cloneNode(true);
-          g.style.opacity = String(0.30 - i * 0.045);
-          g.style.filter = (el.style.filter || '') + ' blur(1.5px)';
-          g.style.fontSize = (size * (0.9 - i * 0.08)) + 'px';
-          doc.body.appendChild(g);
-          try {
-            if (g.animate) {
-              var ga = g.animate(ghostFrames, {
-                duration: dur,
-                delay: -i * 70,
-                easing: 'cubic-bezier(.32,.06,.62,1)',
-                fill: 'forwards'
-              });
-              if (ga && ga.finish) { /* noop */ }
-            }
-          } catch (e) { /* nada */ }
-          autoRemove(g, dur + 500);
-        })(i);
-      }
-    }
-
-    function finish() {
-      try { if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* nada */ }
-      if (o.impact !== false) {
-        spawnImpact(tp.xPct, tp.yPct, power, { color: o.color, emoji: o.impactEmoji });
-      }
-      if (o.shake) shake(o.shake === true ? 0.55 : num(o.shake, 0.55));
-      if (o.damage != null) {
-        spawnDamage(o.damage, tp.xPct, tp.yPct, o.side, { size: o.damageSize });
-      }
-      if (typeof o.onDone === 'function') {
-        try { o.onDone({ xPct: tp.xPct, yPct: tp.yPct, power: power }); } catch (e) { /* nada */ }
-      }
-    }
-
-    if (anim) {
-      anim.onfinish = finish;
-      anim.oncancel = finish;
-    }
-    autoRemove(el, dur + 1200); // red de seguridad si onfinish no dispara
-    return el;
-  }
-
-  /* ======================================================================
-   * Chat en vivo
-   * ==================================================================== */
-
-  var chat = {
-    panel: null, head: null, body: null, badge: null, count: null, floatWrap: null,
-    host: null, pending: null, unread: 0, total: 0, lastSeq: null,
-    lastKey: '', lastAt: 0, msgs: {}, t0: 0
-  };
-
-  function scrollBottom(smooth) {
-    var b = chat.body;
-    if (!b) return;
+    if (vigEl) vigEl.style.opacity = '0';
+    var host = mapHost() || doc.body;
     try {
-      if (b.scrollTo) b.scrollTo({ top: b.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
-      else b.scrollTop = b.scrollHeight;
-    } catch (e) { b.scrollTop = b.scrollHeight; }
-  }
-
-  function nearBottom() {
-    var b = chat.body;
-    if (!b) return true;
-    return (b.scrollHeight - b.scrollTop - b.clientHeight) < 90;
-  }
-
-  function setUnread(n) {
-    chat.unread = n;
-    if (!chat.badge) return;
-    if (n > 0) {
-      chat.badge.textContent = '↓ ' + n + ' nuevo' + (n === 1 ? '' : 's');
-      chat.badge.classList.add('on');
-    } else {
-      chat.badge.classList.remove('on');
-    }
-  }
-
-  function buildChat() {
-    var panel = makeEl('vfx-chat');
-    panel.setAttribute('role', 'log');
-    panel.setAttribute('aria-label', 'Chat en directo del show');
-
-    var head = makeEl('vfx-chat-h');
-    head.appendChild(makeEl('vfx-chat-dot'));
-    var title = makeEl('vfx-chat-t');
-    title.textContent = 'CHAT EN DIRECTO';
-    head.appendChild(title);
-    var countEl = makeEl('vfx-chat-n');
-    countEl.textContent = '0';
-    head.appendChild(countEl);
-    var btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.className = 'vfx-chat-b';
-    btn.textContent = '–';
-    btn.title = 'Minimizar chat';
-    btn.setAttribute('aria-label', 'Minimizar chat');
-    head.appendChild(btn);
-
-    var body = makeEl('vfx-chat-body');
-    var badge = doc.createElement('button');
-    badge.type = 'button';
-    badge.className = 'vfx-chat-nuevos';
-    badge.textContent = '↓ 0 nuevos';
-
-    panel.appendChild(head);
-    panel.appendChild(body);
-    panel.appendChild(badge);
-
-    btn.addEventListener('click', function () {
-      panel.classList.toggle('min');
-      var min = panel.classList.contains('min');
-      btn.textContent = min ? '+' : '–';
-      btn.title = min ? 'Expandir chat' : 'Minimizar chat';
-      btn.setAttribute('aria-label', btn.title);
-      if (!min) scrollBottom(true);
-    });
-    body.addEventListener('scroll', function () {
-      if (nearBottom()) setUnread(0);
-    });
-    badge.addEventListener('click', function () {
-      scrollBottom(true);
-      setUnread(0);
-    });
-
-    chat.panel = panel;
-    chat.head = head;
-    chat.body = body;
-    chat.badge = badge;
-    chat.count = countEl;
-    return panel;
-  }
-
-  function mountChat(target, opts) {
-    ensureReady();
-    if (!doc.body) { chat.pending = target || null; return null; }
-    var panel = chat.panel || buildChat();
-    var host = null;
-    if (target) {
-      host = resolveEl(target);
-      if (!host) { chat.pending = target; return null; }
-    }
-    if (host) {
-      if (panel.parentNode !== host) host.appendChild(panel);
-      panel.classList.add('vfx-chat-hosted');
-      panel.style.height = '100%';
-      if (!host.clientHeight) panel.style.height = num(opts && opts.height, 320) + 'px';
-      if (chat.floatWrap && chat.floatWrap.parentNode) chat.floatWrap.parentNode.removeChild(chat.floatWrap);
-      chat.floatWrap = null;
-      chat.host = host;
-    } else {
-      if (!chat.floatWrap) {
-        chat.floatWrap = makeEl('vfx-chat-flotante');
-        doc.body.appendChild(chat.floatWrap);
+      if (host && host.getAnimations) {
+        var anims = host.getAnimations();
+        for (var j = 0; j < anims.length; j++) {
+          if (anims[j].id === 'vfx2-shake') {
+            try { anims[j].cancel(); } catch (e) { /* nada */ }
+          }
+        }
       }
-      if (panel.parentNode !== chat.floatWrap) chat.floatWrap.appendChild(panel);
-      panel.classList.remove('vfx-chat-hosted');
-      panel.style.height = '';
-      chat.host = null;
-    }
-    chat.t0 = now();
-    scrollBottom(false);
-    return panel;
+    } catch (e) { /* nada */ }
+    shakeEls.length = 0;
+    return api;
   }
 
-  function trimMsgs() {
-    var keys = [];
-    for (var k in chat.msgs) {
-      if (Object.prototype.hasOwnProperty.call(chat.msgs, k)) keys.push(Number(k));
-    }
-    if (keys.length <= 500) return;
-    keys.sort(function (a, b) { return a - b; });
-    for (var i = 0; i < keys.length - 250; i++) delete chat.msgs[keys[i]];
-  }
+  /* ==========================================================================
+   * init / API pública
+   * ======================================================================== */
 
-  var EMOJI_RE = null;
-  try {
-    EMOJI_RE = new RegExp('^[\\p{Extended_Pictographic}\\u200d\\ufe0f\\u20e3\\s]+$', 'u');
-  } catch (e) { EMOJI_RE = null; }
-
-  function isEmojiOnly(s) {
-    s = String(s == null ? '' : s).trim();
-    if (!s || s.length > 24) return false;
-    if (EMOJI_RE) {
-      try { return EMOJI_RE.test(s); } catch (e) { /* nada */ }
-    }
-    return !/[a-z0-9áéíóúüñ]/i.test(s);
-  }
-
-  function normalizeChat(msg) {
-    if (!msg) return null;
-    var text = msg.text != null ? String(msg.text) : (msg.texto != null ? String(msg.texto) : '');
-    var emoji = msg.emoji ? String(msg.emoji) : '';
-    if (!text && emoji) text = emoji;
-    if (!text) return null;
-
-    var side = String(msg.side || msg.lado || msg.agente || msg.name || msg.nombre || '').toLowerCase();
-    if (side.indexOf('rojo') === 0 || side.indexOf('red') === 0) side = 'rojo';
-    else if (side.indexOf('azul') === 0 || side.indexOf('blue') === 0) side = 'azul';
-    else side = '';
-
-    var name = String(msg.name || msg.nombre || msg.agente ||
-      (side === 'rojo' ? 'ROJO' : side === 'azul' ? 'AZUL' : 'SISTEMA'));
-    var color = msg.color || (side === 'rojo' ? '#ff5d5d' : side === 'azul' ? '#4d8dff' : '#8b95a7');
-
-    var para = msg.para != null ? msg.para : (msg.to != null ? msg.to : null);
-    if (para != null) {
-      para = String(para).trim().toLowerCase();
-      if (para === '*' || para === 'todos' || para === 'all' || para === '') para = null;
-      else if (para !== 'rojo' && para !== 'azul') para = null;
-    }
-
-    var seq = msg.seq != null && isFinite(Number(msg.seq)) ? Number(msg.seq) : null;
-    var hora = msg.hora || msg.t || timeStr();
-    var intensidad = clamp(num(msg.intensidad, num(msg.intensity, 0.5)), 0, 1);
-    var replyTo = msg.respuesta_a != null ? msg.respuesta_a : (msg.replyTo != null ? msg.replyTo : null);
-    var quote = '';
-    if (replyTo != null) {
-      var ref = chat.msgs[replyTo];
-      if (ref) quote = (ref.name ? ref.name + ': ' : '') + shorten(ref.text, 64);
-      else if (msg.replyText) quote = shorten(String(msg.replyText), 64);
-    }
-
-    return {
-      text: text,
-      side: side,
-      name: name,
-      color: color,
-      para: para,
-      intensidad: intensidad,
-      seq: seq,
-      hora: String(hora),
-      onlyEmoji: isEmojiOnly(text),
-      quote: quote,
-      tono: msg.tono ? String(msg.tono).toLowerCase() : '',
-      avatar: emoji
-    };
-  }
-
-  function buildLine(m) {
-    var line = doc.createElement('div');
-    line.className = 'vfx-line';
-    line.classList.add(m.side ? 'vfx-' + m.side : 'vfx-sys');
-    if (m.tono) line.classList.add('vfx-t-' + m.tono.replace(/[^a-z0-9_-]/gi, ''));
-    if (m.intensidad >= 0.66) line.classList.add('vfx-fuerte');
-    if (m.onlyEmoji) line.classList.add('vfx-emoji-only');
-    line.style.setProperty('--vfx-c', m.color);
-    if (chat.total < 8 && (now() - chat.t0) < 1500) line.classList.add('vfx-instant');
-
-    var av = doc.createElement('span');
-    av.className = 'vfx-av';
-    av.textContent = m.avatar || (m.side === 'rojo' ? 'R' : m.side === 'azul' ? 'A' : '·');
-    if (m.avatar) av.style.fontSize = '15px';
-    if (!m.side) av.style.background = 'rgba(255,255,255,.10)';
-
-    var bub = doc.createElement('div');
-    bub.className = 'vfx-bub';
-
-    var meta = doc.createElement('div');
-    meta.className = 'vfx-meta';
-    var nm = doc.createElement('span');
-    nm.className = 'vfx-name';
-    nm.textContent = m.name;
-    meta.appendChild(nm);
-    if (m.para) {
-      var chip = doc.createElement('span');
-      chip.className = 'vfx-to';
-      chip.textContent = '→ ' + m.para.toUpperCase();
-      chip.style.setProperty('--vfx-c', m.para === 'rojo' ? '#ff5d5d' : '#4d8dff');
-      meta.appendChild(chip);
-    }
-    var tm = doc.createElement('span');
-    tm.className = 'vfx-time';
-    tm.textContent = m.hora;
-    meta.appendChild(tm);
-    bub.appendChild(meta);
-
-    if (m.quote) {
-      var q = doc.createElement('span');
-      q.className = 'vfx-quote';
-      q.textContent = m.quote;
-      bub.appendChild(q);
-    }
-
-    var tx = doc.createElement('div');
-    tx.className = 'vfx-tx';
-    tx.textContent = m.text;
-    bub.appendChild(tx);
-
-    line.appendChild(av);
-    line.appendChild(bub);
-    return line;
-  }
-
-  function pushChat(msg, opts) {
-    ensureReady();
-    if (!doc.body) return null;
+  function init(opts) {
     var o = opts || {};
-    var m = normalizeChat(msg);
-    if (!m) return null;
-
-    // Dedupe: por seq (feed) o por texto repetido seguido.
-    if (m.seq != null) {
-      if (chat.lastSeq != null && m.seq <= chat.lastSeq) return null;
-      chat.lastSeq = m.seq;
-    } else {
-      var key = (m.side || '') + '|' + m.text;
-      if (key === chat.lastKey && (now() - chat.lastAt) < 1500) return null;
-      chat.lastKey = key;
-      chat.lastAt = now();
-    }
-
-    if (!chat.panel) mountChat(null);
-    if (!chat.body) return null;
-
-    var line = buildLine(m);
-    var wasNear = nearBottom();
-    chat.body.appendChild(line);
-    chat.total++;
-    if (chat.count) chat.count.textContent = String(chat.total);
-
-    while (chat.body.children.length > Math.max(20, num(CFG.maxChatLines, 140))) {
-      chat.body.removeChild(chat.body.firstElementChild);
-    }
-
-    if (wasNear || chat.total <= 2) {
-      scrollBottom(true);
-      setUnread(0);
-    } else {
-      setUnread(chat.unread + 1);
-    }
-
-    if (m.seq != null) {
-      chat.msgs[m.seq] = { text: m.text, name: m.name, side: m.side };
-      trimMsgs();
-    }
-
-    // Efecto automático: emoji suelto -> vuela del chat al mapa.
-    var wantFly = o.fly != null ? !!o.fly : CFG.autoFly !== false;
-    if (wantFly && m.onlyEmoji && motionAllows() && (now() - lastFlyAt) > 700 && (now() - chat.t0) > 350) {
-      lastFlyAt = now();
-      flyEmoji(m.text, {
-        fromEl: line,
-        power: clamp(0.45 + m.intensidad * 0.5, 0.4, 1),
-        shake: m.intensidad >= 0.8 ? 0.5 : 0,
-        side: m.side
-      });
-    }
-    return line;
-  }
-
-  function clearChat() {
-    if (chat.body) {
-      while (chat.body.firstChild) chat.body.removeChild(chat.body.firstChild);
-    }
-    chat.total = 0;
-    chat.unread = 0;
-    chat.lastSeq = null;
-    chat.lastKey = '';
-    chat.msgs = {};
-    if (chat.count) chat.count.textContent = '0';
-    if (chat.badge) chat.badge.classList.remove('on');
-  }
-
-  /* ======================================================================
-   * Ciclo de vida
-   * ==================================================================== */
-
-  function resolvePending() {
-    if (!chat.pending || !doc.body) return;
-    var t = chat.pending;
-    chat.pending = null;
-    mountChat(t);
-  }
-
-  function ensureReady() {
-    if (!doc.body) return false;
+    if (o.map != null) CFG.map = o.map;
+    if (o.motion != null) CFG.motion = String(o.motion);
+    if (o.maxEffects != null) CFG.maxEffects = clamp(num(o.maxEffects, 24), 4, 80);
+    lite = computeLite();
     ensureStyles();
-    ensureOverlay();
-    resolvePending();
-    return true;
+    ensureStage();
+    ensureScreen();
+    if (stage) stage.classList.toggle('vfx2-lite', lite);
+    return api;
   }
 
-  function onReady() {
-    ensureStyles();
-    ensureOverlay();
-    resolvePending();
+  function setMotion(mode) {
+    if (mode != null) CFG.motion = String(mode);
+    lite = computeLite();
+    if (stage) stage.classList.toggle('vfx2-lite', lite);
+    return lite ? 'lite' : 'full';
   }
 
-  /* ======================================================================
-   * API pública
-   * ==================================================================== */
+  function setMap(el) {
+    CFG.map = el;
+    if (stage && stage.parentNode) {
+      try { stage.parentNode.removeChild(stage); } catch (e) { /* nada */ }
+    }
+    stage = null; canvas = null; ctx = null; dom = null;
+    ensureStage();
+    return api;
+  }
 
   var api = {
     __vfx: VERSION,
     version: VERSION,
 
-    init: function (opts) {
-      var o = opts || {};
-      if (o.map != null) CFG.map = o.map;
-      if (o.chat != null) CFG.chat = o.chat;
-      if (o.z != null) CFG.z = num(o.z, CFG.z);
-      if (o.maxEffects != null) CFG.maxEffects = num(o.maxEffects, CFG.maxEffects);
-      if (o.maxChatLines != null) CFG.maxChatLines = num(o.maxChatLines, CFG.maxChatLines);
-      if (o.autoFly != null) CFG.autoFly = !!o.autoFly;
-      if (o.motion != null) CFG.motion = String(o.motion);
-      ensureReady();
-      if (CFG.chat) mountChat(CFG.chat, o);
-      return api;
-    },
-
-    setMap: function (el) { CFG.map = el; return api; },
-
-    /** Fuerza o desactiva las animaciones: 'auto' | 'full' | 'reduced'. */
-    setMotion: function (mode) {
-      if (mode != null) CFG.motion = String(mode);
-      return CFG.motion;
-    },
-    setChat: function (el) { CFG.chat = el; mountChat(el); return api; },
-    getMapEl: function () { return getMap(); },
-    getChatEl: function () { return chat.panel; },
-
-    mountChat: mountChat,
-    pushChat: pushChat,
-    clearChat: clearChat,
-
-    spawnReaction: spawnReaction,
-    spawnImpact: spawnImpact,
-    spawnDamage: spawnDamage,
-    flyEmoji: flyEmoji,
-
+    init: init,
+    invader: invader,
+    impact: impact,
+    damage: damage,
+    sparks: sparks,
+    shake: shake,
     flash: flash,
     vignette: vignette,
-    shake: shake,
+    confetti: confetti,
+    clear: clear,
+
+    /* compat v1 */
+    spawnImpact: spawnImpact,
+    spawnDamage: spawnDamage,
+    spawnReaction: spawnReaction,
+    flyEmoji: flyEmoji,
     tremblePanel: tremblePanel,
     focus: focus,
-
-    applyDrama: applyDrama,
-    resetDrama: resetDrama
+    setMap: setMap,
+    setMotion: setMotion,
+    getMapEl: mapHost
   };
 
   global.ViewerFX = api;
 
-  if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', onReady);
-  } else {
-    onReady();
-  }
+  // Reacciona a cambios de "reducir movimiento" del sistema sin recargar.
+  try {
+    if (mq && mq.addEventListener) {
+      mq.addEventListener('change', function () {
+        if (CFG.motion === 'auto') {
+          lite = computeLite();
+          if (stage) stage.classList.toggle('vfx2-lite', lite);
+        }
+      });
+    }
+  } catch (e) { /* nada */ }
+
+  // Mantiene el canvas a tamaño correcto si cambia la ventana o el mapa.
+  try {
+    global.addEventListener('resize', function () {
+      try { sizeCanvas(); } catch (e) { /* nada */ }
+    }, { passive: true });
+  } catch (e) { /* nada */ }
+
+  try {
+    if (global.ResizeObserver && stage) {
+      var ro = new global.ResizeObserver(function () {
+        try { sizeCanvas(); } catch (e) { /* nada */ }
+      });
+      ro.observe(stage);
+    }
+  } catch (e) { /* nada */ }
+
 })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));

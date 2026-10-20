@@ -1,0 +1,1440 @@
+{
+  "version": 2,
+  "meta": {
+    "fecha": "2026-10-21 00:24",
+    "rondas": 6,
+    "resolucion_s": 5,
+    "reinos": {
+      "azul": {
+        "id": 73,
+        "nombre": "Djoety Jeta"
+      },
+      "rojo": {
+        "id": 77,
+        "nombre": "Djaty Joeta"
+      }
+    },
+    "inicio_ms": 1792534808595,
+    "fin_ms": 1792535062729,
+    "duracion_s": 254,
+    "ganador": "AZUL"
+  },
+  "estado_inicial": {
+    "azul": {
+      "unidades": 2425,
+      "ciudades": 8
+    },
+    "rojo": {
+      "unidades": 4156,
+      "ciudades": 13
+    }
+  },
+  "rondas": [
+    {
+      "ronda": 1,
+      "titular": "AZUL pega más fuerte: 748 bajas frente a 598",
+      "dominio": "azul",
+      "rojo": {
+        "unidades": 3405,
+        "acciones": [
+          "atomic",
+          "atomic"
+        ],
+        "bajas": 598,
+        "ciudades": 13
+      },
+      "azul": {
+        "unidades": 1809,
+        "acciones": [
+          "napalm",
+          "czar",
+          "50 bandidos"
+        ],
+        "bajas": 748,
+        "ciudades": 8
+      }
+    },
+    {
+      "ronda": 2,
+      "titular": "Azul despierta y firma 690 por 341: menuda remontada, chaval.",
+      "dominio": "azul",
+      "rojo": {
+        "unidades": 1211,
+        "acciones": [
+          "czar",
+          "atomic"
+        ],
+        "bajas": 341,
+        "ciudades": 9
+      },
+      "azul": {
+        "unidades": 1526,
+        "acciones": [
+          "czar",
+          "czar",
+          "50 bandidos"
+        ],
+        "bajas": 690,
+        "ciudades": 8
+      }
+    },
+    {
+      "ronda": 3,
+      "titular": "Azul gana por la mínima: 559 a 534 y Rojo a la lona.",
+      "dominio": "azul",
+      "rojo": {
+        "unidades": 635,
+        "acciones": [
+          "napalm",
+          "atomic"
+        ],
+        "bajas": 534,
+        "ciudades": 7
+      },
+      "azul": {
+        "unidades": 752,
+        "acciones": [
+          "atomic",
+          "czar",
+          "50 bandidos"
+        ],
+        "bajas": 559,
+        "ciudades": 6
+      }
+    },
+    {
+      "ronda": 4,
+      "titular": "Azul pasa por encima: 219 por 52 y Rojo a la lona.",
+      "dominio": "azul",
+      "rojo": {
+        "unidades": 380,
+        "acciones": [
+          "atomic",
+          "atomic"
+        ],
+        "bajas": 52,
+        "ciudades": 6
+      },
+      "azul": {
+        "unidades": 815,
+        "acciones": [
+          "napalm",
+          "czar",
+          "50 bandidos"
+        ],
+        "bajas": 219,
+        "ciudades": 8
+      }
+    },
+    {
+      "ronda": 5,
+      "titular": "Azul aprieta de nuevo: 299 por 282 y Rojo contra las cuerdas.",
+      "dominio": "azul",
+      "rojo": {
+        "unidades": 243,
+        "acciones": [
+          "czar",
+          "atomic"
+        ],
+        "bajas": 282,
+        "ciudades": 6
+      },
+      "azul": {
+        "unidades": 543,
+        "acciones": [
+          "czar",
+          "czar",
+          "50 bandidos"
+        ],
+        "bajas": 299,
+        "ciudades": 8
+      }
+    },
+    {
+      "ronda": 6,
+      "titular": "Djapa cae, pero Djema se lleva a los Rojos: 0 y 187 en el marcador.",
+      "dominio": "azul",
+      "rojo": {
+        "unidades": 56,
+        "acciones": [
+          "napalm",
+          "atomic"
+        ],
+        "bajas": 0,
+        "ciudades": 3
+      },
+      "azul": {
+        "unidades": 724,
+        "acciones": [
+          "atomic",
+          "czar",
+          "50 bandidos"
+        ],
+        "bajas": 187,
+        "ciudades": 8
+      }
+    }
+  ],
+  "eventos": [
+    {
+      "seq": 1,
+      "t_ms": 3613,
+      "ronda": 0,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Poco dice. Llevo oyendo eso desde la ronda cero y aquí sigo.",
+      "intensidad": 0.8,
+      "tono": "chulo"
+    },
+    {
+      "seq": 2,
+      "t_ms": 6266,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 80 unidades enemigas",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.93,
+        "x": 48.5,
+        "y": 56.2
+      }
+    },
+    {
+      "seq": 3,
+      "t_ms": 9481,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 68 unidades",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.92,
+        "x": 50.6,
+        "y": 51.2
+      }
+    },
+    {
+      "seq": 4,
+      "t_ms": 10689,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🤣",
+      "emocion": "burla",
+      "intensidad": 0.7,
+      "tono": "emoji"
+    },
+    {
+      "seq": 5,
+      "t_ms": 15019,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Sigo aquí y con hambre, espabila antes de que te coma el terreno. 🔥",
+      "intensidad": 0.45,
+      "tono": "chulo"
+    },
+    {
+      "seq": 6,
+      "t_ms": 20147,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "resultado",
+      "texto": "Bajas: 598 · pérdidas: 3",
+      "perdidas": 3,
+      "intensidad": 1.0,
+      "bajas": 598
+    },
+    {
+      "seq": 7,
+      "t_ms": 24106,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza napalm sobre un grupo de 65 unidades enemigas",
+      "power": "napalm_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.65,
+        "x": 50.1,
+        "y": 61.3
+      }
+    },
+    {
+      "seq": 8,
+      "t_ms": 26823,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 58 unidades",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.95,
+        "x": 53.2,
+        "y": 47.3
+      }
+    },
+    {
+      "seq": 9,
+      "t_ms": 28037,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "tropas",
+      "texto": "Desembarca 50 bandidos en territorio enemigo",
+      "count": 50,
+      "entity": "bandit"
+    },
+    {
+      "seq": 10,
+      "t_ms": 29252,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "emoji",
+      "texto": "😭",
+      "emocion": "llanto",
+      "intensidad": 0.83,
+      "tono": "emoji"
+    },
+    {
+      "seq": 11,
+      "t_ms": 32084,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Hambre dice, con lo que le sobra a ese. A ver si el terreno te come a ti.",
+      "intensidad": 0.58,
+      "tono": "nervios"
+    },
+    {
+      "seq": 12,
+      "t_ms": 37151,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "resultado",
+      "texto": "Bajas: 748 · pérdidas: 18",
+      "perdidas": 18,
+      "intensidad": 1.0,
+      "bajas": 748
+    },
+    {
+      "seq": 13,
+      "t_ms": 37326,
+      "ronda": 1,
+      "agente": "sistema",
+      "tipo": "ronda",
+      "texto": "Ronda 1: AZUL golpea más fuerte (748 frente a 598 bajas). En pie: ROJO 3405, AZUL 1809.",
+      "dominio": "azul"
+    },
+    {
+      "seq": 14,
+      "t_ms": 38483,
+      "ronda": 1,
+      "agente": "sistema",
+      "tipo": "titular",
+      "texto": "AZUL pega más fuerte: 748 bajas frente a 598"
+    },
+    {
+      "seq": 15,
+      "t_ms": 40018,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Menuda escabechina te he montado, flipao. ¿Eso es todo lo que tienes?",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 16,
+      "t_ms": 41439,
+      "ronda": 1,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Escabechina la tuya, que me has regalado más bajas que las que has cobrado. Sigue así, campeón.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 17,
+      "t_ms": 41448,
+      "ronda": 1,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🃏",
+      "emocion": "burla",
+      "intensidad": 0.9,
+      "tono": "emoji"
+    },
+    {
+      "seq": 18,
+      "t_ms": 41904,
+      "ronda": 2,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para AZUL: 232 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 232
+    },
+    {
+      "seq": 19,
+      "t_ms": 45060,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 85 unidades enemigas",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.98,
+        "x": 47.1,
+        "y": 49.4
+      }
+    },
+    {
+      "seq": 20,
+      "t_ms": 48079,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 57 unidades",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.03,
+        "x": 46.0,
+        "y": 52.2
+      }
+    },
+    {
+      "seq": 21,
+      "t_ms": 49282,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "😎",
+      "emocion": "euforia",
+      "intensidad": 1.0,
+      "tono": "emoji"
+    },
+    {
+      "seq": 22,
+      "t_ms": 52151,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Campeón lo seré yo, cuentista, que tú vas de rebajas y ni te enteras.",
+      "intensidad": 0.77,
+      "tono": "chulo"
+    },
+    {
+      "seq": 23,
+      "t_ms": 57197,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "resultado",
+      "texto": "Bajas: 341 · pérdidas: 1493",
+      "perdidas": 1493,
+      "intensidad": 1.0,
+      "bajas": 341
+    },
+    {
+      "seq": 24,
+      "t_ms": 60812,
+      "ronda": 2,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 63 unidades enemigas",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.08,
+        "x": 52.9,
+        "y": 51.1
+      }
+    },
+    {
+      "seq": 25,
+      "t_ms": 63805,
+      "ronda": 2,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 39 unidades",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.82,
+        "x": 50.5,
+        "y": 44.7
+      }
+    },
+    {
+      "seq": 26,
+      "t_ms": 65031,
+      "ronda": 2,
+      "agente": "azul",
+      "tipo": "tropas",
+      "texto": "Desembarca 50 bandidos en territorio enemigo",
+      "count": 50,
+      "entity": "bandit"
+    },
+    {
+      "seq": 27,
+      "t_ms": 66233,
+      "ronda": 2,
+      "agente": "azul",
+      "tipo": "emoji",
+      "texto": "😡",
+      "emocion": "furia",
+      "intensidad": 1.0,
+      "tono": "emoji"
+    },
+    {
+      "seq": 28,
+      "t_ms": 69674,
+      "ronda": 2,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Cuentista yo, claro. Tú sigue contando lo que te queda cuando termine esto.",
+      "intensidad": 0.92,
+      "tono": "chulo"
+    },
+    {
+      "seq": 29,
+      "t_ms": 74763,
+      "ronda": 2,
+      "agente": "azul",
+      "tipo": "resultado",
+      "texto": "Bajas: 690 · pérdidas: 0",
+      "perdidas": 0,
+      "intensidad": 1.0,
+      "bajas": 690
+    },
+    {
+      "seq": 30,
+      "t_ms": 76517,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Te has llevado Phaxxin de rebote, fantasma. Ahora vas a ver lo que es apretar.",
+      "intensidad": 1.0,
+      "tono": "golpe"
+    },
+    {
+      "seq": 31,
+      "t_ms": 76668,
+      "ronda": 2,
+      "agente": "sistema",
+      "tipo": "ronda",
+      "texto": "Ronda 2: AZUL golpea más fuerte (690 frente a 341 bajas) y ROJO pierde 4 ciudades. En pie: ROJO 1211, AZUL 1526.",
+      "dominio": "azul"
+    },
+    {
+      "seq": 32,
+      "t_ms": 78094,
+      "ronda": 2,
+      "agente": "sistema",
+      "tipo": "titular",
+      "texto": "Azul despierta y firma 690 por 341: menuda remontada, chaval."
+    },
+    {
+      "seq": 33,
+      "t_ms": 79506,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Disfruta de Phaxxin, listo, que en cuanto espabile te la quito y te vas a llorar.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 34,
+      "t_ms": 80605,
+      "ronda": 2,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🔥",
+      "emocion": "furia",
+      "intensidad": 0.9,
+      "tono": "emoji"
+    },
+    {
+      "seq": 35,
+      "t_ms": 81303,
+      "ronda": 3,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para ROJO: 245 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 245
+    },
+    {
+      "seq": 36,
+      "t_ms": 86541,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza napalm sobre un grupo de 155 unidades enemigas",
+      "power": "napalm_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.66,
+        "x": 53.9,
+        "y": 61.8
+      }
+    },
+    {
+      "seq": 37,
+      "t_ms": 89917,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 59 unidades",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.1,
+        "x": 51.2,
+        "y": 53.6
+      }
+    },
+    {
+      "seq": 38,
+      "t_ms": 91122,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🤬",
+      "emocion": "furia",
+      "intensidad": 1.0,
+      "tono": "emoji"
+    },
+    {
+      "seq": 39,
+      "t_ms": 96144,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Sigue contando, cuentista, que lo que te queda lo vas a contar en el suelo. 😤",
+      "intensidad": 1.0,
+      "tono": "chulo"
+    },
+    {
+      "seq": 40,
+      "t_ms": 101232,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "resultado",
+      "texto": "Bajas: 534 · pérdidas: 1",
+      "perdidas": 1,
+      "intensidad": 1.0,
+      "bajas": 534
+    },
+    {
+      "seq": 41,
+      "t_ms": 102818,
+      "ronda": 3,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Bomba atómica para sesenta tíos. Mucho texto, mucho humo y ni las gracias.",
+      "intensidad": 1.0,
+      "tono": "golpe"
+    },
+    {
+      "seq": 42,
+      "t_ms": 106617,
+      "ronda": 3,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 163 unidades enemigas",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.1,
+        "x": 49.3,
+        "y": 50.1
+      }
+    },
+    {
+      "seq": 43,
+      "t_ms": 109795,
+      "ronda": 3,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 141 unidades",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.1,
+        "x": 50.7,
+        "y": 53.3
+      }
+    },
+    {
+      "seq": 44,
+      "t_ms": 111004,
+      "ronda": 3,
+      "agente": "azul",
+      "tipo": "tropas",
+      "texto": "Desembarca 50 bandidos en territorio enemigo",
+      "count": 50,
+      "entity": "bandit"
+    },
+    {
+      "seq": 45,
+      "t_ms": 115180,
+      "ronda": 3,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "En el suelo voy a contar hasta las veces que te has creído ganador. 😏",
+      "intensidad": 1.0,
+      "tono": "chulo"
+    },
+    {
+      "seq": 46,
+      "t_ms": 120245,
+      "ronda": 3,
+      "agente": "azul",
+      "tipo": "resultado",
+      "texto": "Bajas: 559 · pérdidas: 237",
+      "perdidas": 237,
+      "intensidad": 1.0,
+      "bajas": 559
+    },
+    {
+      "seq": 47,
+      "t_ms": 121991,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🤌",
+      "emocion": "burla",
+      "intensidad": 1.0,
+      "tono": "emoji"
+    },
+    {
+      "seq": 48,
+      "t_ms": 122174,
+      "ronda": 3,
+      "agente": "sistema",
+      "tipo": "ronda",
+      "texto": "Ronda 3: AZUL golpea más fuerte (559 frente a 534 bajas) y ROJO pierde 2 ciudades y AZUL pierde 2 ciudades. En pie: ROJO 635, AZUL 752.",
+      "dominio": "azul"
+    },
+    {
+      "seq": 49,
+      "t_ms": 123560,
+      "ronda": 3,
+      "agente": "sistema",
+      "tipo": "titular",
+      "texto": "Azul gana por la mínima: 559 a 534 y Rojo a la lona."
+    },
+    {
+      "seq": 50,
+      "t_ms": 124925,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Te he arrasado Djapa, fantasma. Y lo de Phaxxin espabila, que ese no te lo regalo.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 51,
+      "t_ms": 125871,
+      "ronda": 3,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "😑",
+      "emocion": "burla",
+      "intensidad": 0.9,
+      "tono": "emoji"
+    },
+    {
+      "seq": 52,
+      "t_ms": 126335,
+      "ronda": 4,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para ROJO: 250 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 250
+    },
+    {
+      "seq": 53,
+      "t_ms": 126512,
+      "ronda": 4,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para AZUL: 99 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 99
+    },
+    {
+      "seq": 54,
+      "t_ms": 131841,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 62 unidades enemigas",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.1,
+        "x": 47.8,
+        "y": 54.1
+      }
+    },
+    {
+      "seq": 55,
+      "t_ms": 134664,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 44 unidades",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.1,
+        "x": 52.0,
+        "y": 53.8
+      }
+    },
+    {
+      "seq": 56,
+      "t_ms": 135867,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Phaxxin me da igual, chulo. Lo tuyo lo vas a llorar en el suelo.",
+      "intensidad": 0.48,
+      "tono": "chulo"
+    },
+    {
+      "seq": 57,
+      "t_ms": 138458,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Cuenta lo que quieras, bocazas. Cuando te arrase la última ciudad, ni números te van a quedar.",
+      "intensidad": 1.0,
+      "tono": "chulo"
+    },
+    {
+      "seq": 58,
+      "t_ms": 143514,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "resultado",
+      "texto": "Bajas: 52 · pérdidas: 15",
+      "perdidas": 15,
+      "intensidad": 0.72,
+      "bajas": 52
+    },
+    {
+      "seq": 59,
+      "t_ms": 146485,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Djema ya no existe y tú tirando bombas al aire. Cuéntame más, campeón.",
+      "intensidad": 0.72,
+      "tono": "golpe"
+    },
+    {
+      "seq": 60,
+      "t_ms": 151883,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza napalm sobre un grupo de 36 unidades enemigas",
+      "power": "napalm_bomb",
+      "camara": {
+        "ms": 1600,
+        "zoom": 1.72,
+        "x": 50.0,
+        "y": 50.0
+      }
+    },
+    {
+      "seq": 61,
+      "t_ms": 154800,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 32 unidades",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.91,
+        "x": 47.9,
+        "y": 52.7
+      }
+    },
+    {
+      "seq": 62,
+      "t_ms": 156021,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "tropas",
+      "texto": "Desembarca 50 bandidos en territorio enemigo",
+      "count": 50,
+      "entity": "bandit"
+    },
+    {
+      "seq": 63,
+      "t_ms": 157236,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Ahora resulta que copias mis frases. Originalidad cero, como tu puntería con las bombas.",
+      "intensidad": 0.46,
+      "tono": "chulo"
+    },
+    {
+      "seq": 64,
+      "t_ms": 159957,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "La última ciudad la defiendes tú, que se te da genial quedarte mirando.",
+      "intensidad": 1.0,
+      "tono": "chulo"
+    },
+    {
+      "seq": 65,
+      "t_ms": 165024,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "resultado",
+      "texto": "Bajas: 219 · pérdidas: 0",
+      "perdidas": 0,
+      "intensidad": 0.98,
+      "bajas": 219
+    },
+    {
+      "seq": 66,
+      "t_ms": 166209,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "😰",
+      "emocion": "panico",
+      "intensidad": 0.98,
+      "tono": "emoji"
+    },
+    {
+      "seq": 67,
+      "t_ms": 166346,
+      "ronda": 4,
+      "agente": "sistema",
+      "tipo": "ronda",
+      "texto": "Ronda 4: AZUL golpea más fuerte (219 frente a 52 bajas) y ROJO pierde 1 ciudad. En pie: ROJO 380, AZUL 815.",
+      "dominio": "azul"
+    },
+    {
+      "seq": 68,
+      "t_ms": 167987,
+      "ronda": 4,
+      "agente": "sistema",
+      "tipo": "titular",
+      "texto": "Azul pasa por encima: 219 por 52 y Rojo a la lona."
+    },
+    {
+      "seq": 69,
+      "t_ms": 170540,
+      "ronda": 4,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Se decide ahora, dice, mientras No echa humo. Mucho texto para tan poca ciudad.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 70,
+      "t_ms": 170548,
+      "ronda": 4,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🍿",
+      "emocion": "burla",
+      "intensidad": 0.9,
+      "tono": "emoji"
+    },
+    {
+      "seq": 71,
+      "t_ms": 170856,
+      "ronda": 5,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para ROJO: 250 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 250
+    },
+    {
+      "seq": 72,
+      "t_ms": 171194,
+      "ronda": 5,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para AZUL: 31 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 31
+    },
+    {
+      "seq": 73,
+      "t_ms": 176889,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 39 unidades enemigas",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.88,
+        "x": 50.2,
+        "y": 57.9
+      }
+    },
+    {
+      "seq": 74,
+      "t_ms": 179527,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 29 unidades",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.04,
+        "x": 47.4,
+        "y": 56.6
+      }
+    },
+    {
+      "seq": 75,
+      "t_ms": 180730,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Djapa la has perdido, cuentista. Y a ti te queda menos de lo que crees.",
+      "intensidad": 0.83,
+      "tono": "nervios"
+    },
+    {
+      "seq": 76,
+      "t_ms": 184892,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Tanto humo y aún respiras, flipao. Disfruta, que el último golpe lo doy yo.",
+      "intensidad": 1.0,
+      "tono": "nervios"
+    },
+    {
+      "seq": 77,
+      "t_ms": 189945,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "resultado",
+      "texto": "Bajas: 282 · pérdidas: 0",
+      "perdidas": 0,
+      "intensidad": 1.0,
+      "bajas": 282
+    },
+    {
+      "seq": 78,
+      "t_ms": 191111,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "emoji",
+      "texto": "🤨",
+      "emocion": "burla",
+      "intensidad": 1.0,
+      "tono": "emoji"
+    },
+    {
+      "seq": 79,
+      "t_ms": 194794,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 85 unidades enemigas",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.77,
+        "x": 50.3,
+        "y": 64.1
+      }
+    },
+    {
+      "seq": 80,
+      "t_ms": 197119,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 45 unidades",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.94,
+        "x": 47.7,
+        "y": 51.5
+      }
+    },
+    {
+      "seq": 81,
+      "t_ms": 198329,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "tropas",
+      "texto": "Desembarca 50 bandidos en territorio enemigo",
+      "count": 50,
+      "entity": "bandit"
+    },
+    {
+      "seq": 82,
+      "t_ms": 199536,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "emoji",
+      "texto": "🤌",
+      "emocion": "burla",
+      "intensidad": 1.0,
+      "tono": "emoji"
+    },
+    {
+      "seq": 83,
+      "t_ms": 203524,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "El último golpe dice, con tres ciudades en ruinas. Cuéntame otra, campeón.",
+      "intensidad": 1.0,
+      "tono": "chulo"
+    },
+    {
+      "seq": 84,
+      "t_ms": 208561,
+      "ronda": 5,
+      "agente": "azul",
+      "tipo": "resultado",
+      "texto": "Bajas: 299 · pérdidas: 0",
+      "perdidas": 0,
+      "intensidad": 1.0,
+      "bajas": 299
+    },
+    {
+      "seq": 85,
+      "t_ms": 208658,
+      "ronda": 5,
+      "agente": "sistema",
+      "tipo": "ronda",
+      "texto": "Ronda 5: AZUL golpea más fuerte (299 frente a 282 bajas). En pie: ROJO 243, AZUL 543.",
+      "dominio": "azul"
+    },
+    {
+      "seq": 86,
+      "t_ms": 210032,
+      "ronda": 5,
+      "agente": "sistema",
+      "tipo": "titular",
+      "texto": "Azul aprieta de nuevo: 299 por 282 y Rojo contra las cuerdas."
+    },
+    {
+      "seq": 87,
+      "t_ms": 211594,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Más bajas te he hecho yo, fantasma. Phaxxin me la pagas con sangre.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 88,
+      "t_ms": 212669,
+      "ronda": 5,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "🤌",
+      "emocion": "burla",
+      "intensidad": 0.9,
+      "tono": "emoji"
+    },
+    {
+      "seq": 89,
+      "t_ms": 213099,
+      "ronda": 6,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para ROJO: 250 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 250
+    },
+    {
+      "seq": 90,
+      "t_ms": 213571,
+      "ronda": 6,
+      "agente": "sistema",
+      "tipo": "tropas",
+      "texto": "Refuerzos para AZUL: 250 unidades nuevas entran en liza.",
+      "refuerzos": true,
+      "count": 250
+    },
+    {
+      "seq": 91,
+      "t_ms": 219107,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza napalm sobre un grupo de 32 unidades enemigas",
+      "power": "napalm_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.82,
+        "x": 55.8,
+        "y": 59.8
+      }
+    },
+    {
+      "seq": 92,
+      "t_ms": 222511,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 29 unidades",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 1.97,
+        "x": 53.2,
+        "y": 52.4
+      }
+    },
+    {
+      "seq": 93,
+      "t_ms": 223715,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Hablas mucho para tener menos bajas, postureo. Djapa ya no existe y aún te quedan ganas de llorar.",
+      "intensidad": 0.89,
+      "tono": "nervios"
+    },
+    {
+      "seq": 94,
+      "t_ms": 226630,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Ruinas las tuyas también, cuentista. Yo sigo en pie y tú ya vas de sobrado.",
+      "intensidad": 1.0,
+      "tono": "nervios"
+    },
+    {
+      "seq": 95,
+      "t_ms": 231739,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "resultado",
+      "texto": "Bajas: 0 · pérdidas: 0",
+      "perdidas": 0,
+      "intensidad": 0.0,
+      "bajas": 0
+    },
+    {
+      "seq": 96,
+      "t_ms": 235098,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza una bomba atómica sobre un grupo de 28 unidades enemigas",
+      "power": "atomic_bomb",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.07,
+        "x": 48.1,
+        "y": 51.7
+      }
+    },
+    {
+      "seq": 97,
+      "t_ms": 237842,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "bomba",
+      "texto": "Lanza la Bomba del Zar sobre un grupo de 22 unidades",
+      "power": "czar_bomba",
+      "camara": {
+        "ms": 2400,
+        "zoom": 2.08,
+        "x": 47.9,
+        "y": 46.5
+      }
+    },
+    {
+      "seq": 98,
+      "t_ms": 239072,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "tropas",
+      "texto": "Desembarca 50 bandidos en territorio enemigo",
+      "count": 50,
+      "entity": "bandit"
+    },
+    {
+      "seq": 99,
+      "t_ms": 240276,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Cuatro ya, y tú sigue hablando del último golpe. Con lo fácil que era callarse.",
+      "intensidad": 1.0,
+      "tono": "burla"
+    },
+    {
+      "seq": 100,
+      "t_ms": 247987,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "resultado",
+      "texto": "Bajas: 187 · pérdidas: 2",
+      "perdidas": 2,
+      "intensidad": 0.95,
+      "bajas": 187
+    },
+    {
+      "seq": 101,
+      "t_ms": 249850,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Cincuenta bandidos y ni pa limpiarme las botas, flipao. Espabila.",
+      "intensidad": 0.95,
+      "tono": "golpe"
+    },
+    {
+      "seq": 102,
+      "t_ms": 250037,
+      "ronda": 6,
+      "agente": "sistema",
+      "tipo": "ronda",
+      "texto": "Ronda 6: AZUL golpea más fuerte (187 frente a 0 bajas) y ROJO pierde 3 ciudades. En pie: ROJO 56, AZUL 724.",
+      "dominio": "azul"
+    },
+    {
+      "seq": 103,
+      "t_ms": 251099,
+      "ronda": 6,
+      "agente": "sistema",
+      "tipo": "titular",
+      "texto": "Djapa cae, pero Djema se lleva a los Rojos: 0 y 187 en el marcador."
+    },
+    {
+      "seq": 104,
+      "t_ms": 252458,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Djema te sale caro, fantasma. Te queda una ronda y me voy a reír en tu cara.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 105,
+      "t_ms": 254064,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Cinco ciudades y tú aún con ganas de reírte. Vas a llorar, pero del esfuerzo.",
+      "intensidad": 0.85,
+      "tono": "nervios"
+    },
+    {
+      "seq": 106,
+      "t_ms": 254075,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "emoji",
+      "texto": "😒",
+      "emocion": "burla",
+      "intensidad": 0.9,
+      "tono": "emoji"
+    },
+    {
+      "seq": 107,
+      "t_ms": 255496,
+      "ronda": 6,
+      "agente": "azul",
+      "tipo": "chat",
+      "texto": "Cinco ciudades arrasadas y tú todavía respirando de milagro. 2702 bajas.",
+      "intensidad": 1.0,
+      "tono": "burla"
+    },
+    {
+      "seq": 108,
+      "t_ms": 256828,
+      "ronda": 6,
+      "agente": "rojo",
+      "tipo": "chat",
+      "texto": "Djapa ardiendo y tú de postureo. A la próxima te como vivo.",
+      "intensidad": 0.9,
+      "tono": "llanto"
+    },
+    {
+      "seq": 109,
+      "t_ms": 256844,
+      "ronda": 6,
+      "agente": "sistema",
+      "tipo": "final",
+      "texto": "FIN: gana AZUL (bajas 1807 frente a 2702). Mayor golpe: AZUL con 748 bajas en la ronda 1. Racha: AZUL dominó 6 rondas seguidas.",
+      "ganador": "AZUL"
+    }
+  ],
+  "resumen": {
+    "duracion_s": 254,
+    "total_bajas": {
+      "rojo": 1807,
+      "azul": 2702
+    },
+    "total_perdidas": {
+      "rojo": 1512,
+      "azul": 257
+    },
+    "mayor_golpe": {
+      "agente": "azul",
+      "bajas": 748,
+      "ronda": 1
+    },
+    "racha": {
+      "agente": "azul",
+      "rondas": 6
+    },
+    "curvas": {
+      "rojo": [
+        3405,
+        1211,
+        635,
+        380,
+        243,
+        56
+      ],
+      "azul": [
+        1809,
+        1526,
+        752,
+        815,
+        543,
+        724
+      ]
+    },
+    "pico_bajas": {
+      "rojo": 598,
+      "azul": 748
+    }
+  }
+}

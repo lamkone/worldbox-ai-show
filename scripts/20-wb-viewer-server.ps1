@@ -12,6 +12,8 @@ Uso:
   pwsh -File 20-wb-viewer-server.ps1            # puerto 8765
   pwsh -File 20-wb-viewer-server.ps1 -Port 9000 -Dir C:\ruta\salida
 
+OJO: HttpListener solo responde si se pide por http://localhost:8765/
+(no por 127.0.0.1: el prefijo es "localhost" y HTTP.sys devuelve 400).
 Se puede dejar corriendo en segundo plano: el visor se actualiza solo cuando
 hay partida en marcha y sigue mostrando el último estado cuando acaba.
 #>

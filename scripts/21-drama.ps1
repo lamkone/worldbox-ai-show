@@ -396,7 +396,7 @@ $script:ProhibidoRe = '(no estoy llorando|no lloro|no he llorado|en el ojo|es el
   # la frase concreta del dueño
   'cordillera|' +
   # ordinarieces: macarra sí, grosero no
-  'meando|\bmeo\b|mear|mierda|joder|jodido|cagar|cagando|hostia|polla|\bcoño\b|capullo|gilipollas|subnormal|imb[eé]cil|idiota|est[uú]pido)'
+  'meando|\bmeo\b|mear|mierda|joder|jodid\w*|jodiendo|cagar|cagando|hostia|ostia|polla|\bcoño\b|cojones|capullo|gilipollas|subnormal|imb[eé]cil|idiota|est[uú]pido|cabr[oó]n\w*|pendejo|hijoputa|put[ao]\w*|maric[oó]n\w*|zorra|guarra)'
 
 function Test-Prohibido {
   param([string]$Texto)

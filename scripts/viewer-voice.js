@@ -30,7 +30,9 @@
   var MAX_TEXTO = 240;
   var MAX_COLA = 6;
   var TIMEOUT_FETCH = 9000;
-  var VOLUMEN_DEFECTO = 0.85;    // nivel de las voces del show
+  var VOLUMEN_DEFECTO = 0.68;    // nivel de las voces del show (v9.7: el dueño lo
+                                 // oía "un poco alto en general"; -1,9 dB y se
+                                 // mantiene la proporción con música y efectos)
   var DUCK_FACTOR = 0.3;         // duck(): baja al 30 % mientras suena otra cosa
 
   /* Emociones que entiende el motor de voz (voz-engine.py). El cerebro dramático

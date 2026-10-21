@@ -27,13 +27,22 @@
   'use strict';
   if (window.ShowAudioUI && window.ShowAudioUI.version) return;
 
-  var VERSION = '1.1.0';
-  var LS_KEY = 'wb-show-audio-v1';
+  var VERSION = '1.2.1';
+  // v9.7 (21/10/2026): se sube la versión de la clave para que el nuevo defecto
+  // entre aunque el dueño ya tenga volúmenes guardados con la clave vieja
+  // (wb-show-audio-v1). Lo guardado en v1 se ignora a propósito una sola vez.
+  var LS_KEY = 'wb-show-audio-v2';
+  var LS_KEY_VIEJA = 'wb-show-audio-v1';
 
+  // Defecto v9.7: el dueño dijo "el sonido x default parece estar un poco alto
+  // en general, aunque los niveles están bien equilibrados" (21/10/2026). Se
+  // baja TODO el conjunto un factor 0,80 (≈ −2 dB) manteniendo la proporción
+  // exacta que dio por buena: 0,85/0,55/0,70 → 0,68/0,44/0,56.
+  // 0,68 coincide con VOLUMEN_DEFECTO de scripts/viewer-voice.js.
   var estado = {
-    voz: 0.85,
-    musica: 0.55,
-    efectos: 0.70,
+    voz: 0.68,
+    musica: 0.44,
+    efectos: 0.56,
     silencio: false
   };
 
@@ -50,7 +59,12 @@
   function leerLS() {
     try {
       var raw = localStorage.getItem(LS_KEY);
-      if (!raw) return;
+      if (!raw) {
+        // Migración v9.7: los volúmenes viejos (wb-show-audio-v1) se descartan
+        // para que el nuevo defecto −2 dB se aplique de verdad una vez.
+        try { localStorage.removeItem(LS_KEY_VIEJA); } catch (e2) {}
+        return;
+      }
       var o = JSON.parse(raw);
       if (typeof o.voz === 'number') estado.voz = clamp01(o.voz);
       if (typeof o.musica === 'number') estado.musica = clamp01(o.musica);
@@ -153,6 +167,14 @@
   }
 
   // ------------------------------------------------------------- pista UI ---
+  // v9.7: el popup NATIVO del <select> salía con el tema CLARO aunque el panel
+  // es oscuro ("el dropdown de audio donde dice auto(segun el show) etc, no
+  // esta en modo oscuro cuando es modo oscuro", 21/10/2026). Se arregla de dos
+  // formas a la vez: `color-scheme:dark` en el <select> (Chromium pinta el
+  // popup oscuro con eso) y estilo EXPLÍCITO en cada <option> por si el
+  // navegador ignora el color-scheme del select.
+  var ESTILO_OPCION = 'style="background:#12161e;color:#eef2f7;color-scheme:dark"';
+
   // Catálogo del motor: [{id,nombre,variantes:[{indice,nombre}]}]. Se reconstruye
   // cada vez que se abre el panel por si el motor aún no estaba al montar.
   function opcionesPista() {
@@ -161,14 +183,25 @@
     var cat = null;
     try { cat = m.pistas(); } catch (e) { return null; }
     if (!cat || !cat.length) return null;
-    var html = ['<option value="auto">Auto (según el show)</option>'];
+    var html = ['<option value="auto" ' + ESTILO_OPCION + '>Auto (según el show)</option>'];
     for (var i = 0; i < cat.length; i++) {
       var p = cat[i];
       var vs = p.variantes || [{ indice: 0, nombre: p.nombre }];
       for (var j = 0; j < vs.length; j++) {
         var v = vs[j];
-        var etiqueta = p.nombre + (vs.length > 1 ? ' · ' + v.nombre : '');
-        html.push('<option value="' + p.id + ':' + v.indice + '">' + escapar(etiqueta) + '</option>');
+        // Los nombres de variante ya llevan la pista delante ("Combate · Re menor"), así que
+        // no se repite: antes salía "Chill · Chill · La menor". Si algún día una variante no
+        // lo lleva, se compone "Pista · Variante".
+        var vn = String(v.nombre || '').trim();
+        var etiqueta;
+        if (vs.length > 1) {
+          etiqueta = (vn.toLowerCase().indexOf(String(p.nombre).toLowerCase()) === 0)
+            ? vn
+            : p.nombre + ' · ' + vn;
+        } else {
+          etiqueta = p.nombre;
+        }
+        html.push('<option value="' + p.id + ':' + v.indice + '" ' + ESTILO_OPCION + '>' + escapar(etiqueta) + '</option>');
       }
     }
     return html.join('');
@@ -184,7 +217,7 @@
     if (!sel) return;
     var html = opcionesPista();
     if (html == null) {
-      sel.innerHTML = '<option value="auto">Auto (motor aún no cargado)</option>';
+      sel.innerHTML = '<option value="auto" ' + ESTILO_OPCION + '>Auto (motor aún no cargado)</option>';
       sel.disabled = true;
       return;
     }
@@ -292,8 +325,11 @@
       '    <span data-wb-pista-actual style="font-size:11px;color:#7fd4a8;font-variant-numeric:tabular-nums">—</span>',
       '  </div>',
       '  <select id="wb-aud-pista" data-wb-pista style="all:unset;box-sizing:border-box;width:100%;cursor:pointer;',
-      '    padding:6px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.18);',
-      '    background:rgba(255,255,255,.06);color:#eef2f7;font:500 12px system-ui,sans-serif">',
+      '    padding:6px 26px 6px 9px;border-radius:9px;border:1px solid rgba(255,255,255,.18);',
+      '    color-scheme:dark;',
+      '    background-color:#161c26;color:#eef2f7;font:500 12px system-ui,sans-serif;',
+      '    background-image:url(&quot;data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\' viewBox=\'0 0 10 6\'%3E%3Cpath d=\'M1 1l4 4 4-4\' fill=\'none\' stroke=\'%239fb0c6\' stroke-width=\'1.6\' stroke-linecap=\'round\'/%3E%3C/svg%3E&quot;);',
+      '    background-repeat:no-repeat;background-position:right 9px center">',
       '  </select>',
       '</div>',
       '<div style="margin-top:9px;font-size:11px;color:#8296ad">La música arranca al pulsar ▶ o el mapa.</div>'
@@ -463,5 +499,5 @@
     return { abrir: abrir, cerrar: cerrar, estado: estado, pista: pista, auto: auto, getPista: getPista };
   }
 
-  window.ShowAudioUI = { version: VERSION, montar: montar, pista: pista, auto: auto, getPista: getPista };
+  window.ShowAudioUI = { version: VERSION, montar: montar, pista: pista, auto: auto, getPista: getPista, estado: estado };
 })();

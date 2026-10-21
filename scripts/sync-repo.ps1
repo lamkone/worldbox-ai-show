@@ -32,10 +32,16 @@ $ficheros = @(
   'show-audio-ui.js'         # panel de volumen (voz / musica / efectos)
   'tts-server.mjs'           # servicio local de voz neuronal (8771)
   'voz-engine.py'            # motor de voz v9 (Kokoro + edge) que usa tts-server.mjs
+  'chatterbox-worker.py'     # worker de Chatterbox (v9.7): motor del pack de la repeticion
   'build-voice-pack.ps1'     # pack de voces pregrabadas de la repeticion (demo\voz)
   'sync-repo.ps1'            # esta herramienta: copia los scripts al repo
   'check-sync.ps1'           # comprueba que las 3 caras del show sirven lo mismo
 )
+
+# Carpetas que viajan con los scripts (se copian fichero a fichero).
+# voz-refs: las 4 voces de referencia (wav) que clona Chatterbox; sin ellas no se
+# puede regenerar el pack de la repeticion en una instalacion limpia.
+$carpetas = @('voz-refs')
 
 if (-not (Test-Path $Destino)) { throw "No existe el destino: $Destino" }
 
@@ -55,6 +61,25 @@ foreach ($f in $ficheros) {
   $sz = (Get-Item $dst).Length
   Write-Host ("  + {0}  ({1} B)" -f $f, $sz)
   $cambios++
+}
+
+foreach ($c in $carpetas) {
+  $srcDir = Join-Path $Origen $c
+  if (-not (Test-Path $srcDir)) { Write-Warning "falta en origen: $c\"; $faltan++; continue }
+  $dstDir = Join-Path $Destino $c
+  if (-not (Test-Path $dstDir)) { if (-not $Check) { New-Item -ItemType Directory -Path $dstDir -Force | Out-Null } }
+  foreach ($src in (Get-ChildItem -LiteralPath $srcDir -File)) {
+    $dst = Join-Path $dstDir $src.Name
+    $igual = $false
+    if (Test-Path $dst) {
+      $igual = (Get-FileHash $src.FullName -Algorithm SHA256).Hash -eq (Get-FileHash $dst -Algorithm SHA256).Hash
+    }
+    if ($igual) { Write-Host ("  = {0}/{1}" -f $c, $src.Name); continue }
+    if ($Check) { Write-Host ("  ~ {0}/{1}  (distinto)" -f $c, $src.Name); $cambios++; continue }
+    Copy-Item $src.FullName $dst -Force
+    Write-Host ("  + {0}/{1}  ({2} B)" -f $c, $src.Name, $src.Length)
+    $cambios++
+  }
 }
 
 Write-Host ''

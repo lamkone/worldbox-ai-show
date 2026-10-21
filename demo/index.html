@@ -4025,9 +4025,12 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
   function anadirMensaje(lado, ev, sil) {
     var chat = lado === 'rojo' ? el.chatR : el.chatA;
     if (!chat) return;
+    /* v9.7: los emojis no van al chat (solo salen en el mapa). El chat se lee
+       limpio; el emoji lo pinta el FX desde procesar(). */
+    if (ev.tipo === 'emoji') return;
     var vacio = chat.querySelector('.p-vacio');
     if (vacio) vacio.remove();
-    var esEmoji = ev.tipo === 'emoji';
+    var esEmoji = false;
     var tono = String(ev.tono || '').toLowerCase();
     var d = document.createElement('div');
     d.className = 'msg' + (sil ? ' sin-anim' : '') + (esEmoji ? ' emoji' : '') + (TONOS.indexOf(tono) >= 0 ? ' tono-' + tono : '');

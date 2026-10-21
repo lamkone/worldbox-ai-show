@@ -78,8 +78,12 @@
   var gestosPuestos = false;
   var timer = null;
 
-  var volumen = 0.55;        // 0..1
-  var volumenEfectos = 0.7;  // 0..1
+  // v9.7 (21/10/2026): el dueño pidió bajar el sonido por defecto ("parece
+  // estar un poco alto en general, aunque los niveles están bien equilibrados").
+  // Factor 0,80 (≈ −2 dB) sobre los valores buenos: música 0,55 → 0,44 y
+  // efectos 0,70 → 0,56. La voz va aparte (viewer-voice.js: 0,68).
+  var volumen = 0.44;        // 0..1  (master de música; antes 0.55)
+  var volumenEfectos = 0.56; // 0..1  (bus de efectos; antes 0.7)
   var intensidad = 0.35;     // 0..1
   var duckActivo = false;
 

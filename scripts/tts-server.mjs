@@ -10,6 +10,8 @@
  *   GET /health                         -> JSON con estado y voces
  *   GET /tts?t=<texto>&v=rojo|azul|sistema   -> audio/mpeg (cacheado)
  *   GET /tts?t=<texto>&v=es-CO-GonzaloNeural  -> voz concreta
+ *   GET /tts?t=<texto>&v=azul&motor=chatterbox -> motor por petición (v9.7,
+ *        solo para el pack pregrabado; el directo sigue en edge)
  *
  * - Cache en reports/tts-cache/<sha1>.mp3: la misma frase se sintetiza una vez.
  * - Cola de 1 síntesis a la vez (edge-tts es un proceso de Python) y como
@@ -47,6 +49,10 @@ const MAX_TEXTO = 240;          // tope del texto de ENTRADA (lo que manda el vi
 const MAX_NORMALIZADO = 400;    // tope tras normalizar (los números ocupan más en letras)
 const MAX_COLA = 8;
 const TIMEOUT_MS = 25000;
+// Chatterbox es un LLM-TTS: 8-20 s por línea en la RX 7800 XT, y la primera
+// línea tras cargar el modelo puede llegar a ~40 s. Timeout propio para no
+// cortar líneas largas del show (configurable por si se prueba en CPU).
+const TIMEOUT_CB_MS = Number(process.env.WB_TTS_TIMEOUT_CB_MS || 120000);
 const NORMALIZACION = 'v1';     // versión de la capa de normalización (invalida la cache)
 
 /* Post-proceso de voz (cadena elegida en reports/voz-casting/natural/):
@@ -64,8 +70,16 @@ const POST_CADENA = 'highpass=f=80,equalizer=f=3000:t=q:w=1:g=2,'
 let ffmpegRuta = null;
 let ffmpegBuscado = false;
 
-/* Perfiles: ROJO = Gonzalo (Colombia, hombre), AZUL = Salomé (Colombia, mujer),
- * SISTEMA = Elvira (España, neutra). Elegidos por el dueño tras el casting.
+/* Perfiles (v9.7): ROJO = Kokoro em_santa (voz propia del modelo, sin red),
+ * AZUL = edge es-ES-XimenaNeural (rápida, la del directo y MISMA identidad que
+ * el pack Chatterbox clonado; decisión B del 21/10), SISTEMA = Elvira
+ * (edge, avisos). El motor Chatterbox Multilingual (worker GPU ROCm,
+ * scripts/chatterbox-worker.py) está implementado y se usa SOLO para generar el
+ * PACK PREGRABADO de la repetición (scripts/build-voice-pack.ps1 -MotorAzul
+ * chatterbox): tarda 8-15 s por línea y el visor aborta /tts a los 9 s
+ * (viewer-voice.js TIMEOUT_FETCH), así que en directo caería a la voz del
+ * navegador. Elegidos por el dueño tras los castings; el detalle y las medidas
+ * están en docs/cuaderno/11-voces-naturales.md.
  *
  * Prosodia elegida con el A/B de reports/voz-casting/natural/:
  *   - rate -4%: un 4 % más lento que el original. Da tiempo a articular las
@@ -79,12 +93,14 @@ let ffmpegBuscado = false;
  *
  * La voz se puede cambiar sin tocar el código. Se aceptan dos nombres por perfil
  * (el genérico primero, el histórico después); gana el primero que esté definido:
- *   VOZ_EDGE      / WB_VOZ_AZUL      -> AZUL  (defecto v9.6: es-MX-DaliaNeural)
+ *   VOZ_EDGE      / WB_VOZ_AZUL      -> AZUL  (defecto v9.7: es-ES-XimenaNeural)
  *   VOZ_KOKORO    / WB_VOZ_ROJO      -> ROJO  (defecto: em_santa)
  *   VOZ_SISTEMA   / WB_VOZ_SISTEMA   -> SISTEMA (defecto: es-ES-ElviraNeural)
  * Ejemplos:
+ *   $env:VOZ_EDGE="es-MX-DaliaNeural"; node scripts\tts-server.mjs --port 8771    # rollback v9.6 (Dalia)
  *   $env:VOZ_EDGE="es-CO-SalomeNeural"; node scripts\tts-server.mjs --port 8771   # volver a Salome
- *   $env:VOZ_EDGE="es-ES-XimenaNeural"; node scripts\tts-server.mjs --port 8771   # probar Ximena
+ * Para el PACK pregrabado con Chatterbox clonando a Ximena (sin cambiar el directo):
+ *   pwsh -File scripts\build-voice-pack.ps1 -MotorAzul chatterbox -VozAzul es-ES-XimenaNeural -Forzar
  * La voz entra en la marca de caché (linea ~403) y en la firma del pack, así que al
  * cambiarla se regeneran los MP3 solos y el pack se firma distinto: no hay riesgo de
  * servir audio de la voz vieja con la huella de la nueva.
@@ -168,14 +184,48 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 // 21,2/21,9 de Salome): mejora la entonacion sin cambiar de personaje. Kokoro
 // (ROJO) no se toca: ya era el que mas movia el tono (sd_fr 4,96-5,29).
 // Es reversible en un reinicio: VOZ_EDGE=es-CO-SalomeNeural.
-const MOTOR_VERSION = 'v9.6';
+// v9.7: MOTOR NUEVO, no un retoque. El dueño dijo que seguia oyendo "las mismas
+// voces". Se añade Chatterbox Multilingual (LLM-TTS, ResembleAI, MIT) por worker
+// GPU (scripts/chatterbox-worker.py, venv ROCm) clonando una referencia de
+// scripts/voz-refs; el ROJO sigue en Kokoro em_santa. Medido con las 5 lineas
+// reales del show: sd_fr 5,53 (Dalia 2,77), rango suave 14,83 (7,20), 6,4 % de
+// tiempo plano (20,1 %) -> +100 % de movimiento melodico, pero cuesta 8-15 s
+// por linea en GPU. DECISION v9.7 (medida con viewer-voice.js): el /tts EN
+// VIVO sigue en edge (motor rapido) porque TIMEOUT_FETCH=9000 ms abortaria cada
+// linea de Chatterbox y el visor caeria a la voz del navegador (justo el
+// sintoma "unas lineas con una voz y otras con otra"). Chatterbox se usa SOLO
+// para el PACK PREGRABADO de la repeticion, con un override explicito por
+// peticion: GET /tts?...&motor=chatterbox (el servidor escucha solo en
+// 127.0.0.1) y build-voice-pack.ps1 -MotorAzul chatterbox -VozAzul es-ES-XimenaNeural.
+// DECISION B del 21/10: el AZUL del DIRECTO pasa a es-ES-XimenaNeural (edge,
+// misma identidad que clona el pack) porque el A/B mide mas melodia que Dalia
+// (sd_fr 3,98 vs 2,77; plano 13,0 % vs 20,1 %) y va igual de rapido (mediana
+// 1453 ms vs 1549 ms por linea en 5 lineas). ROLLBACK EXACTO:
+//   $env:VOZ_EDGE="es-MX-DaliaNeural"  + reiniciar el TTS 8771
+//   y regenerar el pack SIN -MotorAzul (vuelven Dalia edge las dos caras).
+// Reversible en un reinicio sin tocar codigo (el directo no lo usa, pero el
+// motor sigue disponible):
+//   $env:VOZ_MOTOR_AZUL="chatterbox"; $env:VOZ_EDGE="es-ES-XimenaNeural"  # directo clon (NO recomendado: >9 s)
+//   $env:VOZ_EDGE="es-CO-SalomeNeural"                                    # azul v9.5
+//   $env:WB_TTS_MOTOR="legacy"                                            # edge-tts clasico
+// La voz de Chatterbox se elige con VOZ_EDGE (id de edge) o VOZ_CHATTERBOX
+// (nombre del prompt en scripts/voz-refs: ximena, dalia, salome, alvaro).
+const MOTOR_VERSION = 'v9.7';
 const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
 const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {
-  rojo: { voz: vozEnv('VOZ_KOKORO', 'WB_VOZ_ROJO', 'em_santa'), motor: 'kokoro', rate: RATE, pitch: PITCH },
-  azul: { voz: vozEnv('VOZ_EDGE', 'WB_VOZ_AZUL', 'es-MX-DaliaNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
-  sistema: { voz: vozEnv('VOZ_SISTEMA', 'WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
+  rojo: { voz: vozEnv('VOZ_KOKORO', 'WB_VOZ_ROJO', 'em_santa'), motor: vozEnv('VOZ_MOTOR_ROJO', 'WB_MOTOR_ROJO', 'kokoro'), rate: RATE, pitch: PITCH },
+  // v9.7 / decision B: Ximena en el directo = misma identidad que el pack
+  // Chatterbox de demo/voz. Mas melodia que Dalia (sd_fr 3,98 vs 2,77) con la
+  // misma latencia edge. Rollback: VOZ_EDGE=es-MX-DaliaNeural + reiniciar TTS +
+  // regenerar el pack SIN -MotorAzul.
+  azul: { voz: vozEnv('VOZ_EDGE', 'WB_VOZ_AZUL', 'es-ES-XimenaNeural'), motor: vozEnv('VOZ_MOTOR_AZUL', 'WB_MOTOR_AZUL', 'edge'), rate: RATE, pitch: PITCH },
+  sistema: { voz: vozEnv('VOZ_SISTEMA', 'WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: vozEnv('VOZ_MOTOR_SISTEMA', 'WB_MOTOR_SISTEMA', 'edge'), rate: RATE, pitch: PITCH },
 };
+
+/* Motores que acepta el override `&motor=` de /tts (v9.7). El directo NO lo
+ * usa: solo lo pide build-voice-pack.ps1 para el pack pregrabado. */
+const MOTORES_MOTOR = ['kokoro', 'edge', 'chatterbox'];
 
 /* Emociones que entiende el motor. */
 const EMOCIONES = ['neutral', 'burla', 'enfadado', 'triste', 'confuso'];
@@ -473,7 +523,19 @@ function arrancarMotor() {
   motorEstado = 'arrancando';
   const proc = spawn(PYTHON, ['-u', ENGINE], {
     windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    env: {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1',
+      // El motor decide con estas variables si precalienta el worker GPU de
+      // Chatterbox al arrancar (si no se las pasamos, la primera línea del
+      // pack paga los ~20 s de carga del modelo).
+      VOZ_MOTOR_ROJO: PERFILES.rojo.motor,
+      VOZ_MOTOR_AZUL: PERFILES.azul.motor,
+      VOZ_MOTOR_SISTEMA: PERFILES.sistema.motor,
+      VOZ_KOKORO: PERFILES.rojo.voz,
+      VOZ_EDGE: PERFILES.azul.voz,
+      VOZ_SISTEMA: PERFILES.sistema.voz,
+    },
   });
   const m = { proc, vivo: true, pendientes: new Map(), siguienteId: 1, buffer: '' };
   motor = m;
@@ -541,9 +603,10 @@ function pedirMotor(peticion, timeoutMs = TIMEOUT_MS) {
 /* Síntesis con el motor v9: una sola llamada, que ya devuelve el MP3 con la
  * emoción aplicada y el volumen igualado. */
 async function sintetizarMotor(perfil, texto, destino, emocion) {
+  const timeout = perfil.motor === 'chatterbox' ? TIMEOUT_CB_MS : TIMEOUT_MS;
   const r = await pedirMotor({
     motor: perfil.motor, voz: perfil.voz, emocion, texto, out: destino,
-  });
+  }, timeout);
   if (!r || !r.ok) {
     ultimoError = (r && r.error) || 'motor sin respuesta';
     return false;
@@ -734,8 +797,15 @@ const servidor = http.createServer(async (req, res) => {
   if (url.pathname === '/health') {
     return json(res, 200, {
       ok: true, servicio: 'worldbox-tts', version: '2.1.0',
-      motor: MOTOR === 'legacy' ? 'edge-tts clasico' : 'v9 (Kokoro rojo + edge azul, volumen igualado)',
+      motor: MOTOR === 'legacy'
+        ? 'edge-tts clasico'
+        : `v9.7 (rojo=${PERFILES.rojo.motor}:${PERFILES.rojo.voz} + azul=${PERFILES.azul.motor}:${PERFILES.azul.voz}, volumen igualado)`,
+      // v9.7: chatterbox está implementado, pero el DIRECTO no lo usa (edge/Dalia).
+      // Solo el pack pregrabado lo pide con &motor=chatterbox.
+      chatterbox: true,
+      motorPorPeticion: MOTORES_MOTOR,
       motorVersion: MOTOR_VERSION,
+      motores: Object.fromEntries(Object.entries(PERFILES).map(([k, v]) => [k, v.motor])),
       motorEstado,
       motorFallos,
       puerto: PUERTO, sintetizadas, fallos, pendientes: cola.length,
@@ -768,6 +838,16 @@ const servidor = http.createServer(async (req, res) => {
       texto = texto.slice(0, MAX_NORMALIZADO).replace(/\s+\S*$/, '');
     }
     const perfil = resolverPerfil(url.searchParams.get('v'));
+    // v9.7: motor por petición SOLO para el pack pregrabado (build-voice-pack.ps1
+    // -MotorAzul). El directo no lo manda: Chatterbox tarda 8-15 s por línea y
+    // viewer-voice.js aborta /tts a los 9 s. El servidor escucha solo 127.0.0.1.
+    const motorPedido = String(url.searchParams.get('motor') || '').trim().toLowerCase();
+    if (motorPedido) {
+      if (!MOTORES_MOTOR.includes(motorPedido)) {
+        return json(res, 400, { ok: false, error: `motor desconocido (${motorPedido}); validos: ${MOTORES_MOTOR.join(', ')}` });
+      }
+      perfil.motor = motorPedido;
+    }
     const emocion = normalizarEmocion(url.searchParams.get('e'));
     const destino = rutaCache(perfil, texto, emocion);
     const r = await pedir(perfil, texto, destino, emocion);
@@ -802,6 +882,13 @@ const servidor = http.createServer(async (req, res) => {
     if (texto.length > MAX_NORMALIZADO) texto = texto.slice(0, MAX_NORMALIZADO).replace(/\s+\S*$/, '');
     if (!texto) return json(res, 400, { ok: false, error: 'texto vacio' });
     const perfil = resolverPerfil(url.searchParams.get('v'));
+    const motorPedido = String(url.searchParams.get('motor') || '').trim().toLowerCase();
+    if (motorPedido) {
+      if (!MOTORES_MOTOR.includes(motorPedido)) {
+        return json(res, 400, { ok: false, error: `motor desconocido (${motorPedido}); validos: ${MOTORES_MOTOR.join(', ')}` });
+      }
+      perfil.motor = motorPedido;
+    }
     const emocion = normalizarEmocion(url.searchParams.get('e'));
     const destino = rutaCache(perfil, texto, emocion);
     const yaEstaba = cache.has(destino) || (fs.existsSync(destino) && fs.statSync(destino).size >= 800);

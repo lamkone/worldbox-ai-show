@@ -583,19 +583,162 @@ def _escribir_mp3(pcm, sr, salida):
         raise RuntimeError("ffmpeg fallo: %s" % (p.stderr or b"").decode("utf-8", "ignore")[-200:])
 
 
+# --------------------------------------------------------------------------
+# Chatterbox Multilingual (v9.7) — motor LLM-TTS en GPU, vía worker persistente
+# --------------------------------------------------------------------------
+# El modelo NO se puede cargar en este proceso: torch/ROCm + chatterbox viven en
+# el venv C:\DSH\aimusic\venv y este proceso corre con el Python del sistema.
+# Se lanza `scripts/chatterbox-worker.py` una sola vez (carga ~20 s) y se le
+# habla JSON por stdio. Ver docs/cuaderno/11-voces-naturales.md.
+CB_PYTHON = os.environ.get("VOZ_CB_PYTHON") or r"C:\DSH\aimusic\venv\Scripts\python.exe"
+CB_WORKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "chatterbox-worker.py")
+CB_LIBS = os.environ.get("VOZ_CB_LIBS") or r"C:\DSH\tts-libs"
+# Voz por defecto del motor Chatterbox (nombre del prompt en scripts/voz-refs).
+VOZ_CHATTERBOX = (os.environ.get("VOZ_CHATTERBOX") or "ximena").strip()
+# Prompts de clonado disponibles: scripts/voz-refs/<nombre>.wav
+CB_REFS = os.environ.get("VOZ_CB_REFS") or os.path.join(AQUI, "voz-refs")
+_CB = {"proc": None, "lock": None, "id": 0, "sr": 24000}
+
+
+def _cb_prompt(voz):
+    """Traduce el id de voz del perfil a un prompt de clonado existente.
+
+    El servidor manda el mismo campo `voz` del perfil, que para AZUL es un id de
+    edge (`es-ES-XimenaNeural`); aquí se traduce a `ximena` para encontrar
+    `scripts/voz-refs/ximena.wav`. Si no hay prompt, cae a VOZ_CHATTERBOX y, si
+    tampoco existe, devuelve None (voz propia del modelo)."""
+    v = str(voz or "").strip().lower()
+    if not v:
+        v = VOZ_CHATTERBOX.strip().lower()
+    if os.path.exists(os.path.join(CB_REFS, v + ".wav")):
+        return v
+    corto = v.split("-")[-1]
+    if corto.endswith("neural"):
+        corto = corto[: -len("neural")]
+    if corto and os.path.exists(os.path.join(CB_REFS, corto + ".wav")):
+        return corto
+    defecto = VOZ_CHATTERBOX.strip().lower()
+    if os.path.exists(os.path.join(CB_REFS, defecto + ".wav")):
+        return defecto
+    log("chatterbox: sin prompt para voz '%s', uso la voz propia del modelo" % (voz or ""))
+    return None
+
+
+def _cb_arrancar():
+    """Arranca el worker si no está vivo. Devuelve el proceso."""
+    if _CB["proc"] is not None and _CB["proc"].poll() is None:
+        return _CB["proc"]
+    import threading
+    if _CB["lock"] is None:
+        _CB["lock"] = threading.Lock()
+    env = dict(os.environ)
+    previo = env.get("PYTHONPATH") or ""
+    env["PYTHONPATH"] = CB_LIBS + (os.pathsep + previo if previo else "")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    log("chatterbox: arrancando worker (%s)" % CB_PYTHON)
+    proc = subprocess.Popen(
+        [CB_PYTHON, CB_WORKER],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None,
+        text=True, encoding="utf-8", errors="replace", bufsize=1, env=env,
+    )
+    primera = proc.stdout.readline()
+    if not primera:
+        raise RuntimeError("chatterbox: el worker no arranco")
+    dato = json.loads(primera)
+    if not dato.get("ok"):
+        raise RuntimeError("chatterbox: %s" % dato)
+    _CB["sr"] = int(dato.get("sr") or 24000)
+    _CB["proc"] = proc
+    log("chatterbox: worker listo (sr=%s)" % _CB["sr"])
+    return proc
+
+
+def chatterbox_linea(texto, emo, voz=None):
+    """Sintetiza UNA línea con Chatterbox. Devuelve (pcm float32, sr)."""
+    import threading
+    import numpy as np
+    if _CB["lock"] is None:
+        _CB["lock"] = threading.Lock()
+    with _CB["lock"]:
+        proc = _cb_arrancar()
+        _CB["id"] += 1
+        rid = _CB["id"]
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp.close()
+        peticion = dict(id=rid, texto=texto, emocion=(emo or {}).get("_nombre", "neutral"),
+                        voz=_cb_prompt(voz), out=tmp.name)
+        try:
+            proc.stdin.write(json.dumps(peticion, ensure_ascii=False) + "\n")
+            proc.stdin.flush()
+            linea = proc.stdout.readline()
+            if not linea:
+                raise RuntimeError("chatterbox: worker cerrado")
+            r = json.loads(linea)
+            if not r.get("ok"):
+                raise RuntimeError("chatterbox: %s" % r.get("error"))
+            import soundfile as sf
+            pcm, sr = sf.read(tmp.name, dtype="float32", always_2d=False)
+            if getattr(pcm, "ndim", 1) > 1:
+                pcm = pcm.mean(axis=1)
+            return np.asarray(pcm, dtype="float32"), int(sr)
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+
+
+def calentar_chatterbox():
+    """Arranca el worker en un hilo para que la primera línea no pague los ~20 s."""
+    def _hacer():
+        t0 = time.time()
+        try:
+            with _CB["lock"]:
+                _cb_arrancar()
+            log("chatterbox caliente en %.1f s" % (time.time() - t0))
+        except Exception as e:
+            log("calentamiento chatterbox fallo: %s" % e)
+    try:
+        import threading
+        if _CB["lock"] is None:
+            _CB["lock"] = threading.Lock()
+        threading.Thread(target=_hacer, daemon=True).start()
+    except Exception:
+        pass
+
+
+def _usa_chatterbox():
+    """True si algún perfil del servidor usa este motor (lo dice el entorno).
+
+    Mira las dos familias de variables: las que ya usaba el servidor antes de
+    v9.7 (VOZ_MOTOR_*) y las que expone ahora al arrancar el motor (WB_MOTOR_*).
+    """
+    claves = ("VOZ_MOTOR_ROJO", "VOZ_MOTOR_AZUL", "VOZ_MOTOR_SISTEMA",
+              "WB_MOTOR_ROJO", "WB_MOTOR_AZUL")
+    e = " ".join(os.environ.get(k, "") for k in claves).lower()
+    return "chatterbox" in e
+
+
 def render(texto, motor, emocion, salida, voz=None):
     t0 = time.time()
     texto = str(texto or "").strip()
     if not texto:
         raise ValueError("texto vacio")
     emo, nombre_emo = perfil(emocion)
+    emo = dict(emo, _nombre=nombre_emo)
     motor = (motor or "kokoro").strip().lower()
-    if motor not in ("kokoro", "edge"):
+    if motor not in ("kokoro", "edge", "chatterbox"):
         motor = "kokoro"
     if motor == "kokoro":
         pcm, sr, semi = kokoro_linea(texto, emo, voz)
+        voz_eff = voz or VOZ_KOKORO
+    elif motor == "chatterbox":
+        pcm, sr = chatterbox_linea(texto, emo, voz)
+        voz_eff = _cb_prompt(voz) or "default"
+        semi = 0.0
     else:
         pcm, sr = edge_linea(texto, emo, voz)
+        voz_eff = voz or VOZ_EDGE
         semi = 0.0
     pcm = _aplicar_tono(pcm, sr, semi)          # 1º el tono...
     pcm, lufs, pico = normalizar_pcm(pcm, sr, OBJ + CALIBRACION_MP3)   # ...y DESPUÉS el volumen
@@ -603,7 +746,7 @@ def render(texto, motor, emocion, salida, voz=None):
     if not os.path.exists(salida) or os.path.getsize(salida) < 800:
         raise RuntimeError("salida vacia o demasiado corta")
     dur = round(len(pcm) / float(sr), 3)
-    return dict(ok=True, motor=motor, voz=(voz or (VOZ_KOKORO if motor == "kokoro" else VOZ_EDGE)),
+    return dict(ok=True, motor=motor, voz=voz_eff,
                 emocion=nombre_emo, ms=int((time.time() - t0) * 1000),
                 lufs=round(lufs, 2), lufs_mp3=round(lufs - CALIBRACION_MP3, 2), pico=round(pico, 2), dur=dur,
                 frases=len(partir_frases(texto)), bytes=os.path.getsize(salida))
@@ -638,7 +781,9 @@ def servir():
         pass
     kokoro_cargar()          # carga en caliente: la primera línea no espera 1,3 s
     calentar_kokoro()        # y la primera síntesis tampoco
-    log("listo (kokoro=%s, edge=%s)" % (_K_OK, VOZ_EDGE))
+    if _usa_chatterbox():
+        calentar_chatterbox()   # v9.7: worker GPU en un hilo (carga ~20 s)
+    log("listo (kokoro=%s, edge=%s, chatterbox=%s)" % (_K_OK, VOZ_EDGE, _usa_chatterbox()))
     for linea in sys.stdin:
         linea = linea.strip()
         if not linea:
@@ -650,7 +795,9 @@ def servir():
             continue
         if req.get("cmd") == "ping":
             _responder(dict(ok=True, kokoro=bool(_K_OK), edge=True,
-                            voz_kokoro=VOZ_KOKORO, voz_edge=VOZ_EDGE))
+                            chatterbox=bool(_usa_chatterbox()),
+                            voz_kokoro=VOZ_KOKORO, voz_edge=VOZ_EDGE,
+                            voz_chatterbox=VOZ_CHATTERBOX))
             continue
         try:
             r = render(req.get("texto"), req.get("motor"), req.get("emocion"),

@@ -76,6 +76,18 @@ try {
   $vozViva = $false
   if ($null -ne $saludVoz -and $saludVoz.PSObject.Properties['ok']) { $vozViva = [bool]$saludVoz.ok }
   if ($vozViva) {
+    # v9.7 (decision del 21/10): el pack de la REPETICION se sintetiza con
+    # Chatterbox clonando a Ximena (motor nuevo, el que mas entonacion da en la
+    # medicion: sd_fr 4,57 frente a 2,77 de Dalia edge). El DIRECTO sigue con
+    # edge:XimenaNeural (1,45 s/linea) porque Chatterbox tarda 24 s de mediana y
+    # el visor corta a 9 s (TIMEOUT_FETCH de viewer-voice.js).
+    # build-voice-pack.ps1 lee estos dos entornos cuando no se le pasan flags;
+    # sin esto, esta llamada regeneraria el pack con edge y la repeticion
+    # sonaria distinta que el directo.
+    # ROLLBACK a la voz vieja: borrar estas dos lineas, poner VOZ_EDGE=es-MX-DaliaNeural
+    # en el TTS de 8771 y relanzar con -Forzar.
+    $env:PACK_MOTOR_AZUL = 'chatterbox'
+    $env:PACK_VOZ_AZUL = 'es-ES-XimenaNeural'
     & (Join-Path $PSScriptRoot 'build-voice-pack.ps1') -ShowJson $showReal -OutDir $vozDir -Servicio 'http://127.0.0.1:8771'
     # $LASTEXITCODE solo existe si en este proceso se ha ejecutado algun .exe;
     # leerlo a secas revienta bajo Set-StrictMode.

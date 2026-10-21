@@ -461,6 +461,10 @@ const PERSONAS = {
     reino: 'los Rojos',
     caracter: 'macarra de barrio: chulo, bocazas, cero cultura',
     forma: 'frase corta y seca, chulería de barrio, cero palabras cultas',
+    // Lo que le mueve y cómo discute. Es COMPORTAMIENTO, no vocabulario: las
+    // listas de palabras las copiaba el modelo y sonaban todas iguales.
+    obsesion: 'que nadie le llame blando. No se defiende de una acusación: la convierte en un reto y exige que se lo diga a la cara.',
+    polemica: 'se lleva cualquier discusión a la calle: quién aguanta más, quién se raja, quién paga. Coge la frase del rival y la trata como una provocación personal suya.',
     system: `Eres ROJO, rey de los Rojos, en un show de peleas de WorldBox contra AZUL. Macarra de barrio: chulo, bocazas, cero cultura. Hablas como se pica la gente en un grupo de WhatsApp, en español de España de 2026. Frase corta y seca, chulería de barrio, cero palabras cultas. Nada de tebeo. No uses siempre los mismos insultos: cada frase, la tuya.
 
 ${REGLAS_DURAS}`,
@@ -470,6 +474,9 @@ ${REGLAS_DURAS}`,
     reino: 'los Azules',
     caracter: 'cuñao listillo moderno: condescendiente y sarcástico',
     forma: 'ironía seca y condescendencia de cuñao, cero vocabulario académico',
+    // Igual que ROJO: cómo pelea, no con qué palabras.
+    obsesion: 'tener razón. Le puede más corregir que ganar: si el rival acierta en algo, le busca la coma.',
+    polemica: 'no insulta gratis: le coge al rival una palabra o un dato, lo repite retorcido o lo corrige, y le exige que lo explique. Nunca suelta el hueso de lo que el otro dijo mal.',
     system: `Eres AZUL, rey de los Azules, en un show de peleas de WorldBox contra ROJO. Cuñao listillo moderno: condescendiente, sarcástico, se cree más listo que nadie. Escribes como el que corrige a todo el mundo en Twitter, en español de España de 2026. Ironía seca, frase corta. NO eres un profesor. No repitas las mismas muletillas: cada frase, la tuya.
 
 ${REGLAS_DURAS}`,
@@ -1620,6 +1627,39 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno', publico = 
     }
   }
 
+  // --- (g) el pique tiene que ir sobre algo CONCRETO ---
+  // Si hay un detalle sobre el que pelear (agravio vivo, palabra del rival o
+  // golpe recibido) y la frase no lo toca de ninguna forma, es una pulla
+  // genérica: el dueño dijo que así no hay show. Se pide una corrección; si a
+  // la segunda tampoco, la frase se acepta igual (no es un fallo grave).
+  if (!publico && tipo !== 'apertura' && tipo !== 'final' && ultimoRival) {
+    const det = detalleAAtacar(agente, an, ultimoRival)
+    if (det) {
+      const norm = s =>
+        String(s ?? '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9 ]/g, ' ')
+      const tn = norm(t)
+      const claves = new Set()
+      for (const trozo of norm(det.detalle).split(/\s+/)) {
+        if (trozo.length >= 5 && !PALABRAS_VACIAS.has(trozo)) claves.add(trozo)
+      }
+      for (const trozo of norm(ultimoRival).split(/\s+/)) {
+        if (trozo.length >= 6 && !PALABRAS_VACIAS.has(trozo)) claves.add(trozo)
+      }
+      const citaCifra = digitos.length > 0
+      const tocaDetalle = [...claves].some(k => tn.includes(k))
+      if (claves.size > 0 && !tocaDetalle && !citaCifra) {
+        problemas.push(
+          `no ataca ningún detalle concreto: mete ${det.detalle} en la frase ` +
+            'y sácale punta (un insulto genérico no vale)',
+        )
+      }
+    }
+  }
+
   return problemas
 }
 
@@ -1793,8 +1833,85 @@ function construirInstruccionPublica(agente, nick, texto, ctx = {}) {
   return lineas.join('\n')
 }
 
+// ---------------------------------------------------------------- agravios
+/**
+ * El pique no se gana con insultos sueltos: se gana con UN detalle concreto que
+ * se repite y se cobra. Cada agente guarda sus agravios (la ciudad que le
+ * quitaron, la que arrasó, el golpe que le dieron) y los mantiene vivos unos
+ * turnos para pelear SOBRE ESO, no sobre "eres un paquete" genérico.
+ *
+ * El dueño lo dijo así: "se insultan, y siguen el hilo, pero es como que no
+ * tienen personalidad o no pelean sobre un detalle en concreto, que es lo que
+ * daría show". Esto es ese detalle.
+ */
+const AGRAVIOS = { rojo: [], azul: [] }
+const MAX_AGRAVIOS = 4
+const AGRAVIO_TTL = 3 // rondas que un agravio sigue siendo el tema del pique
+
+/** Registra los detalles concretos de este turno. Idempotente por texto. */
+function apuntarAgravio(agente, an) {
+  if (!an) return
+  const lista = AGRAVIOS[agente] ?? (AGRAVIOS[agente] = [])
+  const meter = (detalle, tipo) => {
+    const d = String(detalle ?? '').trim()
+    if (!d || d.length < 4) return
+    if (lista.some(a => a.detalle === d)) return
+    lista.unshift({ detalle: d.slice(0, 90), tipo, turno: Number(an.ronda ?? 0) })
+    while (lista.length > MAX_AGRAVIOS) lista.pop()
+  }
+  if (an.ciudadPerdida) meter(`te quitó ${an.ciudadPerdida}`, 'perdida')
+  if (an.ciudadArrasada) meter(`le arrasaste ${an.ciudadArrasada}`, 'arrasada')
+  if (an.golpeRival) meter(String(an.golpeRival), 'golpe')
+}
+
+/** El agravio que toca cobrar ahora (el más reciente que siga vivo). */
+function agravioVivo(agente, ronda) {
+  const lista = AGRAVIOS[agente] ?? []
+  const r = Number(ronda ?? 0)
+  return lista.find(a => r - a.turno <= AGRAVIO_TTL) ?? null
+}
+
+/** Palabras que no sirven como detalle: no dicen nada de nadie. */
+const PALABRAS_VACIAS = new Set([
+  'pero', 'porque', 'cuando', 'donde', 'como', 'para', 'este', 'esta', 'esto', 'estos', 'estas',
+  'todo', 'toda', 'todos', 'todas', 'nada', 'algo', 'alguien', 'nadie', 'mucho', 'mucha',
+  'muchos', 'muchas', 'tienes', 'tiene', 'tenemos', 'tengo', 'haces', 'hace', 'hacer',
+  'dices', 'dice', 'decir', 'digo', 'eres', 'somos', 'soy', 'estas', 'estoy', 'estamos',
+  'puedes', 'puedo', 'quiero', 'quiere', 'vamos', 'vais', 'voy', 'vas', 'sabes', 'sabe',
+  'saber', 'mira', 'mirar', 'venga', 'bueno', 'claro', 'desde', 'hasta', 'entre', 'sobre',
+  'contra', 'segun', 'aunque', 'mientras', 'siempre', 'nunca', 'tambien', 'solo', 'mas',
+  'menos', 'muy', 'poco', 'demasiado', 'otra', 'otro', 'aqui', 'alli', 'ahora', 'luego',
+  'antes', 'despues', 'hoy', 'ayer', 'menudo', 'vaya', 'anda', 'mismo', 'misma',
+])
+
+/**
+ * El detalle concreto sobre el que va la frase de este turno. Prioridad:
+ *   1) el agravio vivo (lo que de verdad le escuece y quiere cobrar),
+ *   2) una palabra concreta que acaba de decir el rival,
+ *   3) el golpe que acaba de recibir.
+ * @returns {{detalle:string, origen:'agravio'|'palabra'|'golpe'}|null}
+ */
+function detalleAAtacar(agente, an, ultimoRival) {
+  const av = agravioVivo(agente, an?.ronda)
+  if (av) return { detalle: av.detalle, origen: 'agravio' }
+  const ur = String(ultimoRival ?? '')
+  if (ur) {
+    const palabras = ur
+      .replace(/[^\p{L}\p{N} ]/gu, ' ')
+      .split(/\s+/)
+      .filter(p => p.length >= 5 && !PALABRAS_VACIAS.has(p.toLowerCase()))
+    if (palabras.length) {
+      const elegida = palabras.sort((a, b) => b.length - a.length)[0]
+      return { detalle: `la palabra "${elegida}" que acaba de decir`, origen: 'palabra' }
+    }
+  }
+  if (an?.golpeRival) return { detalle: String(an.golpeRival), origen: 'golpe' }
+  return null
+}
+
 function construirInstruccion(tipo, ctx, ultimoRival, agente) {
   const an = analizar(ctx)
+  apuntarAgravio(agente, an)
   const rival = agente === 'rojo' ? 'AZUL' : 'ROJO'
   const p = PERSONAS[agente] ?? PERSONAS.rojo
   const lineas = []
@@ -1812,16 +1929,32 @@ function construirInstruccion(tipo, ctx, ultimoRival, agente) {
   if (an.ciudadPerdida) eventos.push(`te ha quitado ${an.ciudadPerdida}`)
   if (eventos.length) lineas.push(`LO QUE ACABA DE PASAR: ${eventos.join('; ')}.`)
 
-  // 4. lo que dijo el rival. Se le da, pero NO se le obliga a contestarle.
+  // 4. lo que dijo el rival. Se le da Y se le obliga a morderlo.
   const ur = String(ultimoRival ?? '').trim()
   if (ur) lineas.push(`${rival} acaba de decir: "${ur.slice(0, 200)}"`)
 
-  // 5. el encargo: una frase, corta, reaccionando a lo que pasa
+  // 4b. EL DETALLE: el pique va sobre algo concreto, no sobre insultos sueltos.
+  // Sin esto el modelo suelta pullas genéricas ("eres un paquete") y el dueño
+  // se aburre: lo que da show es pelear SOBRE UN DETALLE y no soltarlo.
+  const det = detalleAAtacar(agente, an, ur)
+  if (det) {
+    lineas.push(
+      `EL DETALLE DEL PIQUE: ${det.detalle}. ` +
+        'Tu frase va CLAVADA a eso: nómbralo y sácale punta (exígele que lo explique, ' +
+        'retuércelo, o restriégalo). Un insulto genérico no vale: se pelea sobre el detalle.',
+    )
+  }
+
+  // 5. el encargo: una frase, corta, pegada al detalle y a lo que dijo el rival
   lineas.push(
-    'Di UNA sola frase corta (máximo 20 palabras) reaccionando a lo que acaba de pasar, como lo diría tu personaje. ' +
-      (ur ? 'Puedes contestarle o ignorarlo, lo que te salga natural. ' : '') +
+    'Di UNA sola frase corta (máximo 20 palabras) como lo diría tu personaje. ' +
+      (ur ? 'CONTESTA a lo que acaba de decir: no lo ignores. ' : '') +
+      (det ? 'Que se note que vas a por el detalle, no que sueltas una pulla al aire. ' : '') +
       'Si no hay nada interesante que decir, dilo simple. No inventes cifras: usa solo las del estado.',
   )
+  // 5b. personalidad: qué le mueve y cómo discute (comportamiento, no vocabulario)
+  if (p.obsesion) lineas.push(`TU OBSESIÓN: ${p.obsesion}`)
+  if (p.polemica) lineas.push(`ASÍ PELEAS: ${p.polemica}`)
   lineas.push(
     'No leas el marcador en voz alta ("X contra Y", "tengo N y tú M"): eso suena a contabilidad, no a una persona. ' +
       'Y no reacciones siempre de la misma forma: unas veces amenaza, otras pregunta, otras contesta seco, otras se ríe.',
@@ -2166,6 +2299,24 @@ if (SELFTEST) {
     const r = await pedirReplica(ag, instruccion, { analisis: an, ultimoRival: ur, tipo })
     console.log('>>', r.ok ? r.texto : `FALLO: ${r.error}`, r.problemas?.length ? `[problemas: ${r.problemas.join('; ')}]` : '')
   }
+  // Caso SIN ANCLAS: el rival no ha dicho ninguna palabra concreta y no hay golpe
+  // recibido → detalleAAtacar() devuelve null. Debe comprobarse SIN llamar al
+  // modelo (determinista): el briefing no se inventa un detalle ni se rompe, solo
+  // pide contestar. Es el caso real de un rival que dice "eso es lo que dices tú".
+  const sinAncla = construirInstruccion(
+    'turno',
+    { ronda: 4, rondas: 8, misUnidades: 900, susUnidades: 700, misBajas: 400, misPerdidas: 380, ratio: 1.28 },
+    'Eso es lo que dices tú.',
+    'azul',
+  )
+  const okSinAncla =
+    !sinAncla.includes('EL DETALLE DEL PIQUE') && sinAncla.includes('CONTESTA a lo que acaba de decir')
+  console.log(`\n--- sin ancla (determinista): ${okSinAncla ? 'OK' : 'FALLO'} ---`)
+  if (!okSinAncla) {
+    console.log(sinAncla)
+    process.exitCode = 1
+  }
+
   const em = await pedirReplica('rojo', 'Devuelve solo un emoji de rabia.', { maxTokens: 12, validarSalida: false })
   console.log('\nemoji crudo:', em.ok ? em.texto : em.error)
   process.exit(0)

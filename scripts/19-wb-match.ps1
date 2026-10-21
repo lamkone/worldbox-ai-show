@@ -21,6 +21,14 @@ param(
   [int]$Rondas = 12,
   [int]$ResolucionSeg = 6,
   [double]$PausaAccion = 1.2,
+  # v9.7: pausa EXTRA solo después de una bomba. El dueño pidió "acercar la
+  # cámara, ver la bomba con el FX, esperar un rato antes de la próxima bomba".
+  # Medido en la partida del 21/10 20:39: las bombas caían en parejas a ~2,85 s
+  # (acción ~1,65 s + PausaAccion 1,2 s) mientras el FX sigue en pantalla y la
+  # cámara mantiene el plano 4,2 s → dos explosiones pisadas y cambio de cámara
+  # encima. Con 2,4 s el hueco entre bombas queda en ~5,2 s ≈ cooldownFoco del
+  # visor (5,2 s): cada bomba tiene su plano y su FX. 0 = desactivado.
+  [double]$PausaBomba = 2.4,
   # Reinos que pelean. 0 = automático: se eligen los dos reinos con más unidades
   # del mundo cargado (cada guardado usa ids distintos: save2 tiene 73/78, save5
   # tiene 1/2). Si se fijan a mano, se respetan.
@@ -960,6 +968,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $script:Tick = $obs.tick
     $plan = New-Plan -Agente $agente -Obs $obs
     $ultimaNota = ''
+    $fueBomba = $false
 
     foreach ($p in $plan) {
       switch ($p.accion) {
@@ -992,6 +1001,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             Add-ShowEvent -Tipo 'bomba' -Agente $agente -Texto $p.nota -Extra @{ power = $p.power; camara = $camExtra } | Out-Null
             $script:Narrador = $p.nota
             $ultimaNota = $p.nota
+            $fueBomba = $true
           } else {
             Add-Feed -Agente $agente -Tipo 'error' -Texto ('Falló ' + $p.power + ': ' + $res.code + ' ' + $res.error)
           }
@@ -1019,6 +1029,9 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             -Emocion (Get-EmocionDeEmoji $p.texto)
         }
       }
+      # v9.7: una bomba tiene que verse entera (fogonazo + FX + plano de cámara)
+      # antes de que llegue la siguiente. Pausa extra SOLO tras bomba.
+      if ($fueBomba -and $PausaBomba -gt 0) { Start-Sleep -Milliseconds ([int]($PausaBomba * 1000)) }
       # ritmo de retransmisión: deja respirar cada acción para que el visor la muestre sola
       if ($PausaAccion -gt 0) { Start-Sleep -Milliseconds ([int]($PausaAccion * 1000)) }
     }

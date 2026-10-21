@@ -808,16 +808,37 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   } catch (e) {}
 
   const CFG = {
-    pollMs: 900,
+    /* v9.7: 550 ms (antes 900). El pre-foco de bomba viaja por /feed.json y el sondeo
+       es la única latencia del sistema: con 900 ms la cámara arrancaba tarde. */
+    pollMs: 550,
     statsMs: 300,
     maxChat: 60,
     idaMs: 900,
     vueltaMs: 900,
-    holdMs: 2800,
-    /* cooldown entre planos de cámara: evita zooms encadenados a sitios sin acción */
-    cooldownFoco: 2600,
+    /* v9.7: hold largo = "acercar, ver el FX y esperar" (lo pidió el dueño: llegar,
+       ver la bomba con el efecto y quedarse quieto un rato). 4200 ms cubre fogonazo
+       + onda + humo; antes 2800 ms se quedaba corto y la cámara ya se iba. */
+    holdMs: 4200,
+    /* cooldown entre planos de cámara: evita zooms encadenados a sitios sin acción.
+       v9.7: 4500 ms. SUELO: el último rótulo/número del impacto se apaga a los
+       ~3980 ms; por debajo, la cámara se iría con algo todavía en pantalla.
+       TECHO: el motor deja una bomba cada ~5,2 s (acción ~1,6 s + PausaAccion 1,2 s
+       + PausaBomba 2,4 s); con 4500 quedan 700 ms de margen para el jitter del
+       sondeo (pollMs 550) y la siguiente bomba NO se pierde.
+       Dentro de ese hueco, minSaltoFocoHold sigue exigiendo >14 % para robar el
+       plano: una pareja de bombas sobre el mismo punto no vuelve a mover la cámara. */
+    cooldownFoco: 4500,
     /* desplazamiento mínimo (% de ventana) para considerar un foco distinto */
     minSaltoFoco: 4,
+    /* v9.7: durante hold/vuelta el salto tiene que ser MUCHO mayor para moverse */
+    minSaltoFocoHold: 14,
+    /* v9.7: respiro entre el fin del hold y el arranque de la vuelta al reposo.
+       650 ms (antes 450): el último rótulo/número se apaga a los ~4,0 s del impacto
+       y la cámara se queda quieta en el punto ~0,9 s más antes de irse. El dueño
+       pidió "esperar un rato"; 450 ms no se percibía como pausa. */
+    respiroMs: 650,
+    /* v9.7: dos focos dentro de esta zona (% de ventana) son "el mismo sitio" */
+    zonaFoco: 18,
     maxEfectos: 24,
     qa: (function () {
       try { return new URLSearchParams(location.search).get('qa') === '1'; } catch (e) { return false; }
@@ -827,13 +848,29 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     })()
   };
 
-  /* Recorte del mapa dentro del fotograma capturado.
-     v4.1: el stream YA publica solo el mapa (24-wb-stream.ps1 -CropX0/-CropY0/-CropX1/-CropY1
-     recorta la ventana de WorldBox a x 0.297-0.764, y 0.165-0.753), así que el fotograma que
-     llega es el mapa entero: aquí no hay nada que recortar. Las coordenadas cx/cy del stream
-     vienen ya renormalizadas a este recorte, por lo que el mapeo es identidad. */
+  /* Recorte del fotograma capturado.
+     v4.1 decía que el stream publicaba solo el mapa; v9.7 lo corrige: en producción
+     (24-wb-stream.ps1 sin argumentos -CropX0/-CropY0...) el JPEG es la VENTANA COMPLETA
+     de WorldBox y el mapa ocupa solo el centro. Aquí el recorte es identidad y las
+     coordenadas cx/cy del stream llegan en % del frame completo (contrato del stream). */
   const RECORTE = { x0: 0, y0: 0, x1: 1, y1: 1 };
   const VENTANA = { w: 1280, h: 720 };   // ventana capturada de WorldBox (px) para eventos crudos
+
+  /* v9.7: rectángulo del MAPA dentro del fotograma (fracción 0..1 del frame).
+     Medido sobre reports\wb-match\frame.jpg (1280x1029): isla + agua inmediata
+     x 0.297..0.764, y 0.165..0.753 (el resto es cielo y el panel de poderes de abajo).
+     Solo se usa para (1) saber cuánto zoom hace falta para centrar un punto y
+     (2) el plano de reposo; las coordenadas de cámara siguen en % del FRAME. */
+  const MAPA = { x0: 0.297, y0: 0.165, x1: 0.764, y1: 0.753 };
+  /* MAPA expresado en coordenadas del recorte vigente (si algún día se activa crop) */
+  function mapaRecorte() {
+    const rx = (RECORTE.x1 - RECORTE.x0) || 1, ry = (RECORTE.y1 - RECORTE.y0) || 1;
+    const c = function (v) { return Math.min(1, Math.max(0, v)); };
+    return {
+      x0: c((MAPA.x0 - RECORTE.x0) / rx), x1: c((MAPA.x1 - RECORTE.x0) / rx),
+      y0: c((MAPA.y0 - RECORTE.y0) / ry), y1: c((MAPA.y1 - RECORTE.y0) / ry)
+    };
+  }
 
   /* ------------------------------------------------------------
      Endpoints (window.__WB_ENDPOINTS__ / __WB_ENDPOINTS_READY__)
@@ -1088,7 +1125,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   })();
 
   /* ------------------------------------------------------------
-     Cámara del mapa (ida easeInOutCubic · hold 2,8 s · vuelta easeOutCubic 900 ms)
+     Cámara del mapa (ida easeInOutCubic · hold 4,2 s · respiro 650 ms · vuelta easeOutCubic 900 ms)
      ------------------------------------------------------------ */
   const CAM = {
     x: 0.5, y: 0.5, z: 1,
@@ -1100,6 +1137,8 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     reposo: { x: 0.5, y: 0.5 },   /* punto de reposo: cerca del último interés, nunca el centro */
     vueltaA: { x: 0.5, y: 0.5 },
     shakeT0: -1e9, shakeDur: 220, shakeAmp: 0,
+    /* v9.7: pico de zoom de la ida (tz+0.12 acotado al techo) */
+    zOver: 1.12,
     vx: 1, vy: 1, cx: 0.5, cy: 0.5,   /* centro efectivo dibujado (tras clamp) */
     ux: NaN, uy: NaN, uz: NaN   /* última cámara dibujada (para no redibujar de más) */
   };
@@ -1108,10 +1147,62 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
 
   const easeOutQuint = k => 1 - Math.pow(1 - k, 5);
 
-  /* Zoom máximo v4: el stream va a 1920 px y el recorte ya no amplía el JPEG,
-     así que el techo baja (1.55 escritorio / 1.35 móvil) y el overshoot de
-     +0.12 entra dentro de ese techo. */
-  function zMaxCamara() { return ES_MOVIL ? 1.35 : 1.55; }
+  /* ------------------------------------------------------------
+     v9.7: geometría del zoom — cuánto hay que acercarse para CENTRAR un punto.
+     La ventana visible (fracción del recorte) es (wx/z, wy/z) con
+       A = aspecto de la imagen (rx/ry), S = aspecto de la pantalla:
+         A <= S  ->  wx = 1,     wy = A/S
+         A >  S  ->  wx = S/A,   wy = 1
+     El centro dibujado se clampa a [wx/2, 1-wx/2] (ver dibujar()), así que para
+     centrar (tx,ty) hace falta z >= wx/(2*min(tx,1-tx)) y lo mismo en vertical.
+     ANTES el techo era fijo 1.55 (tz ~1.43): la ventana era 0.70 del frame y el
+     centro efectivo solo caía en [0.35,0.65], pero el mapa ocupa x 0.297-0.764 /
+     y 0.165-0.753 -> las bombas del borde se quedaban a 15-20 % del centro: eso es
+     el "apunta a un sitio random / la bomba cae más arriba o más abajo" del dueño. */
+  function aspectoPantalla() {
+    const el = document.getElementById('escenario');
+    const w = el ? el.clientWidth : window.innerWidth;
+    const h = el ? el.clientHeight : window.innerHeight;
+    return (w > 0 && h > 0) ? w / h : 16 / 9;
+  }
+  function aspectoImagen() {
+    const rx = (RECORTE.x1 - RECORTE.x0), ry = (RECORTE.y1 - RECORTE.y0);
+    const img = (typeof fuenteVideo === 'function') ? fuenteVideo() : null;
+    if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      return (img.naturalWidth * rx) / (img.naturalHeight * ry);
+    }
+    return (VENTANA.w * rx) / (VENTANA.h * ry);
+  }
+  /* factores tales que ventana visible = (wx/z, wy/z) en fracción del recorte */
+  function ventanaK() {
+    const A = aspectoImagen(), S = aspectoPantalla();
+    if (A <= S) return { wx: 1, wy: A / S };
+    return { wx: S / A, wy: 1 };
+  }
+  /* zoom mínimo para que (tx,ty) del recorte quede en el centro de la pantalla */
+  function zoomParaCentrar(tx, ty) {
+    const k = ventanaK();
+    const mx = Math.min(tx, 1 - tx), my = Math.min(ty, 1 - ty);
+    const zx = mx > 1e-4 ? k.wx / (2 * mx) : 99;
+    const zy = my > 1e-4 ? k.wy / (2 * my) : 99;
+    return Math.max(1, zx, zy) * 1.02;   /* 2 % de margen para el clamp de dibujar() */
+  }
+  /* zoom mínimo para poder centrar CUALQUIER punto del mapa */
+  function zoomParaMapa() {
+    const m = mapaRecorte(), k = ventanaK();
+    const mx = Math.min(m.x0, 1 - m.x1);   /* peor distancia al borde horizontal */
+    const my = Math.min(m.y0, 1 - m.y1);
+    const zx = mx > 1e-4 ? k.wx / (2 * mx) : 1;
+    const zy = my > 1e-4 ? k.wy / (2 * my) : 1;
+    return Math.max(1, zx, zy);
+  }
+  /* Techo de zoom: el que haga falta para llegar a los bordes del mapa, acotado
+     para no pixelar el JPEG (frame 1280x1029; el mapa mide 598 px de ancho, a
+     z>2.7 el upscale ya se nota en pantallas de 1440). */
+  function zMaxCamara() {
+    const techoCalidad = ES_MOVIL ? 3.0 : 2.7;
+    return clamp(zoomParaMapa(), 1.6, techoCalidad);
+  }
 
   /* Deriva tipo cámara en mano: Lissajous suave alrededor del reposo (3-4 %). */
   function deriva(t) {
@@ -1132,22 +1223,32 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     ty = clamp(ty, 0.06, 0.94);
     const t = ahora();
     /* v5: cooldown entre planos (2,6 s) y descarte de focos casi idénticos (<4 %):
-       solo eventos reales mueven la cámara, nunca el centroide del stream. */
+       solo eventos reales mueven la cámara, nunca el centroide del stream.
+       v9.7: si la cámara aún está "caliente" (hold/vuelta/respiro) el salto tiene
+       que ser MUCHO mayor (minSaltoFocoHold) para respetar el "acercar, ver el FX
+       y esperar" que pidió el dueño: una bomba muy seguida no roba el plano. */
     if (!forzar) {
       if (t - ultimoFocoT < CFG.cooldownFoco) return false;
-      if (Math.abs(tx - ultimoFoco.x) * 100 < CFG.minSaltoFoco &&
-          Math.abs(ty - ultimoFoco.y) * 100 < CFG.minSaltoFoco) return false;
+      const enCaliente = (CAM.fase === 'hold' || CAM.fase === 'vuelta' || CAM.fase === 'respiro');
+      const minSalto = enCaliente ? CFG.minSaltoFocoHold : CFG.minSaltoFoco;
+      if (Math.abs(tx - ultimoFoco.x) * 100 < minSalto &&
+          Math.abs(ty - ultimoFoco.y) * 100 < minSalto) return false;
     }
     ultimoFocoT = t;
     ultimoFoco = { x: tx, y: ty };
     const zTecho = zMaxCamara();
-    /* el objetivo deja sitio al overshoot (+0.12) sin pasarse del techo */
-    const tz = clamp(Number(zoom) || 1.4, 1.0, Math.max(1.0, zTecho - 0.12));
+    /* v9.7: el zoom que pide el motor (1.35 + 0.75*poder = 1.5-2.1) NO llega para
+       centrar los bordes del mapa; se sube al mínimo que centra el punto y se acota
+       por el techo de calidad. En el centro del mapa manda el zoom del motor. */
+    const zPedido = Number(zoom) || 1.4;
+    const tz = clamp(Math.max(zPedido, zoomParaCentrar(tx, ty)), 1.0, zTecho);
     CAM.fase = 'ida';
     CAM.t0 = t;
     CAM.dur = ES_MOVIL ? 700 : clamp(900 + (tz - 1) * 500, 900, 1200);
     CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
     CAM.tx = tx; CAM.ty = ty; CAM.tz = tz;
+    /* overshoot de zoom sin pasarse del techo (v9.7: el techo ya no es 1.55) */
+    CAM.zOver = Math.min(tz + 0.12, Math.max(tz, zTecho));
     CAM.holdMs = Math.max(CFG.holdMs, Number(msHold) || 0);
     CAM.reposo = { x: clamp(tx, 0.16, 0.84), y: clamp(ty, 0.16, 0.84) };
     return true;
@@ -1167,11 +1268,12 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       const e = easeOutQuint(k);
       CAM.x = lerp(CAM.fx, CAM.tx, e);
       CAM.y = lerp(CAM.fy, CAM.ty, e);
-      /* overshoot de zoom +0.12: sube con la ida y asienta en el último 28 % */
+      /* overshoot de zoom: sube con la ida y asienta en el último 28 % (v9.7: el
+         pico va acotado al techo real de zoom, no a un +0.12 fijo) */
       if (k < 0.72) {
-        CAM.z = lerp(CAM.fz, CAM.tz + 0.12, easeOutQuint(clamp(k / 0.72, 0, 1)));
+        CAM.z = lerp(CAM.fz, CAM.zOver, easeOutQuint(clamp(k / 0.72, 0, 1)));
       } else {
-        CAM.z = lerp(CAM.tz + 0.12, CAM.tz, easeInOutCubic(clamp((k - 0.72) / 0.28, 0, 1)));
+        CAM.z = lerp(CAM.zOver, CAM.tz, easeInOutCubic(clamp((k - 0.72) / 0.28, 0, 1)));
       }
       if (k >= 1) { CAM.fase = 'hold'; CAM.holdHasta = t + CAM.holdMs; CAM.t0 = t; }
     } else if (CAM.fase === 'hold') {
@@ -1185,9 +1287,26 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
         CAM.z = CAM.tz * (1 + Math.sin(s * 1.11) * 0.004);
       }
       if (t >= CAM.holdHasta) {
+        /* v9.7: respiro antes de volver — la cámara sigue cerca un instante más,
+           el humo/FX termina de disiparse y la vuelta no arranca de golpe. */
+        CAM.fase = 'respiro';
+        CAM.t0 = t;
+        CAM.dur = CFG.respiroMs;
+        CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
+      }
+    } else if (CAM.fase === 'respiro') {
+      if (PREFIERE_MENOS) {
+        CAM.x = CAM.tx; CAM.y = CAM.ty; CAM.z = CAM.tz;
+      } else {
+        const s = (t - CAM.t0) * 0.0016;
+        CAM.x = clamp(CAM.tx + Math.sin(s) * 0.006, 0.02, 0.98);
+        CAM.y = clamp(CAM.ty + Math.cos(s * 0.83) * 0.004, 0.02, 0.98);
+        CAM.z = CAM.tz * (1 + Math.sin(s * 1.11) * 0.004);
+      }
+      if (t - CAM.t0 >= CAM.dur) {
         CAM.fase = 'vuelta';
         CAM.t0 = t;
-        CAM.dur = 900;
+        CAM.dur = CFG.vueltaMs;
         CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
         const d = PREFIERE_MENOS ? { x: 0, y: 0 } : deriva(t);
         CAM.vueltaA = {
@@ -1846,7 +1965,11 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   function esChat(e) {
     const t = String(e.tipo || '');
     const a = String(e.agente || '').toLowerCase();
-    return (t === 'chat' || t === 'emoji') && (a === 'rojo' || a === 'azul');
+    /* v9.7: los emojis NO van al chat (el dueño: "los emojis no deben ir en el
+       chat, solo visual en la pantalla, asi el chat se puede leer normalmente").
+       El emoji se sigue pintando en el mapa: procesarEfecto() se llama para
+       TODOS los eventos, no solo para los que pasan este filtro. */
+    return t === 'chat' && (a === 'rojo' || a === 'azul');
   }
 
   /* Nueva partida: el feed vuelve a empezar su numeración (seq baja).
@@ -2023,16 +2146,17 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     };
   }
 
-  /* Punto en % de la VENTANA capturada -> % del MAPA (espacio de FX). */
+  /* Punto en % de la VENTANA capturada -> % del MAPA (espacio de FX).
+     aPantalla() devuelve % del canvas del mapa (#frame), que ocupa #escenario
+     ENTERO (CSS: inset 0 / 100 %). O sea: ya son % del mapa, y aMapaPct() es la
+     identidad (solo acota). v9.7: antes se re-escalaba con innerWidth/innerHeight
+     dando por hecho que #escenario == viewport; en escritorio coincide, pero en
+     móvil #escenario es la franja del mapa bajo la cabecera (46 vh) -> el FX caía
+     ~1,6 alturas de mapa más abajo (medido: 161 px a 390x844 con la bomba
+     centrada). Ver reports\qa\camara\. */
   function aMapaPct(xPctVentana, yPctVentana) {
     const p = aPantalla(xPctVentana, yPctVentana);   /* ya lleva cámara + RECORTE */
-    const r = mapaRect();
-    const vw = Math.max(1, window.innerWidth || 1440);
-    const vh = Math.max(1, window.innerHeight || 900);
-    return {
-      x: clamp(((p.x / 100 * vw) - r.left) / Math.max(1, r.width) * 100, -25, 125),
-      y: clamp(((p.y / 100 * vh) - r.top) / Math.max(1, r.height) * 100, -25, 125)
-    };
+    return { x: clamp(p.x, -25, 125), y: clamp(p.y, -25, 125) };
   }
 
   /* Recorrido de cada animación, en múltiplos de su propio tamaño (ver los
@@ -2163,6 +2287,18 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     const tipo = String(e.tipo || '');
     const ag = String(e.agente || '').toLowerCase();
     const lado = ag === 'azul' ? 'azul' : 'rojo';
+    /* v9.7: PRE-FOCO — el motor avisa del punto ANTES de lanzar la bomba (evento de
+       feed tipo 'camara'). Así la cámara ya está llegando cuando cae el fogonazo:
+       "acercar la cámara, ver la bomba con el FX" (lo que pidió el dueño). No pinta
+       nada, no sacude y no pasa por el chat ni por el ticker. */
+    if (tipo === 'camara') {
+      const px = Number(e.x), py = Number(e.y);
+      if (isFinite(px) && isFinite(py) && px > 0 && py > 0) {
+        ultimoPuntoVentana = { x: px, y: py };
+        foco(px, py, Number(e.zoom) || 1.5, Number(e.ms) || 0, e.forzar === true);
+      }
+      return;
+    }
     if (tipo === 'bomba') {
       const cam = e.camara;
       const hayCam = cam && Number(cam.x) > 0 && Number(cam.y) > 0;
@@ -2438,6 +2574,25 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     window.__WB_DEBUG__ = function () {
       return {
         cam: { x: CAM.x, y: CAM.y, z: CAM.z, cx: CAM.cx, cy: CAM.cy, vx: CAM.vx, vy: CAM.vy, fase: CAM.fase },
+        /* v9.7: geometría del plano (QA de "no llega a los bordes") */
+        geo: (function () {
+          const k = ventanaK(), m = mapaRecorte(), r = mapaRect();
+          return {
+            wx: k.wx, wy: k.wy, zMax: zMaxCamara(), zMapa: zoomParaMapa(),
+            mapa: m, esc: { left: r.left, top: r.top, w: r.width, h: r.height },
+            vw: window.innerWidth || 0, vh: window.innerHeight || 0, movil: ES_MOVIL
+          };
+        })(),
+        /* último foco en % del escenario y en px de viewport (lo que ve el espectador) */
+        focoPantalla: (function () {
+          const rx = RECORTE.x1 - RECORTE.x0, ry = RECORTE.y1 - RECORTE.y0;
+          const p = aPantalla((ultimoFoco.x * rx + RECORTE.x0) * 100, (ultimoFoco.y * ry + RECORTE.y0) * 100);
+          const r = mapaRect();
+          return {
+            pct: p,
+            px: { x: Math.round(r.left + p.x / 100 * r.width), y: Math.round(r.top + p.y / 100 * r.height) }
+          };
+        })(),
         punto: ultimoPuntoVentana ? { x: ultimoPuntoVentana.x, y: ultimoPuntoVentana.y } : null,
         foco: { x: ultimoFoco.x, y: ultimoFoco.y, t: Math.round(ultimoFocoT) },
         etiq: ETIQ_PINTADAS.map(function (e) {

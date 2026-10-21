@@ -1,5 +1,5 @@
 /*!
- * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v4.0.0)
+ * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v4.1.0)
  * ============================================================================
  * ÚNICA capa de efectos sobre el mapa. Sin dependencias, sin módulos ES, sin
  * CDN, sin build: funciona con <script src="viewer-fx.js"> tanto por HTTP como
@@ -7,7 +7,7 @@
  *
  * API (contrato SHOW-V4 §4; v4 añade emojis propios, anti-solape y efectos):
  * ----------------------------------------------------------------------------
- *   ViewerFX.version;                                   // '4.0.0'
+ *   ViewerFX.version;                                   // '4.1.0'
  *   ViewerFX.apiVersion;                                // 4
  *   ViewerFX.init({ map: Element, motion: 'full'|'lite', maxEffects: 24 });
  *
@@ -51,13 +51,22 @@
  *   ViewerFX.emojiInfo(nombre);   // -> { name, label, svg } | null
  *   ViewerFX.emojiSVG(nombre);    // -> string SVG | null
  *   ViewerFX.legacy(true|false);  // QA: true = comportamiento v3 (sin anti-solape)
- *   ViewerFX.stageState();        // -> { activos, cola, cajas, solapes }
+ *   ViewerFX.stageState();        // -> { activos, cola, cajas, solapes, vivas, spam }
+ *   ViewerFX.antiSpam(true|false);// v9.7: enciende/apaga el anti-spam
  *
  * Compatibilidad TOTAL con la API v3, v2 y v1 (alias a lo nuevo):
  *   spawnImpact(x,y,power,opts), spawnDamage(n,x,y,side,opts), flyEmoji(emoji,opts),
  *   flash, vignette, shake, spawnReaction, tremblePanel, focus, setMap, getMapEl,
- *   setMotion. Las firmas v1/v2/v3 no cambian; `version` pasa a '4.0.0'
+ *   setMotion. Las firmas v1/v2/v3 no cambian; `version` pasa a '4.1.0'
  *   (apiVersion 4) y se exponen esV2/esV3/esV4 por si algún consumidor mira la versión.
+ *
+ * v9.7 (solapes reales + anti-spam):
+ *   - Registro de cajas VIVAS medidas en px reales; los grandes nuevos buscan
+ *     hueco contra todas ellas (incluido el emoji que se está retirando) y los
+ *     pequeños se apartan de todas. A los 260 ms se re-mide y se recoloca si
+ *     la burbuja real pisa algo.
+ *   - Anti-spam: por bando y ventana de 7 s, máx 3 grandes y nunca el mismo
+ *     emoji dos veces (😂 y 🤣 cuentan como `risa`).
  *
  * Reglas que cumple este fichero:
  *   - Solo transform/opacity en animaciones CSS (más hue-rotate del arcoíris,
@@ -74,7 +83,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '4.0.0';
+  var VERSION = '4.1.0';
   if (global.ViewerFX && global.ViewerFX.__vfx === VERSION) return;
 
   var doc = global.document;
@@ -364,9 +373,9 @@
 
       /* ---- keyframes ---- */
       '@keyframes vfx2-in{0%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)}',
-      '20%{opacity:1;transform:translate(calc(var(--dx,0px) * .1),calc(var(--dy,0px) * .1)) scale(1.1) rotate(calc(var(--r0,0deg) * .5))}',
+      '20%{opacity:1;transform:translate(calc(var(--dx,0px) * .1),calc(var(--dy,0px) * .1)) scale(1.06) rotate(calc(var(--r0,0deg) * .5))}',
       '46%{opacity:1;transform:translate(0,0) scale(.975) rotate(0deg)}',
-      '72%{opacity:1;transform:translate(0,0) scale(1.02) rotate(0deg)}',
+      '72%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)}',
       '100%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)}}',
       '@keyframes vfx2-out{0%{opacity:1;transform:scale(1) translateY(0)}100%{opacity:0;transform:scale(.72) translateY(-18px)}}',
       '@keyframes vfx2-textin{0%{opacity:1;transform:translateY(0) scale(.94)}100%{opacity:1;transform:translateY(0) scale(1)}}',
@@ -390,17 +399,17 @@
       '75%{transform:translate(7px,16px) rotate(3.5deg) scale(1.01,.98)}}',
       '@keyframes vfx2-burla{0%,100%{transform:translate(0,0) scale(1,1) rotate(-5deg)}',
       '12%{transform:translate(0,-36px) scale(.9,1.12) rotate(-12deg)}',
-      '24%{transform:translate(0,0) scale(1.22,.78) rotate(-2deg)}',
+      '24%{transform:translate(0,0) scale(1.07,.86) rotate(-2deg)}',
       '36%{transform:translate(0,-12px) scale(.96,1.05) rotate(4deg)}',
-      '48%{transform:translate(0,0) scale(1.08,.94) rotate(10deg)}',
+      '48%{transform:translate(0,0) scale(1.04,.94) rotate(10deg)}',
       '60%{transform:translate(0,-42px) scale(.92,1.1) rotate(16deg)}',
-      '72%{transform:translate(0,0) scale(1.18,.82) rotate(6deg)}',
+      '72%{transform:translate(0,0) scale(1.06,.84) rotate(6deg)}',
       '86%{transform:translate(0,-6px) scale(1,1) rotate(-1deg)}}',
       '@keyframes vfx2-euforia{0%,100%{transform:translate(0,0) scale(1,1) rotate(0)}',
-      '10%{transform:translate(0,-18px) scale(1.06,.94) rotate(-2deg)}',
+      '10%{transform:translate(0,-18px) scale(1.04,.94) rotate(-2deg)}',
       '35%{transform:translate(0,-88px) scale(.97,1.04) rotate(-4deg)}',
       '50%{transform:translate(0,-98px) scale(1,1) rotate(0)}',
-      '68%{transform:translate(0,-10px) scale(1.1,.9) rotate(2deg)}',
+      '68%{transform:translate(0,-10px) scale(1.05,.9) rotate(2deg)}',
       '82%{transform:translate(0,0) scale(.94,1.08) rotate(0)}',
       '92%{transform:translate(0,-28px) scale(1.02,.98) rotate(-1deg)}}',
       '@keyframes vfx2-rainbowglow{0%{filter:blur(26px) hue-rotate(0deg)}',
@@ -1419,6 +1428,144 @@
   var CAMBIO_MS = 1500;        // antigüedad mínima del activo para rotar
   var MARGEN = 10;             // px de aire entre cajas
 
+  /* ==========================================================================
+   * v9.7: registro de cajas VIVAS medidas en px reales.
+   * El anti-solape v4 comparaba solo las dos cajas "activas" y con tamaños
+   * estimados. Los solapes reales venían de (a) el emoji saliente, que sigue
+   * visible 360 ms aunque su caja ya se hubiera borrado, (b) la burbuja real,
+   * más ancha que la estimada, y (c) los pequeños (daño, rótulo, reacción),
+   * que se colocaban antes de que llegara el grande. Ahora todo lo que se
+   * pinta se apunta aquí con su rectángulo medido y todo lo nuevo lo consulta.
+   * ======================================================================== */
+  var VIVAS = [];              // {el,x,y,w,h,t0,exp,kind,side}
+  var VIVA_MS = 5200;          // vida máxima de una caja apuntada
+  var GAP_GRANDE = 12;         // aire mínimo entre emojis grandes
+  var GAP_PEQUENO = 6;         // aire mínimo entre un pequeño y lo demás
+  var REACOMODO_MS = 260;      // re-medición del grande tras pintarlo
+
+  function limpiarVivas() {
+    var t = nowMs();
+    for (var i = VIVAS.length - 1; i >= 0; i--) {
+      var v = VIVAS[i];
+      if (!v.el || !v.el.parentNode || v.exp < t) VIVAS.splice(i, 1);
+    }
+  }
+
+  /* Apunta una pieza ya pintada. `box` va en px relativos al escenario. */
+  function registrarViva(el, box, ttl, kind, side) {
+    if (!el || !box) return null;
+    limpiarVivas();
+    var v = {
+      el: el, x: box.x, y: box.y, w: Math.max(8, box.w), h: Math.max(8, box.h),
+      t0: nowMs(), exp: nowMs() + clamp(num(ttl, VIVA_MS), 200, 15000),
+      kind: kind || 'grande', side: side || ''
+    };
+    VIVAS.push(v);
+    if (VIVAS.length > 48) VIVAS.shift();
+    return v;
+  }
+
+  function cajaVivaDe(el) {
+    for (var i = 0; i < VIVAS.length; i++) if (VIVAS[i].el === el) return VIVAS[i];
+    return null;
+  }
+
+  /* v9.7: acorta la vida de una caja (p. ej. el emoji que se está retirando:
+     deja de estorbar en cuanto desaparece de verdad, no cuando tocaba). */
+  function acortarViva(el, ttl) {
+    var v = cajaVivaDe(el);
+    if (!v) return;
+    v.exp = Math.min(v.exp, nowMs() + clamp(num(ttl, 400), 100, 6000));
+  }
+
+  /* Primera caja viva que choca con `box` (o null). */
+  function chocaViva(box, gap, exceptoEl) {
+    limpiarVivas();
+    var g = gap != null ? gap : GAP_GRANDE;
+    for (var i = 0; i < VIVAS.length; i++) {
+      var v = VIVAS[i];
+      if (exceptoEl && v.el === exceptoEl) continue;
+      if (overlapBox(box, v, g)) return v;
+    }
+    return null;
+  }
+
+  /* v9.7: ¿queda algún grande VIVO de este bando? Incluye el que se está
+     retirando (sigue en VIVAS ~400 ms). Se usa para no lanzar el vuelo de
+     entrada de 60vw encima del emoji que se está relevando. */
+  function hayGrandeVivo(side) {
+    limpiarVivas();
+    for (var i = 0; i < VIVAS.length; i++) {
+      var v = VIVAS[i];
+      if (v.kind === 'grande' && v.side === side) return true;
+    }
+    return false;
+  }
+
+  /* Apunta una pieza pequeña con su rect REAL ya pintado. */
+  function marcarPequeno(el, kind, ttl) {
+    if (!el || !stage || LEGACY) return null;
+    try {
+      var sr = stage.getBoundingClientRect();
+      var r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) return null;
+      return registrarViva(el, {
+        x: r.left - sr.left + r.width / 2,
+        y: r.top - sr.top + r.height / 2,
+        w: r.width, h: r.height
+      }, ttl, kind || 'pequeno', '');
+    } catch (e) { return null; }
+  }
+
+  /* -------------------------------------------------------------------------
+   * v9.7: anti-spam de emojis repetidos
+   * "Hacer algo más bonito no es spamearlo 3 veces" (el dueño).
+   * Regla: por bando y ventana de SPAM_MS se admite un máximo de MAX_GRANDES
+   * emojis grandes y NUNCA dos veces el mismo (por nombre resuelto, así 😂 y 🤣
+   * cuentan como `risa`). El duplicado no se pinta, pero no se pierde nada
+   * dramático: chat, rótulos, daño, sacudida y sonido siguen su curso.
+   * ------------------------------------------------------------------------- */
+  var SPAM_MS = 7000;
+  var MAX_GRANDES = 3;
+  var antiSpamOn = true;
+  var historial = { rojo: [], azul: [] };
+  var spamStats = {
+    rojo: { descartes: 0, motivos: {} },
+    azul: { descartes: 0, motivos: {} }
+  };
+
+  function spamPodar(side, t) {
+    var h = historial[side];
+    while (h.length && t - h[0].t > SPAM_MS) h.shift();
+  }
+
+  /* Devuelve '' si se puede pintar, o el motivo del descarte. */
+  function spamRevisar(side, nombre, t) {
+    spamPodar(side, t);
+    var h = historial[side];
+    for (var i = 0; i < h.length; i++) {
+      if (h[i].name === nombre) return 'repetido';
+    }
+    if (h.length >= MAX_GRANDES) return 'rafaga';
+    return '';
+  }
+
+  function spamAnotar(side, nombre, t) {
+    historial[side].push({ name: nombre, t: t });
+    spamPodar(side, t);
+  }
+
+  function spamDescartar(side, motivo) {
+    var s = spamStats[side];
+    s.descartes++;
+    s.motivos[motivo] = (s.motivos[motivo] || 0) + 1;
+  }
+
+  function spamReset() {
+    historial.rojo.length = 0;
+    historial.azul.length = 0;
+  }
+
   function nowMs() {
     try { return (global.performance && global.performance.now) ? global.performance.now() : Date.now(); }
     catch (e) { return Date.now(); }
@@ -1453,72 +1600,104 @@
     return { x: sp.x, y: sp.y, w: w, h: h };
   }
 
-  function overlapsOther(box, side) {
-    var other = side === 'rojo' ? 'azul' : 'rojo';
-    var b = activeBig[other];
-    if (!b || !b.el || !b.el.parentNode) return false;
-    return overlapBox(box, b, MARGEN);
+  /* ¿Choca `box` con alguna pieza viva? (v9.7: todas, no solo el otro bando) */
+  function overlapsOther(box, side, exceptoEl) {
+    return !!chocaViva(box, MARGEN, exceptoEl);
   }
 
-  /* Busca hueco para el grande del bando `side`. Devuelve {x,y,ok}. */
-  function freeSpot(xPct, yPct, size, bubbleMax, hasText, side, lim) {
+  /* Busca hueco para el grande del bando `side`. Devuelve {x,y,ok}.
+     v9.7: mira TODAS las cajas vivas (el otro bando, el propio emoji que se
+     está retirando y los pequeños ya pintados), no solo la del otro bando. */
+  function freeSpot(xPct, yPct, size, bubbleMax, hasText, side, lim, exceptoEl) {
     var dir = side === 'rojo' ? -1 : 1;
     var cands = [
       [0, 0], [dir * 16, 0], [dir * 16, -13], [dir * 16, 13],
       [dir * 30, 0], [dir * 30, -13], [dir * 30, 13],
       [dir * 10, -22], [dir * 10, 22], [dir * 42, 0],
-      [0, -26], [0, 26], [dir * 22, -26], [dir * 22, 26]
+      [0, -26], [0, 26], [dir * 22, -26], [dir * 22, 26],
+      [dir * 48, -13], [dir * 48, 13], [dir * 56, 0],
+      [0, -34], [0, 34], [dir * 20, -34], [dir * 20, 34],
+      [dir * 38, -26], [dir * 38, 26], [dir * 62, 0]
     ];
+    var mejor = null, mejorArea = Infinity;
     for (var i = 0; i < cands.length; i++) {
       var c = clampPct(xPct + cands[i][0], yPct + cands[i][1], lim);
       var box = bigBox(c.x, c.y, size, bubbleMax, hasText);
-      if (!overlapsOther(box, side)) return { x: c.x, y: c.y, ok: true };
+      if (!chocaViva(box, GAP_GRANDE, exceptoEl)) return { x: c.x, y: c.y, ok: true };
+      /* v9.7: si ningún candidato está libre, se guarda el que MENOS pisa.
+         Antes se volvía a `base` (apilado garantizado); ahora es best-effort. */
+      var area = areaSolape(box, exceptoEl);
+      if (area < mejorArea) { mejorArea = area; mejor = c; }
     }
-    return { x: xPct, y: yPct, ok: false };
+    return { x: mejor ? mejor.x : xPct, y: mejor ? mejor.y : yPct, ok: false };
   }
 
-  /* Aparta un efecto pequeño de la caja de cualquier emoji grande.
-     Devuelve el punto (en %) ya libre, o el mismo si no hacía falta. */
+  /* v9.7: carriles reservados por bando. Si no hay hueco natural, el grande se
+     va a su extremo (rojo a la izquierda, azul a la derecha), que está siempre
+     lejos del otro bando. Devuelve {x,y,ok:true} o null. */
+  function huecoLane(side, size, bubbleMax, hasText, lim, exceptoEl) {
+    var xL = side === 'azul' ? 84 : 16;
+    var cands = [
+      [xL, 50], [xL, 26], [xL, 74], [xL, 38], [xL, 62],
+      [xL, 14], [xL, 86], [side === 'azul' ? 92 : 8, 50]
+    ];
+    for (var i = 0; i < cands.length; i++) {
+      var c = clampPct(cands[i][0], cands[i][1], lim);
+      var box = bigBox(c.x, c.y, size, bubbleMax, hasText);
+      if (!chocaViva(box, GAP_GRANDE, exceptoEl)) return { x: c.x, y: c.y, ok: true };
+    }
+    return null;
+  }
+
+  /* Área (px²) que `box` pisa a las cajas vivas, descontando `exceptoEl`. */
+  function areaSolape(box, exceptoEl) {
+    limpiarVivas();
+    var total = 0;
+    for (var i = 0; i < VIVAS.length; i++) {
+      var v = VIVAS[i];
+      if (exceptoEl && v.el === exceptoEl) continue;
+      var ix = Math.min(box.x + box.w / 2, v.x + v.w / 2) - Math.max(box.x - box.w / 2, v.x - v.w / 2);
+      var iy = Math.min(box.y + box.h / 2, v.y + v.h / 2) - Math.max(box.y - box.h / 2, v.y - v.h / 2);
+      if (ix > 0 && iy > 0) total += ix * iy;
+    }
+    return total;
+  }
+
+  /* Aparta un efecto pequeño de CUALQUIER caja viva (grande o pequeño),
+     buscando en anillos concéntricos. Devuelve el punto (%) ya libre. */
   function avoidBigs(xPct, yPct, w, h, gap) {
     if (!stage || LEGACY) return { x: xPct, y: yPct, moved: false };
     var p = punto(xPct, yPct);
     var sp = stagePoint(p);
-    var box = { x: sp.x, y: sp.y, w: Math.max(24, w), h: Math.max(24, h) };
-    var g = gap != null ? gap : 8;
-    var moved = false;
-    var sides = ['rojo', 'azul'];
-    for (var k = 0; k < 4; k++) {
-      var hit = null;
-      for (var i = 0; i < sides.length; i++) {
-        var b = activeBig[sides[i]];
-        if (!b || !b.el || !b.el.parentNode) continue;
-        if (overlapBox(box, b, g)) { hit = b; break; }
+    var bw = Math.max(24, w), bh = Math.max(24, h);
+    var g = gap != null ? gap : GAP_PEQUENO;
+    var box = { x: sp.x, y: sp.y, w: bw, h: bh };
+    if (!chocaViva(box, g, null)) return { x: xPct, y: yPct, moved: false };
+    var maxX = Math.max(bw / 2 + 2, VIEW.w - bw / 2 - 2);
+    var maxY = Math.max(bh / 2 + 2, VIEW.h - bh / 2 - 2);
+    var A = [0, 0.707, 1, 0.707, 0, -0.707, -1, -0.707];
+    var B = [-1, -0.707, 0, 0.707, 1, 0.707, 0, -0.707];
+    for (var ring = 1; ring <= 14; ring++) {
+      var rad = ring * 26;
+      for (var k = 0; k < 8; k++) {
+        var nx = clamp(sp.x + A[k] * rad, bw / 2 + 2, maxX);
+        var ny = clamp(sp.y + B[k] * rad, bh / 2 + 2, maxY);
+        var cand = { x: nx, y: ny, w: bw, h: bh };
+        if (!chocaViva(cand, g, null)) {
+          var sr, r;
+          try {
+            sr = stage.getBoundingClientRect();
+            r = mapRect();
+          } catch (e) { return { x: xPct, y: yPct, moved: false }; }
+          return {
+            x: ((sr.left + nx - r.left) / r.width) * 100,
+            y: ((sr.top + ny - r.top) / r.height) * 100,
+            moved: true
+          };
+        }
       }
-      if (!hit) break;
-      var needX = (hit.w + box.w) / 2 + g + 2 - Math.abs(box.x - hit.x);
-      var dir = box.x <= hit.x ? -1 : 1;
-      if (box.x + dir * needX - box.w / 2 >= 2 &&
-        box.x + dir * needX + box.w / 2 <= VIEW.w - 2) {
-        box.x += dir * needX;
-      } else {
-        var needY = (hit.h + box.h) / 2 + g + 2 - Math.abs(box.y - hit.y);
-        box.y += (box.y <= hit.y ? -1 : 1) * needY;
-      }
-      moved = true;
     }
-    box.x = clamp(box.x, box.w / 2 + 2, Math.max(box.w / 2 + 2, VIEW.w - box.w / 2 - 2));
-    box.y = clamp(box.y, box.h / 2 + 2, Math.max(box.h / 2 + 2, VIEW.h - box.h / 2 - 2));
-    var sr, r;
-    try {
-      sr = stage.getBoundingClientRect();
-      r = mapRect();
-    } catch (e) { return { x: xPct, y: yPct, moved: false }; }
-    var vx = sr.left + box.x, vy = sr.top + box.y;
-    return {
-      x: ((vx - r.left) / r.width) * 100,
-      y: ((vy - r.top) / r.height) * 100,
-      moved: moved
-    };
+    return { x: xPct, y: yPct, moved: false };
   }
 
   /* --- cola FIFO por bando --- */
@@ -1534,6 +1713,7 @@
     try { if (el.__stop) { el.__stop(); el.__stop = null; } } catch (e) { /* nada */ }
     try { el.classList.add('vfx2-out'); } catch (e) { /* nada */ }
     soltar(side, el);
+    acortarViva(el, 400);        // el fantasma deja de reservar sitio en ~400 ms
     later(function () { removeEl(el); }, 360);
   }
 
@@ -1591,7 +1771,25 @@
         size: Math.round((P[0].size || 0) * 10) / 10, color: P[0].color || null,
         life: Math.round(P[0].life || 0), ttl: P[0].ttl || 0,
         alpha: P[0].alpha, blend: P[0].blend || null
-      } : null
+      } : null,
+      /* v9.7: registro de cajas vivas y anti-spam (para el test de solapes) */
+      vivas: (function () {
+        limpiarVivas();
+        var arr = [];
+        for (var k = 0; k < VIVAS.length; k++) {
+          arr.push({
+            kind: VIVAS[k].kind, side: VIVAS[k].side,
+            x: Math.round(VIVAS[k].x), y: Math.round(VIVAS[k].y),
+            w: Math.round(VIVAS[k].w), h: Math.round(VIVAS[k].h)
+          });
+        }
+        return arr;
+      })(),
+      spam: {
+        on: antiSpamOn, ventanaMs: SPAM_MS, maxGrandes: MAX_GRANDES,
+        rojo: { descartes: spamStats.rojo.descartes, motivos: spamStats.rojo.motivos, historial: historial.rojo.length },
+        azul: { descartes: spamStats.azul.descartes, motivos: spamStats.azul.motivos, historial: historial.azul.length }
+      }
     };
     var sides = ['rojo', 'azul'];
     for (var i = 0; i < sides.length; i++) {
@@ -1803,6 +2001,23 @@
     var size = clamp(num(o.size, defaultSize()), 140, 560);
     var prio = clamp(num(o.prio, (emotion === 'euforia' ? 2 : 1)), 0, 3);
 
+    /* v9.7: anti-spam. "Hacer algo más bonito no es spamearlo 3 veces".
+       Si en el MISMO bando ya salió este emoji (por nombre resuelto: 😂 y 🤣
+       son los dos `risa`) hace menos de SPAM_MS, o si en la ventana ya van
+       MAX_GRANDES grandes, no se repinta: se descarta el eco y se anota.
+       El feed dramático no se toca: chat, rótulos, daño y sacudida siguen. */
+    var emoName = normEmoji(emoji != null && String(emoji).trim() ? emoji : meta.emoji) ||
+      String(emoji != null && String(emoji).trim() ? emoji : meta.emoji || '');
+    var tNow = nowMs();
+    if (!LEGACY && !o.force && antiSpamOn) {
+      var motivo = spamRevisar(side, emoName, tNow);
+      if (motivo) {
+        spamDescartar(side, motivo);
+        return null;
+      }
+      spamAnotar(side, emoName, tNow);
+    }
+
     /* v4: anti-solape. Si el bando ya tiene un grande reciente, este emoji
        espera en cola (con caducidad) en vez de apilarse encima. */
     if (!LEGACY && !o.force && activeInv[side]) {
@@ -1857,8 +2072,10 @@
           }, 160 + tries * 170);
           return null;
         }
-        /* Sin hueco tras varios intentos: se coloca igual (mejor un solape leve que perder el emoji). */
-        spot = { x: base.x, y: base.y, ok: true };
+        /* v9.7: sin hueco tras varios intentos, se va a un carril reservado de su
+           bando antes que apilarlo sobre el otro (eso era el solape del dueño). */
+        var lane0 = huecoLane(side, size, bubbleMax, hasText, lim);
+        spot = lane0 || { x: base.x, y: base.y, ok: true };
       }
       var p = punto(spot.x, spot.y);
       var sp = stagePoint(p);
@@ -1872,8 +2089,14 @@
       /* borde de la burbuja = color del bando (rojo/azul), no el de la emoción */
       el.style.setProperty('--sc', side === 'azul' ? '#38bdf8' : '#ff4d4d');
 
-      /* v3: entrada volando desde un lado (overshoot + onda de aterrizaje). */
+      /* v3: entrada volando desde un lado (overshoot + onda de aterrizaje).
+         v9.7: el vuelo arranca a 60vw y barre el escenario entero. Si hay un
+         grande vivo del mismo bando (relevo/preempción) ese barrido pasa por
+         encima del que se está retirando: era el único solape grande-grande
+         que quedaba (medido con reports\qa\fx-solape.mjs). En ese relevo se
+         entra sin vuelo: el nuevo aparece ya colocado y el viejo se funde. */
       var from = (o.from === 'rojo' || o.from === 'azul') ? o.from : null;
+      if (from && hayGrandeVivo(side)) from = null;
       if (from) el.classList.add('vfx2-inv-from-' + from);
 
       var center = make('div', 'vfx2-inv-center');
@@ -1927,15 +2150,58 @@
       // Onda de aterrizaje si entra volando desde un lado.
       if (from) later(function () { landingWave(el, sp, size, meta.c); }, 620);
 
-      /* v4: caja real (ya pintada) para que los pequeños y el otro bando la esquiven. */
+      /* v4: caja real (ya pintada) para que los pequeños y el otro bando la esquiven.
+         v9.7: además se apunta en el registro de cajas VIVAS, que es lo que
+         consultan tanto los grandes nuevos como los pequeños, y que sigue
+         viendo el emoji mientras se está retirando (360 ms con .vfx2-out). */
       var bw = 0, bh = 0;
       try { bw = body.offsetWidth || 0; bh = body.offsetHeight || 0; } catch (e) { /* nada */ }
+      var bigW = Math.max(bw || size * 1.05, 180);
+      var bigH = Math.max(bh || size + 120, 150);
       activeBig[side] = {
         x: sp.x, y: sp.y,
-        w: Math.max(bw || size * 1.05, 180),
-        h: Math.max(bh || size + 120, 150),
+        w: bigW, h: bigH,
         el: el, t0: nowMs(), prio: prio
       };
+      var viva = registrarViva(el, { x: sp.x, y: sp.y, w: bigW, h: bigH }, dur + 400, 'grande', side);
+
+      /* v9.7: la burbuja real puede ser más ancha que la estimada. A los
+         REACOMODO_MS se vuelve a medir y, si aún pisa algo, se recoloca. */
+      var reacomodar = function () {
+        if (!el.parentNode || !viva) return;
+        var real;
+        try {
+          var sr = stage.getBoundingClientRect();
+          var r = el.getBoundingClientRect();
+          real = {
+            x: r.left - sr.left + r.width / 2,
+            y: r.top - sr.top + r.height / 2,
+            w: r.width, h: r.height
+          };
+        } catch (e) { return; }
+        if (!real || real.w < 2) return;
+        viva.x = real.x; viva.y = real.y; viva.w = real.w; viva.h = real.h;
+        if (!chocaViva(real, GAP_GRANDE, el)) return;
+        var again = freeSpot(base.x, base.y, Math.max(real.w, size),
+          Math.max(bubbleMax, real.w), hasText, side, lim, el);
+        if (!again.ok) {
+          var lane = huecoLane(side, Math.max(real.w, size), Math.max(bubbleMax, real.w), hasText, lim, el);
+          if (lane) again = lane;
+        }
+        /* v9.7: aunque no haya hueco perfecto se aplica el candidato que menos
+           pisa (freeSpot ya devuelve el de mínima área de solape). */
+        if (again.x == null) return;
+        var np = stagePoint(punto(again.x, again.y));
+        el.style.left = np.x + 'px';
+        el.style.top = np.y + 'px';
+        viva.x = np.x; viva.y = np.y;
+        activeBig[side] = {
+          x: np.x, y: np.y, w: real.w, h: real.h, el: el, t0: nowMs(), prio: prio
+        };
+      };
+      /* v9.7: dos pasadas: a los 260 ms (burbuja ya pintada) y a los 960 ms
+         (cuando la bomba ya soltó su rótulo y su número de daño). */
+      if (!LEGACY) { later(reacomodar, REACOMODO_MS); later(reacomodar, 960); }
 
       later(function () { el.classList.add('vfx2-out'); }, Math.max(160, dur - 360));
       later(function () {
@@ -2002,6 +2268,7 @@
       boom.style.top = (bsp.y - sp.y) + 'px';
     }
     root.appendChild(boom);
+    marcarPequeno(boom, 'boom', 1650);
 
     burstSparks(sp.x, sp.y, color, Math.round(26 + power * 44), power);
     if (o.debris !== false) {
@@ -2045,6 +2312,9 @@
     el.style.setProperty('--arc', ((azul ? -1 : 1) * rnd(14, 34)).toFixed(0) + 'px');
     dom.appendChild(el);
     track(el);
+    /* v9.7: el número queda registrado como caja viva para que un emoji grande
+       posterior no se le eche encima. */
+    marcarPequeno(el, 'dmg', 2050);
 
     burstSparks(sp.x, sp.y, azul ? '#7dd3fc' : '#fca5a5', Math.round(18 + mag * 14), 0.55);
     stars(sp.x, sp.y, 7, azul ? '#bae6fd' : '#fecaca');
@@ -2124,6 +2394,9 @@
         }
       }
     } catch (e) { /* si no se puede medir, se queda como estaba */ }
+
+    /* v9.7: rótulo registrado como caja viva (ya medido y recolocado arriba). */
+    marcarPequeno(el, 'label', ms + 120);
 
     later(function () { removeEl(el); }, ms + 120);
     return el;
@@ -2452,6 +2725,7 @@
     el.style.fontSize = sz + 'px';
     dom.appendChild(el);
     track(el);
+    marcarPequeno(el, 'react', dur);
     later(function () { removeEl(el); }, dur);
     return el;
   }
@@ -2502,6 +2776,7 @@
     el.style.fontSize = sz + 'px';
     dom.appendChild(el);
     track(el);
+    marcarPequeno(el, 'react', 1400);
     later(function () { removeEl(el); }, 1400);
     return el;
   }
@@ -2631,6 +2906,12 @@
     busy.azul = false;
     rotando.rojo = false;
     rotando.azul = false;
+    VIVAS.length = 0;
+    spamReset();
+    spamStats.rojo.descartes = 0;
+    spamStats.rojo.motivos = {};
+    spamStats.azul.descartes = 0;
+    spamStats.azul.motivos = {};
     if (ctx) {
       try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { /* nada */ }
     }
@@ -2726,6 +3007,13 @@
     emojiSVG: emojiSVG,
     legacy: legacy,
     stageState: stageState,
+    /* v9.7: enciende/apaga el anti-spam de emojis repetidos */
+    antiSpam: function (v) {
+      if (v === undefined) return antiSpamOn;
+      antiSpamOn = !!v;
+      if (!antiSpamOn) spamReset();
+      return antiSpamOn;
+    },
     shockwave: shockwave,
     quake: quake,
     ashfall: ashfall,

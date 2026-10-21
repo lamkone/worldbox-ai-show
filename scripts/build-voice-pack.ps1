@@ -31,12 +31,27 @@
 .PARAMETER Tipos
     Tipos de evento cuyas frases se sintetizan (por defecto 'chat').
 
+.PARAMETER MotorAzul
+    (v9.7) Motor con el que se sintetiza SOLO el AZUL en este pack: edge (defecto
+    del servidor) o chatterbox. No cambia el directo. El pack con Chatterbox
+    clonando a Ximena: -MotorAzul chatterbox -VozAzul es-ES-XimenaNeural.
+    Si se omite, se lee de $env:PACK_MOTOR_AZUL (asi publish-show.ps1 puede
+    regenerar el pack con Chatterbox sin editarse).
+
+.PARAMETER VozAzul
+    (v9.7) Voz del AZUL solo en este pack (id de edge, p.ej. es-ES-XimenaNeural).
+    Si se omite, la del servidor (es-MX-DaliaNeural), o $env:PACK_VOZ_AZUL.
+
 .PARAMETER Forzar
     Vuelve a sintetizar aunque el MP3 ya exista.
 
 .EXAMPLE
     pwsh -File scripts\build-voice-pack.ps1
     pwsh -File scripts\build-voice-pack.ps1 -Forzar -Tipos 'chat','titular'
+    pwsh -File scripts\build-voice-pack.ps1 -Forzar -MotorAzul chatterbox -VozAzul es-ES-XimenaNeural
+    # Con publish-show.ps1 (que llama sin flags), mismo efecto por entorno:
+    $env:PACK_MOTOR_AZUL='chatterbox'; $env:PACK_VOZ_AZUL='es-ES-XimenaNeural'
+    pwsh -File scripts\publish-show.ps1 -Mensaje 'show: ...' -Verificar
 #>
 [CmdletBinding()]
 param(
@@ -44,11 +59,27 @@ param(
     [string]$OutDir   = (Join-Path $PSScriptRoot '..\worldbox-ai-show\demo\voz'),
     [string]$Servicio = 'http://127.0.0.1:8771',
     [string[]]$Tipos   = @('chat'),
+    [string]$MotorAzul = '',
+    [string]$VozAzul   = '',
     [switch]$Forzar
 )
 
 $ErrorActionPreference = 'Stop'
 $Servicio = $Servicio.TrimEnd('/')
+
+# v9.7: override de motor/voz SOLO para este pack (el directo sigue en edge).
+# Si no llegan por parametro, se leen del entorno: asi publish-show.ps1 (que llama
+# sin flags) puede regenerar el pack con Chatterbox sin editarse.
+if (-not $MotorAzul -and $env:PACK_MOTOR_AZUL) { $MotorAzul = [string]$env:PACK_MOTOR_AZUL }
+if (-not $VozAzul   -and $env:PACK_VOZ_AZUL)   { $VozAzul   = [string]$env:PACK_VOZ_AZUL }
+$MotorAzul = ([string]$MotorAzul).Trim().ToLower()
+$VozAzul   = ([string]$VozAzul).Trim()
+if ($MotorAzul -and (@('kokoro', 'edge', 'chatterbox') -notcontains $MotorAzul)) {
+    throw "MotorAzul no valido: '$MotorAzul' (kokoro | edge | chatterbox)"
+}
+# Chatterbox tarda 8-15 s por linea y la primera paga la carga del modelo (~20-40 s):
+# el timeout de 40 s de una peticion normal se queda corto.
+$timeoutSeg = if ($MotorAzul -eq 'chatterbox') { 240 } else { 40 }
 
 function Escribir($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color }
 
@@ -82,6 +113,11 @@ try {
     Escribir ("Servicio de voz OK: " + (Prop $salud 'motor') + "  [" + $quien + "]  post=" + (Prop $salud 'postproceso')) 'Green'
     $emSrv = Prop $salud 'emociones' @()
     if ($emSrv) { Escribir ("  emociones: " + ($emSrv -join ', ')) 'Green' }
+    if ($MotorAzul -or $VozAzul) {
+        $txtMotor = if ($MotorAzul) { $MotorAzul } else { '(servidor)' }
+        $txtVoz   = if ($VozAzul) { $VozAzul } else { '(servidor)' }
+        Escribir ("  PACK override: motorAzul=" + $txtMotor + "  vozAzul=" + $txtVoz + "  (el directo no cambia)") 'Yellow'
+    }
 } catch {
     throw "El servicio de voz no responde en $Servicio. Arrancalo con: node scripts\tts-server.mjs --port 8771"
 }
@@ -91,12 +127,17 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $eventos = @($show.eventos | Where-Object { $Tipos -contains $_.tipo -and $_.texto })
 Escribir ("Frases a sintetizar: " + $eventos.Count + "  (tipos: " + ($Tipos -join ', ') + ")")
 
+# v9.7: motor/voz EFECTIVOS del AZUL en este pack (override o los del servidor).
+$motorAzulEf = if ($MotorAzul) { $MotorAzul } else { [string](Prop (Prop $salud 'motores' $null) 'azul') }
+$vozAzulEf   = if ($VozAzul) { $VozAzul } else { [string](Prop (Prop $salud 'perfiles' $null) 'azul') }
+
 $manifiesto = [ordered]@{
     version   = 3
     motor     = [string](Prop $salud 'motorVersion')
+    motorAzul = $motorAzulEf
     voces     = [ordered]@{
         rojo    = [string](Prop (Prop $salud 'perfiles' $null) 'rojo')
-        azul    = [string](Prop (Prop $salud 'perfiles' $null) 'azul')
+        azul    = $vozAzulEf
         sistema = [string](Prop (Prop $salud 'perfiles' $null) 'sistema')
     }
     generado  = (Get-Date).ToString('o')
@@ -109,6 +150,7 @@ $manifiesto = [ordered]@{
 # pack entero. Asi no hace falta acordarse de pasar -Forzar.
 $firmaNueva = 'motor=' + [string](Prop $salud 'motorVersion')
 $firmaNueva += '|' + ((@('rojo', 'azul', 'sistema') | ForEach-Object { "$_=" + $manifiesto.voces[$_] }) -join ';')
+$firmaNueva += '|motorAzul=' + $motorAzulEf
 $firmaNueva += '|emo=' + (@(Prop $salud 'emociones' @()) -join ',')
 $firmaNueva += '|post=' + [string](Prop $salud 'postproceso') + '|norm=' + [string](Prop $salud 'normalizacion')
 $manifiesto.firma = $firmaNueva
@@ -174,10 +216,13 @@ foreach ($ev in $eventos) {
         }
     }
 
-    $url = $Servicio + '/tts?v=' + $agente + '&t=' + [uri]::EscapeDataString($texto) + '&e=' + [uri]::EscapeDataString($emocion)
+    # v9.7: el AZUL del pack puede pedir otro motor/voz sin tocar el servidor.
+    $vParam = if ($agente -eq 'azul' -and $VozAzul) { $VozAzul } else { $agente }
+    $url = $Servicio + '/tts?v=' + [uri]::EscapeDataString($vParam) + '&t=' + [uri]::EscapeDataString($texto) + '&e=' + [uri]::EscapeDataString($emocion)
+    if ($MotorAzul -and $agente -eq 'azul') { $url += '&motor=' + [uri]::EscapeDataString($MotorAzul) }
     try {
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        Invoke-WebRequest -Uri $url -OutFile $ruta -TimeoutSec 40 -UseBasicParsing | Out-Null
+        Invoke-WebRequest -Uri $url -OutFile $ruta -TimeoutSec $timeoutSeg -UseBasicParsing | Out-Null
         $sw.Stop()
         $len = (Get-Item -LiteralPath $ruta).Length
         if ($len -lt 800) { throw "audio vacio ($len B)" }
@@ -187,6 +232,8 @@ foreach ($ev in $eventos) {
         Escribir ("  [{0}/{1}] seq={2,-4} {3,-6} {4,-11} {5,7:N0} B {6,5} ms  {7}" -f $i, $eventos.Count, $seq, $agente, $emocion, $len, $sw.ElapsedMilliseconds, $texto.Substring(0, [Math]::Min(48, $texto.Length))) 'DarkGray'
     } catch {
         $fallos++
+        # No dejar un MP3 a medias que pudiera colarse como valido en otra pasada.
+        if (Test-Path -LiteralPath $ruta) { Remove-Item -LiteralPath $ruta -Force -ErrorAction SilentlyContinue }
         Escribir ("  [{0}/{1}] seq={2} FALLO: {3}" -f $i, $eventos.Count, $seq, $_.Exception.Message) 'Red'
     }
 }

@@ -1,28 +1,42 @@
 /*!
- * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v3.0.0)
+ * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v4.0.0)
  * ============================================================================
  * ÚNICA capa de efectos sobre el mapa. Sin dependencias, sin módulos ES, sin
  * CDN, sin build: funciona con <script src="viewer-fx.js"> tanto por HTTP como
  * con file://. Inyecta sus estilos una sola vez (<style id="vfx2-css">).
  *
- * API (contrato SHOW-V4 §4):
+ * API (contrato SHOW-V4 §4; v4 añade emojis propios, anti-solape y efectos):
  * ----------------------------------------------------------------------------
- *   ViewerFX.version;                                   // '3.0.0'
- *   ViewerFX.apiVersion;                                // 3
+ *   ViewerFX.version;                                   // '4.0.0'
+ *   ViewerFX.apiVersion;                                // 4
  *   ViewerFX.init({ map: Element, motion: 'full'|'lite', maxEffects: 24 });
  *
  *   // Emoji invasor gigante, animación propia por emoción
- *   ViewerFX.invader(emoji, { side, emotion, size, duration, text, x, y, from });
- *       x,y  = % del escenario donde aparece (sin x/y: comportamiento v2 38/62 %)
- *       from = 'rojo'|'azul' -> entra volando desde ese lado (overshoot + onda)
- *       text = frase de la IA -> burbuja bajo el emoji (máx. 2 líneas / 190 chars)
- *       Cola: máximo 1 emoji activo por bando (el anterior se retira).
+ *   ViewerFX.invader(emoji, { side, emotion, size, duration, text, x, y, from, prio });
+ *       emoji = NOMBRE propio ('palomitas', 'corona', 'gg'...), alias ('popcorn'),
+ *               ':palomitas:' o cualquier Unicode de siempre (🍿 -> palomitas).
+ *       x,y   = % del escenario donde aparece (sin x/y: comportamiento v2 38/62 %)
+ *       from  = 'rojo'|'azul' -> entra volando desde ese lado (overshoot + onda)
+ *       text  = frase de la IA -> burbuja bajo el emoji (máx. 2 líneas / 190 chars)
+ *       prio  = 0..3 (por defecto 1; euforia 2) -> prioridad en la cola
+ *       Anti-solape: 1 grande por bando, hueco entre bandos, cola FIFO con
+ *       caducidad (~2,2 s). Si el bando está ocupado devuelve null y encola.
+ *
+ *   // Emoji pequeño en un punto (reacciones, coronas, iconos sueltos)
+ *   ViewerFX.emojiAt(nombre, xPct, yPct, { size, duration, side });  // -> Element
  *
  *   // Etiqueta grande de acción en % del mapa (¡BOMBA ATÓMICA!, ¡TROPAS!...)
  *   ViewerFX.label(texto, xPct, yPct, { color, size, ms, kick });  // -> Element
  *
  *   // Impacto en % del mapa (0..100): onda, escombros, chispas, destello
  *   ViewerFX.impact(xPct, yPct, { power, color, emoji, debris, shake });
+ *
+ *   // v4 — efectos nuevos (todos activables desde el feed)
+ *   ViewerFX.shockwave(xPct, yPct, { power, color });        // onda expansiva
+ *   ViewerFX.quake(intensity, { duration, x, y });           // grietas/terremoto
+ *   ViewerFX.ashfall({ duration, density, side });           // lluvia de ceniza
+ *   ViewerFX.cameraFlash({ color, opacity, duration });      // flash de cámara
+ *   ViewerFX.victory(side, { emoji, text, x, y });           // confeti+trofeo+flash
  *
  *   ViewerFX.damage(n, xPct, yPct, side);       // número flotante 90-110 px
  *   ViewerFX.sparks(xPct, yPct, { color, count });
@@ -32,11 +46,18 @@
  *   ViewerFX.confetti(side, { count });         // 'rojo'|'azul'|'mix'
  *   ViewerFX.clear();
  *
- * Compatibilidad TOTAL con la API v2 y v1 (alias a lo nuevo):
+ *   // Catálogo de emojis propios (para QA y para el feed)
+ *   ViewerFX.emojiNames();        // -> ['palomitas','risa',...]
+ *   ViewerFX.emojiInfo(nombre);   // -> { name, label, svg } | null
+ *   ViewerFX.emojiSVG(nombre);    // -> string SVG | null
+ *   ViewerFX.legacy(true|false);  // QA: true = comportamiento v3 (sin anti-solape)
+ *   ViewerFX.stageState();        // -> { activos, cola, cajas, solapes }
+ *
+ * Compatibilidad TOTAL con la API v3, v2 y v1 (alias a lo nuevo):
  *   spawnImpact(x,y,power,opts), spawnDamage(n,x,y,side,opts), flyEmoji(emoji,opts),
  *   flash, vignette, shake, spawnReaction, tremblePanel, focus, setMap, getMapEl,
- *   setMotion. Las firmas v2 no cambian; `version` pasa a '3.0.0' (apiVersion 3)
- *   y se exponen esV2/esV3 por si algún consumidor mira la versión.
+ *   setMotion. Las firmas v1/v2/v3 no cambian; `version` pasa a '4.0.0'
+ *   (apiVersion 4) y se exponen esV2/esV3/esV4 por si algún consumidor mira la versión.
  *
  * Reglas que cumple este fichero:
  *   - Solo transform/opacity en animaciones CSS (más hue-rotate del arcoíris,
@@ -53,7 +74,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '3.0.0';
+  var VERSION = '4.0.0';
   if (global.ViewerFX && global.ViewerFX.__vfx === VERSION) return;
 
   var doc = global.document;
@@ -136,6 +157,9 @@
   var MAXP = 720;
   var rafId = 0;
   var lastT = 0;
+  var watchId = 0;       // v4: vigilante de dibujo (si el rAF no corre)
+  var lastRafT = 0;
+  var drawCount = 0;     // QA: nº de veces que drawP() ha pintado
 
   var mq = null;
   try {
@@ -261,7 +285,8 @@
       '.vfx2-inv-burla .vfx2-inv-body{animation:vfx2-burla 1.12s cubic-bezier(.34,0,.4,1) infinite;transform-origin:50% 100%}',
       '.vfx2-inv-euforia .vfx2-inv-body{animation:vfx2-euforia 1.22s cubic-bezier(.4,0,.4,1) infinite;transform-origin:50% 100%}',
       '.vfx2-inv-euforia .vfx2-inv-glow{background:conic-gradient(from 0deg,#ff3b30,#ffd60a,#34d399,#38bdf8,#a78bfa,#ff3b30);filter:blur(26px);opacity:.55}',
-      '.vfx2-inv-euforia .vfx2-inv-emoji{animation:vfx2-rainbow 2.4s linear infinite}',
+      /* v4: el arcoíris va SOLO en el glow; el emoji personalizado conserva sus colores */
+      '.vfx2-inv-euforia .vfx2-inv-glow{animation:vfx2-rainbowglow 2.4s linear infinite}',
       '.vfx2-inv-panico .vfx2-inv-body{animation:vfx2-panico .42s steps(1,end) infinite}',
       '.vfx2-inv-panico .vfx2-inv-emoji{animation:vfx2-flicker .9s steps(1,end) infinite;',
       'text-shadow:-4px 0 rgba(255,0,80,.9),4px 0 rgba(0,240,255,.9)}',
@@ -378,8 +403,8 @@
       '68%{transform:translate(0,-10px) scale(1.1,.9) rotate(2deg)}',
       '82%{transform:translate(0,0) scale(.94,1.08) rotate(0)}',
       '92%{transform:translate(0,-28px) scale(1.02,.98) rotate(-1deg)}}',
-      '@keyframes vfx2-rainbow{0%{filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 30px var(--glow)) hue-rotate(0deg)}',
-      '100%{filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 30px var(--glow)) hue-rotate(360deg)}}',
+      '@keyframes vfx2-rainbowglow{0%{filter:blur(26px) hue-rotate(0deg)}',
+      '100%{filter:blur(26px) hue-rotate(360deg)}}',
       '@keyframes vfx2-panico{0%{transform:translate(0,0)}10%{transform:translate(-11px,4px)}',
       '20%{transform:translate(9px,-5px)}30%{transform:translate(-6px,-3px)}',
       '40%{transform:translate(12px,5px)}50%{transform:translate(-8px,2px)}',
@@ -429,7 +454,43 @@
       '72%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0deg)}',
       '100%{opacity:0;transform:translate(-50%,-50%) scale(1.06) translateY(-16px) rotate(0deg)}}',
       '@keyframes vfx2-desat{0%{opacity:0}10%{opacity:1}62%{opacity:.92}100%{opacity:0}}',
-      '@keyframes vfx2-rbsweep{0%{opacity:0;transform:translateY(-6%)}12%{opacity:.3}55%{opacity:.22}100%{opacity:0;transform:translateY(2%)}}'
+      '@keyframes vfx2-rbsweep{0%{opacity:0;transform:translateY(-6%)}12%{opacity:.3}55%{opacity:.22}100%{opacity:0;transform:translateY(2%)}}',
+      /* ---- v4: emojis propios (SVG inline) ---- */
+      '.vfx2-inv-emoji svg,.vfx2-echo svg,.vfx2-boom svg,.vfx2-react svg,.vfx2-fly svg{width:1em;height:1em;display:block;overflow:visible;pointer-events:none}',
+      '.vfx2-inv-emoji svg,.vfx2-boom svg,.vfx2-react svg,.vfx2-fly svg{filter:drop-shadow(0 8px 14px rgba(0,0,0,.42))}',
+      '.vfx2-inv-emoji svg *,.vfx2-boom svg *,.vfx2-react svg *{vector-effect:non-scaling-stroke}',
+      /* ---- v4: onda expansiva ---- */
+      '.vfx2-sw{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:5}',
+      '.vfx2-sw-ring{position:absolute;left:0;top:0;width:var(--s,240px);height:var(--s,240px);margin-left:calc(var(--s,240px) / -2);margin-top:calc(var(--s,240px) / -2);border-radius:50%;border:var(--bw,10px) solid var(--c,#ffd36b);box-shadow:0 0 46px var(--c,#ffd36b),inset 0 0 30px var(--c,#ffd36b);opacity:0;animation:vfx2-sw var(--d,1.1s) cubic-bezier(.15,.72,.2,1) forwards;animation-delay:var(--delay,0s)}',
+      '.vfx2-sw-ring.vfx2-sw-fill{background:radial-gradient(circle,var(--c,#ffd36b) 0%,transparent 64%);border:none;box-shadow:none;animation-name:vfx2-swfill}',
+      '@keyframes vfx2-sw{0%{opacity:.95;transform:scale(.12)}68%{opacity:.45}100%{opacity:0;transform:scale(1)}}',
+      '@keyframes vfx2-swfill{0%{opacity:.5;transform:scale(.2)}100%{opacity:0;transform:scale(1.18)}}',
+      /* ---- v4: grietas / terremoto ---- */
+      '.vfx2-quake{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:4;opacity:0;animation:vfx2-quakefade var(--d,2.4s) ease-out forwards}',
+      '.vfx2-quake svg{width:100%;height:100%;display:block}',
+      '.vfx2-quake path{fill:none;stroke:var(--c,#1a1208);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;opacity:.9;stroke-dasharray:var(--len,700);stroke-dashoffset:var(--len,700);animation:vfx2-crack var(--d,1.4s) ease-out forwards;animation-delay:var(--delay,0s)}',
+      '.vfx2-quake path.vfx2-crack-glow{stroke:rgba(255,190,80,.55);stroke-width:5.5}',
+      '@keyframes vfx2-crack{0%{stroke-dashoffset:var(--len,700);opacity:0}10%{opacity:1}70%{opacity:.95}100%{stroke-dashoffset:0;opacity:0}}',
+      '@keyframes vfx2-quakefade{0%{opacity:0}7%{opacity:1}72%{opacity:.92}100%{opacity:0}}',
+      /* ---- v4: lluvia de ceniza ---- */
+      '.vfx2-ash{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:4;opacity:0;background:radial-gradient(120% 92% at 50% 0%,rgba(96,96,104,.16) 0%,rgba(30,30,36,.50) 72%,rgba(12,12,16,.64) 100%);animation:vfx2-ash var(--d,5s) linear forwards}',
+      '@keyframes vfx2-ash{0%{opacity:0}10%{opacity:1}78%{opacity:.95}100%{opacity:0}}',
+      /* ---- v4: flash de cámara (obturador) ---- */
+      '.vfx2-cam{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:9;overflow:hidden}',
+      '.vfx2-cam-flash{position:absolute;left:0;top:0;width:100%;height:100%;background:var(--c,#ffffff);opacity:0;animation:vfx2-camflash var(--d,.62s) ease-out forwards}',
+      '.vfx2-cam-bar{position:absolute;left:0;width:100%;height:7%;background:#0b0d10;transform:scaleY(0);box-shadow:0 0 34px rgba(0,0,0,.65)}',
+      '.vfx2-cam-bar.vfx2-cam-top{top:0;transform-origin:top center}',
+      '.vfx2-cam-bar.vfx2-cam-bot{bottom:0;transform-origin:bottom center}',
+      '.vfx2-cam-bar.vfx2-cam-top{animation:vfx2-cambar-top var(--d,.62s) cubic-bezier(.2,.85,.2,1) forwards}',
+      '.vfx2-cam-bar.vfx2-cam-bot{animation:vfx2-cambar-bot var(--d,.62s) cubic-bezier(.2,.85,.2,1) forwards}',
+      '.vfx2-cam-iris{position:absolute;left:50%;top:50%;width:34vmin;height:34vmin;margin-left:-17vmin;margin-top:-17vmin;border-radius:50%;border:2px solid rgba(255,255,255,.75);box-shadow:0 0 60px rgba(255,255,255,.35),inset 0 0 40px rgba(255,255,255,.18);opacity:0;animation:vfx2-camiris var(--d,.62s) ease-out forwards}',
+      '@keyframes vfx2-camflash{0%{opacity:0}5%{opacity:var(--o,.85)}100%{opacity:0}}',
+      '@keyframes vfx2-cambar-top{0%{transform:scaleY(0)}12%{transform:scaleY(1)}66%{transform:scaleY(1)}100%{transform:scaleY(0)}}',
+      '@keyframes vfx2-cambar-bot{0%{transform:scaleY(0)}12%{transform:scaleY(1)}66%{transform:scaleY(1)}100%{transform:scaleY(0)}}',
+      '@keyframes vfx2-camiris{0%{opacity:0;transform:scale(1.5)}14%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(.82)}}',
+      /* ---- v4: victoria ---- */
+      '.vfx2-vic{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:8;background:radial-gradient(circle at 50% 44%,rgba(255,212,94,.24) 0%,rgba(255,212,94,.06) 34%,transparent 66%);opacity:0;animation:vfx2-vic 2.8s ease-out forwards}',
+      '@keyframes vfx2-vic{0%{opacity:0}10%{opacity:1}66%{opacity:.9}100%{opacity:0}}'
     ].join('');
     var st = make('style');
     st.id = 'vfx2-css';
@@ -666,6 +727,7 @@
     if (P.length >= MAXP) P.shift();
     P.push(p);
     startLoop();
+    kickDraw();
     // Primer frame garantizado: si el rAF no llega a correr (headless/virtual-time,
     // pestaña en segundo plano) pintamos igualmente la posición de nacimiento.
     if (!spawnDrawId) {
@@ -682,8 +744,30 @@
     rafId = raf(loop);
   }
 
+  /* v4: si el rAF no corre (headless, pestaña oculta, compositor parado) las
+     partículas se acumularían sin pintarse nunca. Este vigilante las dibuja a
+     25 fps SOLO cuando el rAF lleva >120 ms sin dar señales. */
+  function kickDraw() {
+    if (watchId) return;
+    watchId = every(function () {
+      if (!P.length) {
+        stopEvery(watchId); watchId = 0; lastT = 0;
+        if (nowMs() - lastRafT > 400) rafId = 0; // deja que startLoop reintente
+        return;
+      }
+      if (doc && doc.hidden) return;
+      if (nowMs() - lastRafT < 120) return;      // rAF vivo: no duplicamos
+      var t = nowMs();
+      var dt = lastT ? clamp((t - lastT) / 1000, 0, 0.05) : 0.016;
+      lastT = t;
+      stepP(dt);
+      drawP();
+    }, 40);
+  }
+
   function loop(t) {
     rafId = 0;
+    lastRafT = nowMs();
     if (!P.length) {
       if (ctx) { try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { /* nada */ } }
       return;
@@ -726,6 +810,7 @@
 
   function drawP() {
     if (!ctx) return;
+    drawCount++;
     try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { return; }
     var i, p;
     ctx.globalCompositeOperation = 'source-over';
@@ -949,7 +1034,581 @@
     }
   };
 
+  /* ==========================================================================
+   * v4 — EMOJIS PERSONALIZADOS (SVG inline, estilo plano con contorno)
+   * ------------------------------------------------------------------------
+   * Se piden por NOMBRE desde el feed: emoji:"palomitas", "corona", "gg"...
+   * Los Unicode de siempre (🍿👑😂...) se traducen al emoji propio; si no hay
+   * traducción se pintan como texto (fallback intacto). Todo el arte va inline:
+   * cero peticiones, cero ficheros que sincronizar.
+   * ======================================================================== */
+
+  var EMOJI = {
+    palomitas: {
+      label: 'PALOMITAS', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="34" r="23" fill="#FFD45E"/>' +
+        '<path d="M30 30 Q30 12 50 11 Q70 12 70 30 Q62 22 50 23 Q38 22 30 30 Z" fill="#6B3F1D"/>' +
+        '<path d="M36 34 q5 -7 10 0" fill="none"/>' +
+        '<path d="M54 34 q5 -7 10 0" fill="none"/>' +
+        '<path d="M35 43 Q50 62 65 43 Q50 50 35 43 Z" fill="#7A1F1F"/>' +
+        '<ellipse cx="50" cy="50" rx="9" ry="4.5" fill="#F87171" stroke="none"/>' +
+        '<rect x="33" y="66" width="34" height="26" rx="4" fill="#E23B3B"/>' +
+        '<path d="M41 66 v26 M50 66 v26 M59 66 v26" stroke="#FFF7E6" stroke-width="6"/>' +
+        '<circle cx="39" cy="62" r="6.5" fill="#FFF7E6"/>' +
+        '<circle cx="50" cy="57" r="7.5" fill="#FFF7E6"/>' +
+        '<circle cx="61" cy="62" r="6.5" fill="#FFF7E6"/>' +
+        '<circle cx="44" cy="56" r="5.5" fill="#FFF7E6"/>' +
+        '<circle cx="56" cy="56" r="5.5" fill="#FFF7E6"/>' +
+        '<circle cx="31" cy="76" r="5.5" fill="#FFD45E"/>' +
+        '<circle cx="69" cy="76" r="5.5" fill="#FFD45E"/>' +
+        '</g>'
+    },
+    risa: {
+      label: 'RISA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="50" r="42" fill="#FFD45E"/>' +
+        '<path d="M23 38 q8 -13 18 -1" fill="none"/>' +
+        '<path d="M59 38 q8 -13 18 -1" fill="none"/>' +
+        '<path d="M23 50 Q50 90 77 50 Q50 64 23 50 Z" fill="#7A1F1F"/>' +
+        '<path d="M33 54 Q50 64 67 54" fill="none" stroke="#F87171"/>' +
+        '<ellipse cx="50" cy="68" rx="11" ry="6" fill="#F87171" stroke="none"/>' +
+        '<path d="M20 40 q-7 12 -2 20" fill="none" stroke="#38BDF8"/>' +
+        '<path d="M80 40 q7 12 2 20" fill="none" stroke="#38BDF8"/>' +
+        '</g>'
+    },
+    llorando: {
+      label: 'LLORANDO', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="50" r="42" fill="#8ED8F8"/>' +
+        '<path d="M26 40 q7 -8 15 -2" fill="none"/>' +
+        '<path d="M59 38 q8 -6 15 2" fill="none"/>' +
+        '<path d="M32 48 q5 7 10 0" fill="none"/>' +
+        '<path d="M58 48 q5 7 10 0" fill="none"/>' +
+        '<path d="M39 62 Q50 82 61 62 Q50 68 39 62 Z" fill="#7A1F1F"/>' +
+        '<path d="M33 52 q-6 16 1 26" fill="none" stroke="#2563EB" stroke-width="7"/>' +
+        '<path d="M67 52 q6 16 -1 26" fill="none" stroke="#2563EB" stroke-width="7"/>' +
+        '<path d="M26 68 q-3 8 1 12" fill="none" stroke="#60A5FA" stroke-width="5"/>' +
+        '<path d="M74 68 q3 8 -1 12" fill="none" stroke="#60A5FA" stroke-width="5"/>' +
+        '</g>'
+    },
+    asco: {
+      label: 'ASCO', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="50" r="42" fill="#A3D977"/>' +
+        '<path d="M27 36 l13 11 M40 36 l-13 11" fill="none"/>' +
+        '<path d="M60 36 l13 11 M73 36 l-13 11" fill="none"/>' +
+        '<path d="M30 64 q6 -9 12 -1 q6 8 12 -1 q5 -7 10 0" fill="none"/>' +
+        '<path d="M44 68 q6 16 14 6 q4 -5 2 -8" fill="#F472B6"/>' +
+        '<circle cx="27" cy="58" r="4" fill="#86EFAC" stroke="none"/>' +
+        '<circle cx="73" cy="58" r="4" fill="#86EFAC" stroke="none"/>' +
+        '</g>'
+    },
+    sorpresa: {
+      label: 'SORPRESA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="50" r="42" fill="#FFD45E"/>' +
+        '<ellipse cx="37" cy="38" rx="8" ry="10" fill="#FFFFFF"/>' +
+        '<circle cx="37" cy="39" r="4.2" fill="#141A24" stroke="none"/>' +
+        '<ellipse cx="63" cy="38" rx="8" ry="10" fill="#FFFFFF"/>' +
+        '<circle cx="63" cy="39" r="4.2" fill="#141A24" stroke="none"/>' +
+        '<ellipse cx="50" cy="68" rx="12" ry="14" fill="#7A1F1F"/>' +
+        '<path d="M24 22 q7 -6 14 -1" fill="none"/>' +
+        '<path d="M76 22 q-7 -6 -14 -1" fill="none"/>' +
+        '<path d="M18 54 q-5 10 0 16" fill="none" stroke="#38BDF8" stroke-width="5"/>' +
+        '</g>'
+    },
+    furia: {
+      label: 'FURIA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="50" r="42" fill="#FF6B5A"/>' +
+        '<path d="M23 36 l17 9" fill="none"/>' +
+        '<path d="M77 36 l-17 9" fill="none"/>' +
+        '<circle cx="37" cy="49" r="5.5" fill="#141A24" stroke="none"/>' +
+        '<circle cx="63" cy="49" r="5.5" fill="#141A24" stroke="none"/>' +
+        '<path d="M37 71 Q50 60 63 71" fill="none"/>' +
+        '<path d="M16 28 q-7 -8 1 -13" fill="none" stroke="#FF3B30" stroke-width="5"/>' +
+        '<path d="M84 28 q7 -8 -1 -13" fill="none" stroke="#FF3B30" stroke-width="5"/>' +
+        '</g>'
+    },
+    euforia: {
+      label: 'EUFORIA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="50" r="42" fill="#FFD45E"/>' +
+        '<path d="M0 -9 L2.6 -2.8 L9 -2.2 L4.2 2 L5.6 8.4 L0 4.8 L-5.6 8.4 L-4.2 2 L-9 -2.2 L-2.6 -2.8 Z" transform="translate(36 39)" fill="#F59E0B" stroke-width="3"/>' +
+        '<path d="M0 -9 L2.6 -2.8 L9 -2.2 L4.2 2 L5.6 8.4 L0 4.8 L-5.6 8.4 L-4.2 2 L-9 -2.2 L-2.6 -2.8 Z" transform="translate(64 39)" fill="#F59E0B" stroke-width="3"/>' +
+        '<path d="M37 64 Q50 79 63 64 Q50 70 37 64 Z" fill="#7A1F1F"/>' +
+        '<ellipse cx="50" cy="68" rx="8" ry="3.5" fill="#F87171" stroke="none"/>' +
+        '</g>'
+    },
+    corona: {
+      label: 'CORONA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M16 72 L12 30 L31 45 L50 18 L69 45 L88 30 L84 72 Z" fill="#FFD45E"/>' +
+        '<rect x="15" y="72" width="70" height="13" rx="4" fill="#F59E0B"/>' +
+        '<circle cx="31" cy="47" r="4.5" fill="#EF4444" stroke="none"/>' +
+        '<circle cx="50" cy="37" r="5.5" fill="#38BDF8" stroke="none"/>' +
+        '<circle cx="69" cy="47" r="4.5" fill="#EF4444" stroke="none"/>' +
+        '<circle cx="24" cy="79" r="3" fill="#FFF7E6" stroke="none"/>' +
+        '<circle cx="50" cy="79" r="3" fill="#FFF7E6" stroke="none"/>' +
+        '<circle cx="76" cy="79" r="3" fill="#FFF7E6" stroke="none"/>' +
+        '</g>'
+    },
+    calavera: {
+      label: 'CALAVERA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M50 8 C25 8 14 27 14 46 C14 60 22 67 29 71 L29 83 Q29 92 38 92 L62 92 Q71 92 71 83 L71 71 C78 67 86 60 86 46 C86 27 75 8 50 8 Z" fill="#F8FAFC"/>' +
+        '<ellipse cx="35" cy="45" rx="11" ry="13" fill="#141A24" stroke="none"/>' +
+        '<ellipse cx="65" cy="45" rx="11" ry="13" fill="#141A24" stroke="none"/>' +
+        '<path d="M50 57 l-7 11 h14 Z" fill="#141A24" stroke="none"/>' +
+        '<path d="M33 77 v9 M41 77 v9 M50 77 v9 M59 77 v9 M67 77 v9" stroke-width="3.5"/>' +
+        '</g>'
+    },
+    fuego: {
+      label: 'FUEGO', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M50 6 C57 24 78 32 78 55 C78 75 65 92 50 92 C35 92 22 75 22 55 C22 40 33 30 39 19 C41 33 47 38 50 44 C56 32 56 19 50 6 Z" fill="#FF6B35"/>' +
+        '<path d="M50 40 C56 52 65 57 65 69 C65 81 58 90 50 90 C42 90 35 81 35 69 C35 58 44 52 50 40 Z" fill="#FFD45E" stroke="none"/>' +
+        '<path d="M50 62 C53 68 57 71 57 77 C57 83 54 88 50 88 C46 88 43 83 43 77 C43 71 47 68 50 62 Z" fill="#FFF7E6" stroke="none"/>' +
+        '</g>'
+    },
+    explosion: {
+      label: 'EXPLOSIÓN', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M50 4 L60 27 L83 18 L74 41 L96 50 L74 59 L83 82 L60 73 L50 96 L40 73 L17 82 L26 59 L4 50 L26 41 L17 18 L40 27 Z" fill="#FF8A3D"/>' +
+        '<path d="M50 22 L57 40 L77 36 L63 50 L77 64 L57 60 L50 78 L43 60 L23 64 L37 50 L23 36 L43 40 Z" fill="#FFD45E" stroke="none"/>' +
+        '<circle cx="50" cy="50" r="9" fill="#FFF7E6" stroke="none"/>' +
+        '</g>'
+    },
+    'bandera-roja': {
+      label: 'BANDERA ROJA', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M28 12 v80" fill="none" stroke-width="6"/>' +
+        '<circle cx="28" cy="10" r="5.5" fill="#FFD45E"/>' +
+        '<path d="M31 14 Q56 6 82 20 L82 46 Q56 32 31 40 Z" fill="#EF4444"/>' +
+        '<path d="M31 20 Q56 13 82 27" fill="none" stroke="#B91C1C" stroke-width="2"/>' +
+        '</g>'
+    },
+    'bandera-azul': {
+      label: 'BANDERA AZUL', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M28 12 v80" fill="none" stroke-width="6"/>' +
+        '<circle cx="28" cy="10" r="5.5" fill="#FFD45E"/>' +
+        '<path d="M31 14 Q56 6 82 20 L82 46 Q56 32 31 40 Z" fill="#38BDF8"/>' +
+        '<path d="M31 20 Q56 13 82 27" fill="none" stroke="#0284C7" stroke-width="2"/>' +
+        '</g>'
+    },
+    gg: {
+      label: 'GG', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<rect x="7" y="21" width="86" height="58" rx="14" fill="#7C3AED"/>' +
+        '<text x="50" y="67" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="40" font-weight="900" fill="#FFD45E" stroke-width="3" paint-order="stroke">GG</text>' +
+        '</g>'
+    },
+    punio: {
+      label: 'PUÑO', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M30 46 V35 Q30 26 38 26 Q46 26 46 35 V32 Q46 23 54 23 Q62 23 62 32 V35 Q62 26 70 26 Q78 26 78 35 V53 Q78 70 66 80 L64 87 Q62 92 56 92 H42 Q36 92 34 86 L30 72 Q25 63 28 55 Z" fill="#FFD45E"/>' +
+        '<path d="M46 41 v13 M62 41 v13" fill="none" stroke-width="3"/>' +
+        '<path d="M28 56 Q21 52 21 45 Q21 39 28 40" fill="#FFD45E"/>' +
+        '</g>'
+    },
+    diablillo: {
+      label: 'DIABLILLO', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M23 30 L13 7 L37 19 Z" fill="#EF4444"/>' +
+        '<path d="M77 30 L87 7 L63 19 Z" fill="#EF4444"/>' +
+        '<circle cx="50" cy="55" r="35" fill="#C084FC"/>' +
+        '<path d="M30 44 l12 8 M42 44 l-12 8" fill="none" stroke-width="3.5"/>' +
+        '<path d="M58 44 l12 8 M70 44 l-12 8" fill="none" stroke-width="3.5"/>' +
+        '<path d="M33 66 Q50 84 67 66 Q50 73 33 66 Z" fill="#7A1F1F"/>' +
+        '<path d="M40 67 l3 9 M50 69 v9 M60 67 l-3 9" stroke="#FFF7E6" stroke-width="3.5"/>' +
+        '</g>'
+    },
+    angel: {
+      label: 'ÁNGEL', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<circle cx="50" cy="12" r="10" fill="none" stroke="#FBBF24" stroke-width="5"/>' +
+        '<path d="M20 42 Q4 54 16 70 Q24 58 29 60 Z" fill="#E0F2FE"/>' +
+        '<path d="M80 42 Q96 54 84 70 Q76 58 71 60 Z" fill="#E0F2FE"/>' +
+        '<circle cx="50" cy="52" r="32" fill="#FEF3C7"/>' +
+        '<path d="M39 47 q4 -5 8 0" fill="none"/>' +
+        '<path d="M53 47 q4 -5 8 0" fill="none"/>' +
+        '<path d="M41 60 Q50 69 59 60" fill="none"/>' +
+        '<circle cx="34" cy="56" r="3.5" fill="#FCA5A5" stroke="none"/>' +
+        '<circle cx="66" cy="56" r="3.5" fill="#FCA5A5" stroke="none"/>' +
+        '</g>'
+    },
+    trofeo: {
+      label: 'TROFEO', svg:
+        '<g stroke="#141A24" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">' +
+        '<path d="M32 22 H20 Q20 44 36 46" fill="none" stroke-width="5"/>' +
+        '<path d="M68 22 H80 Q80 44 64 46" fill="none" stroke-width="5"/>' +
+        '<path d="M31 14 H69 V34 Q69 56 50 56 Q31 56 31 34 Z" fill="#FFD45E"/>' +
+        '<rect x="44" y="56" width="12" height="14" fill="#F59E0B"/>' +
+        '<rect x="31" y="70" width="38" height="11" rx="3" fill="#F59E0B"/>' +
+        '<path d="M50 24 L52.6 30 L59 30.6 L54.2 34.8 L55.6 41 L50 37.6 L44.4 41 L45.8 34.8 L41 30.6 L47.4 30 Z" fill="#FFF7E6" stroke-width="2"/>' +
+        '</g>'
+    }
+  };
+
+  var EMOJI_ORDER = ['palomitas', 'risa', 'llorando', 'asco', 'sorpresa', 'furia', 'euforia',
+    'corona', 'calavera', 'fuego', 'explosion', 'bandera-roja', 'bandera-azul', 'gg', 'punio',
+    'diablillo', 'angel', 'trofeo'];
+
+  var EMOJI_ALIAS = {
+    popcorn: 'palomitas', 'tio-palomitas': 'palomitas', 'tio-palomitas-riendo': 'palomitas',
+    'palomitas-riendo': 'palomitas', 'tio-palomitas-riendose': 'palomitas',
+    laugh: 'risa', lol: 'risa', jaja: 'risa', risas: 'risa',
+    cry: 'llorando', llanto: 'llorando', lagrimas: 'llorando', llorar: 'llorando',
+    sick: 'asco', vomito: 'asco', asqueroso: 'asco', nausea: 'asco',
+    shock: 'sorpresa', wow: 'sorpresa', panico: 'sorpresa', 'o-oh': 'sorpresa',
+    angry: 'furia', enfado: 'furia', rabia: 'furia', cabreo: 'furia',
+    starstruck: 'euforia', flipado: 'euforia', hype: 'euforia',
+    crown: 'corona', rey: 'corona', reina: 'corona',
+    skull: 'calavera', muerte: 'calavera', muerto: 'calavera',
+    fire: 'fuego', llama: 'fuego', ardiendo: 'fuego',
+    boom: 'explosion', bomba: 'explosion', petardazo: 'explosion',
+    'bandera_roja': 'bandera-roja', rojo: 'bandera-roja', redflag: 'bandera-roja', 'red-flag': 'bandera-roja',
+    'bandera_azul': 'bandera-azul', azul: 'bandera-azul', blueflag: 'bandera-azul', 'blue-flag': 'bandera-azul',
+    'buena-partida': 'gg', ggp: 'gg', 'gg-wp': 'gg',
+    fist: 'punio', puño: 'punio', fuerza: 'punio', animo: 'punio', 'animo': 'punio',
+    devil: 'diablillo', diablo: 'diablillo', demonio: 'diablillo',
+    halo: 'angel', 'angelito': 'angel',
+    trophy: 'trofeo', campeon: 'trofeo', victoria: 'trofeo', ganador: 'trofeo'
+  };
+
+  /* Unicode de siempre -> emoji propio. Si no está aquí, se pinta tal cual. */
+  var UNI_EMOJI = {
+    '\uD83C\uDF7F': 'palomitas',
+    '\uD83D\uDC51': 'corona',
+    '\uD83D\uDC80': 'calavera',
+    '\uD83D\uDD25': 'fuego',
+    '\uD83D\uDCA5': 'explosion',
+    '\uD83D\uDE02': 'risa', '\uD83E\uDD23': 'risa',
+    '\uD83D\uDE2D': 'llorando', '\uD83D\uDE22': 'llorando',
+    '\uD83E\uDD22': 'asco', '\uD83E\uDD2E': 'asco',
+    '\uD83D\uDE31': 'sorpresa', '\uD83D\uDE28': 'sorpresa',
+    '\uD83D\uDE21': 'furia', '\uD83D\uDE20': 'furia', '\uD83D\uDE24': 'furia',
+    '\uD83E\uDD29': 'euforia', '\uD83D\uDE0D': 'euforia',
+    '\uD83D\uDE08': 'diablillo', '\uD83D\uDC7F': 'diablillo',
+    '\uD83D\uDE07': 'angel', '\uD83D\uDC7C': 'angel',
+    '\uD83C\uDFC6': 'trofeo', '\uD83E\uDD47': 'trofeo',
+    '\uD83D\uDCAA': 'punio', '\uD83D\uDC4A': 'punio', '\u270A': 'punio',
+    '\uD83D\uDEA9': 'bandera-roja',
+    '\uD83C\uDFF3': 'bandera-roja',
+    /* v4: los que salen de verdad en el show (medidos sobre show.json y feed.json).
+       Si aparece uno nuevo, se añade aquí; si no, el catch-all lo pinta genérico. */
+    '\uD83D\uDE0F': 'risa',       // 😏 pícaro
+    '\uD83D\uDE0E': 'euforia',    // 😎 gafas de sol
+    '\uD83E\uDEE0': 'asco',       // 🫠 derritiéndose
+    '\uD83D\uDE12': 'asco',       // 😒 desgana
+    '\uD83D\uDCA8': 'explosion',  // 💨 racha
+    '\uD83C\uDCCF': 'diablillo',  // 🃏 comodín
+    '\uD83D\uDE2E': 'sorpresa',   // 😮 boca abierta
+    '\uD83C\uDFDA': 'calavera',   // 🏚 ruina
+    '\uD83D\uDE0C': 'angel',      // 😌 alivio
+    '\u2622': 'explosion',        // ☢ radiactivo
+    /* v4: red de seguridad extra (risas, furias y celebraciones habituales) */
+    '\uD83D\uDE00': 'risa', '\uD83D\uDE01': 'risa', '\uD83D\uDE03': 'risa',
+    '\uD83D\uDE04': 'risa', '\uD83D\uDE05': 'risa', '\uD83D\uDE06': 'risa',
+    '\uD83D\uDE44': 'risa',       // 🙄
+    '\uD83D\uDE10': 'asco',       // 😑
+    '\uD83E\uDD2C': 'furia',      // 🤬
+    '\uD83D\uDE29': 'llorando',   // 😩
+    '\u2620': 'calavera', '\uD83D\uDC7B': 'calavera',   // ☠ 👻
+    '\u2728': 'euforia', '\uD83C\uDF89': 'euforia', '\uD83C\uDF8A': 'euforia',
+    '\uD83D\uDC4F': 'euforia', '\uD83D\uDC8E': 'euforia', '\uD83D\uDCB0': 'euforia',
+    '\uD83D\uDE80': 'euforia',    // 👏 💎 💰 🚀
+    '\uD83E\uDD1D': 'gg',         // 🤝
+    '\uD83D\uDE4F': 'angel',      // 🙏
+    '\uD83D\uDCA3': 'explosion',  // 💣
+    '\u2694': 'furia', '\uD83D\uDD2B': 'furia'   // ⚔ 🔫
+  };
+
+  /* v4 — catch-all: NUNCA un emoji del sistema en pantalla. Si llega un Unicode
+     que no está en la tabla, se pinta con una pieza propia genérica. */
+  var EMOJI_GENERICO = 'sorpresa';
+  var RE_EMOJI_SUELTO = (function () {
+    try {
+      return new RegExp('^[\\p{Extended_Pictographic}\\u200D\\uFE0F\\u20E3\\u{1F3FB}-\\u{1F3FF}]+$', 'u');
+    } catch (e) { return null; }
+  })();
+
+  /* ¿El valor es UN emoji suelto? (texto normal como '¡SOY EL REY!' -> false) */
+  function esEmojiSuelto(s) {
+    if (!s || s.length > 24) return false;
+    if (RE_EMOJI_SUELTO) {
+      try { return RE_EMOJI_SUELTO.test(s); } catch (e) { /* sigue */ }
+    }
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      if (c >= 0xD83C && c <= 0xD83E) return true;
+    }
+    return false;
+  }
+
+  /* Acepta nombre ('palomitas'), alias ('popcorn'), ':palomitas:' o Unicode. */
+  function normEmoji(v) {
+    var s = String(v == null ? '' : v).trim();
+    if (!s) return null;
+    if (EMOJI[s]) return s;
+    var low = s.toLowerCase().replace(/^:+|:+$/g, '').replace(/\s+/g, '-');
+    if (EMOJI[low]) return low;
+    if (EMOJI_ALIAS[low]) return EMOJI_ALIAS[low];
+    if (UNI_EMOJI[s]) return UNI_EMOJI[s];
+    var s2 = s.replace(/[\uFE0E\uFE0F]/g, '');
+    if (UNI_EMOJI[s2]) return UNI_EMOJI[s2];
+    /* v4: emoji desconocido -> pieza propia genérica (nunca el del sistema) */
+    if (esEmojiSuelto(s2)) return EMOJI_GENERICO;
+    return null;
+  }
+
+  /* Pinta el emoji propio dentro de un contenedor; si no se reconoce, texto. */
+  function setEmojiContent(el, v) {
+    if (!el) return null;
+    var name = normEmoji(v);
+    if (name) {
+      el.innerHTML = '<svg class="vfx2-svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false">' +
+        EMOJI[name].svg + '</svg>';
+      el.setAttribute('data-emoji', name);
+      return name;
+    }
+    el.textContent = String(v == null ? '' : v);
+    try { el.removeAttribute('data-emoji'); } catch (e) { /* nada */ }
+    return null;
+  }
+
+  function emojiInfo(name) {
+    var n = normEmoji(name);
+    if (!n) return null;
+    return { name: n, label: EMOJI[n].label, svg: EMOJI[n].svg };
+  }
+  function emojiNames() { return EMOJI_ORDER.slice(); }
+  function emojiSVG(name) {
+    var i = emojiInfo(name);
+    if (!i) return null;
+    return '<svg class="vfx2-svg" viewBox="0 0 100 100" aria-hidden="true" focusable="false">' + i.svg + '</svg>';
+  }
+
+  /* ==========================================================================
+   * v4 — ANTI-SOLAPE: un grande por bando + hueco entre bandos + cola FIFO
+   * ------------------------------------------------------------------------
+   * Reglas:
+   *  1) Máx. 1 emoji GRANDE por bando a la vez (ya venía de v3, se conserva).
+   *  2) Si los dos bandos apuntan al mismo punto (choque), el segundo se
+   *     desplaza a un hueco libre, con preferencia hacia SU lado; si no cabe,
+   *     espera en cola.
+   *  3) Cola FIFO por bando (máx. 4) con caducidad: un emoji que espera más de
+   *     `COLA_MS` se descarta (no tiene sentido enseñarlo tarde).
+   *  4) Si el activo ya lleva `CAMBIO_MS` y hay cola, se retira antes para
+   *     rotar: el directo sigue viéndose vivo sin apilar emojis.
+   *  5) Los pequeños (número de daño, etiqueta, reacción/corona, 💥 del
+   *     impacto) se apartan de la caja del grande en vez de taparse.
+   * ======================================================================== */
+
   var activeInv = { rojo: null, azul: null };
+  var activeBig = { rojo: null, azul: null };
+  var cola = { rojo: [], azul: [] };
+  var busy = { rojo: false, azul: false };
+  var rotando = { rojo: false, azul: false };
+  var draining = { rojo: false, azul: false };
+  var LEGACY = false;          // QA: true = comportamiento v3 (sin anti-solape)
+  var COLA_MAX = 4;
+  var COLA_MS = 2200;          // caducidad de un emoji en cola
+  var CAMBIO_MS = 1500;        // antigüedad mínima del activo para rotar
+  var MARGEN = 10;             // px de aire entre cajas
+
+  function nowMs() {
+    try { return (global.performance && global.performance.now) ? global.performance.now() : Date.now(); }
+    catch (e) { return Date.now(); }
+  }
+
+  function overlapBox(a, b, m) {
+    if (!a || !b) return false;
+    return Math.abs(a.x - b.x) < (a.w + b.w) / 2 + m &&
+      Math.abs(a.y - b.y) < (a.h + b.h) / 2 + m;
+  }
+
+  /* Límites de la zona segura para la pila etiqueta+emoji+burbuja. */
+  function safeLim(size, bubbleMax, hasText) {
+    var halfW = Math.max(size * 0.52, bubbleMax * 0.5) + 10;
+    var halfH = (size + (hasText ? 200 : 150)) / 2;
+    var xa = VIEW.w > 80 ? (halfW / VIEW.w) * 100 : 9;
+    var yb = VIEW.h > 80 ? (halfH / VIEW.h) * 100 : 20;
+    yb = Math.max(yb, isNarrow() ? 22 : 14);
+    return { xa: xa, yb: yb };
+  }
+
+  function clampPct(x, y, lim) {
+    var nx = lim.xa >= 50 ? 50 : clamp(x, lim.xa, 100 - lim.xa);
+    var ny = lim.yb >= 50 ? 50 : clamp(y, lim.yb, 100 - lim.yb);
+    return { x: nx, y: ny };
+  }
+
+  function bigBox(xPct, yPct, size, bubbleMax, hasText) {
+    var w = Math.max(size * 1.04, Math.min(bubbleMax, 380), 190);
+    var h = size + (hasText ? 200 : 120);
+    var sp = stagePoint(punto(xPct, yPct));
+    return { x: sp.x, y: sp.y, w: w, h: h };
+  }
+
+  function overlapsOther(box, side) {
+    var other = side === 'rojo' ? 'azul' : 'rojo';
+    var b = activeBig[other];
+    if (!b || !b.el || !b.el.parentNode) return false;
+    return overlapBox(box, b, MARGEN);
+  }
+
+  /* Busca hueco para el grande del bando `side`. Devuelve {x,y,ok}. */
+  function freeSpot(xPct, yPct, size, bubbleMax, hasText, side, lim) {
+    var dir = side === 'rojo' ? -1 : 1;
+    var cands = [
+      [0, 0], [dir * 16, 0], [dir * 16, -13], [dir * 16, 13],
+      [dir * 30, 0], [dir * 30, -13], [dir * 30, 13],
+      [dir * 10, -22], [dir * 10, 22], [dir * 42, 0],
+      [0, -26], [0, 26], [dir * 22, -26], [dir * 22, 26]
+    ];
+    for (var i = 0; i < cands.length; i++) {
+      var c = clampPct(xPct + cands[i][0], yPct + cands[i][1], lim);
+      var box = bigBox(c.x, c.y, size, bubbleMax, hasText);
+      if (!overlapsOther(box, side)) return { x: c.x, y: c.y, ok: true };
+    }
+    return { x: xPct, y: yPct, ok: false };
+  }
+
+  /* Aparta un efecto pequeño de la caja de cualquier emoji grande.
+     Devuelve el punto (en %) ya libre, o el mismo si no hacía falta. */
+  function avoidBigs(xPct, yPct, w, h, gap) {
+    if (!stage || LEGACY) return { x: xPct, y: yPct, moved: false };
+    var p = punto(xPct, yPct);
+    var sp = stagePoint(p);
+    var box = { x: sp.x, y: sp.y, w: Math.max(24, w), h: Math.max(24, h) };
+    var g = gap != null ? gap : 8;
+    var moved = false;
+    var sides = ['rojo', 'azul'];
+    for (var k = 0; k < 4; k++) {
+      var hit = null;
+      for (var i = 0; i < sides.length; i++) {
+        var b = activeBig[sides[i]];
+        if (!b || !b.el || !b.el.parentNode) continue;
+        if (overlapBox(box, b, g)) { hit = b; break; }
+      }
+      if (!hit) break;
+      var needX = (hit.w + box.w) / 2 + g + 2 - Math.abs(box.x - hit.x);
+      var dir = box.x <= hit.x ? -1 : 1;
+      if (box.x + dir * needX - box.w / 2 >= 2 &&
+        box.x + dir * needX + box.w / 2 <= VIEW.w - 2) {
+        box.x += dir * needX;
+      } else {
+        var needY = (hit.h + box.h) / 2 + g + 2 - Math.abs(box.y - hit.y);
+        box.y += (box.y <= hit.y ? -1 : 1) * needY;
+      }
+      moved = true;
+    }
+    box.x = clamp(box.x, box.w / 2 + 2, Math.max(box.w / 2 + 2, VIEW.w - box.w / 2 - 2));
+    box.y = clamp(box.y, box.h / 2 + 2, Math.max(box.h / 2 + 2, VIEW.h - box.h / 2 - 2));
+    var sr, r;
+    try {
+      sr = stage.getBoundingClientRect();
+      r = mapRect();
+    } catch (e) { return { x: xPct, y: yPct, moved: false }; }
+    var vx = sr.left + box.x, vy = sr.top + box.y;
+    return {
+      x: ((vx - r.left) / r.width) * 100,
+      y: ((vy - r.top) / r.height) * 100,
+      moved: moved
+    };
+  }
+
+  /* --- cola FIFO por bando --- */
+
+  function soltar(side, el) {
+    if (activeInv[side] === el) activeInv[side] = null;
+    if (activeBig[side] && activeBig[side].el === el) activeBig[side] = null;
+    drain(side);
+  }
+
+  function retirar(side, el) {
+    if (!el) return;
+    try { if (el.__stop) { el.__stop(); el.__stop = null; } } catch (e) { /* nada */ }
+    try { el.classList.add('vfx2-out'); } catch (e) { /* nada */ }
+    soltar(side, el);
+    later(function () { removeEl(el); }, 360);
+  }
+
+  function drain(side) {
+    if (busy[side] || draining[side]) return;
+    draining[side] = true;
+    try {
+      var q = cola[side];
+      while (q.length) {
+        var it = q.shift();
+        if (it.exp < nowMs()) continue;   // caducado: no se enseña tarde
+        try { it.fn(); } catch (e) { /* nada */ }
+        return;
+      }
+    } finally {
+      draining[side] = false;
+    }
+  }
+
+  function encolar(side, fn, prio, expMs) {
+    var q = cola[side];
+    if (q.length >= COLA_MAX) q.shift();
+    q.push({
+      fn: fn,
+      prio: prio,
+      exp: nowMs() + clamp(num(expMs, COLA_MS), 400, 8000)
+    });
+    if (rotando[side]) return;
+    var act = activeInv[side];
+    if (!act) { drain(side); return; }
+    rotando[side] = true;
+    var age = activeBig[side] ? nowMs() - activeBig[side].t0 : 0;
+    later(function () {
+      rotando[side] = false;
+      if (!cola[side].length) return;
+      var a = activeInv[side];
+      if (a) retirar(side, a);       // retirar -> soltar -> drain
+    }, Math.max(80, CAMBIO_MS - age));
+  }
+
+  /* Estado para QA y para la demo (cajas activas + cola). */
+  function stageState() {
+    var out = {
+      version: VERSION, apiVersion: 4, legacy: LEGACY,
+      activos: { rojo: !!activeInv.rojo, azul: !!activeInv.azul },
+      cola: { rojo: cola.rojo.length, azul: cola.azul.length },
+      cajas: [], solapes: 0,
+      /* QA: canvas de partículas (FPS y modo lite se miden con esto) */
+      canvas: !!ctx, particulas: P.length, dibujos: drawCount,
+      rAF: rafId, watch: watchId, msSinRaf: Math.round(nowMs() - lastRafT),
+      view: { w: Math.round(VIEW.w), h: Math.round(VIEW.h) }, dpr: DPR,
+      /* QA: primera partícula viva (para diagnosticar generadores) */
+      muestra: P.length ? {
+        type: P[0].type || 'dot', x: Math.round(P[0].x), y: Math.round(P[0].y),
+        size: Math.round((P[0].size || 0) * 10) / 10, color: P[0].color || null,
+        life: Math.round(P[0].life || 0), ttl: P[0].ttl || 0,
+        alpha: P[0].alpha, blend: P[0].blend || null
+      } : null
+    };
+    var sides = ['rojo', 'azul'];
+    for (var i = 0; i < sides.length; i++) {
+      var b = activeBig[sides[i]];
+      if (!b) continue;
+      out.cajas.push({
+        side: sides[i], x: Math.round(b.x), y: Math.round(b.y),
+        w: Math.round(b.w), h: Math.round(b.h),
+        emoji: (b.el && b.el.getAttribute && b.el.getAttribute('data-emoji')) || null
+      });
+    }
+    if (out.cajas.length === 2) {
+      out.solapes = overlapBox(out.cajas[0], out.cajas[1], 2) ? 1 : 0;
+    }
+    return out;
+  }
+
 
   function normEmotion(e) {
     var s = String(e || '').toLowerCase();
@@ -1047,7 +1706,7 @@
     var offs = [[-1, -0.35], [1, -0.2], [-0.7, 0.45]];
     for (var i = 0; i < offs.length; i++) {
       var e = make('div', 'vfx2-echo');
-      e.textContent = emoji;
+      setEmojiContent(e, emoji);
       e.style.fontSize = Math.round(size * (0.72 - i * 0.06)) + 'px';
       e.style.color = color;
       e.style.setProperty('--ex', (offs[i][0] * size * 0.62).toFixed(0) + 'px');
@@ -1140,101 +1799,153 @@
     var emotion = normEmotion(o.emotion);
     var side = normSide(o.side);
     var meta = EM[emotion];
-    var narrow = isNarrow();
     var dur = clamp(num(o.duration, 3200), 900, 15000);
     var size = clamp(num(o.size, defaultSize()), 140, 560);
+    var prio = clamp(num(o.prio, (emotion === 'euforia' ? 2 : 1)), 0, 3);
 
-    /* v3: x/y = % del escenario donde aparece el emoji.
-       Sin x/y -> mismo sitio que la v2 (38 % rojo / 62 % azul, 44 % vertical). */
-    var hasX = o.x != null && isFinite(Number(o.x));
-    var hasY = o.y != null && isFinite(Number(o.y));
-    var xPct = hasX ? num(o.x, 50) : (narrow ? 50 : (side === 'azul' ? 62 : 38));
-    var yPct = hasY ? num(o.y, 44) : (narrow ? 46 : 44);
-    /* La pila (etiqueta + emoji + burbuja) tiene que caber entera en el escenario:
-       se limita el punto para que no se recorte ni se meta bajo el HUD. */
-    var bubbleMax = narrow
-      ? Math.min(VIEW.w * 0.72, 300)
-      : Math.min(size * 2.6, 380, Math.max(120, VIEW.w * 0.9));
-    var halfW = Math.max(size * 0.52, bubbleMax * 0.5) + 10;
-    var halfH = (size + 150) / 2;
-    var xa = VIEW.w > 80 ? (halfW / VIEW.w) * 100 : 9;
-    var yb = VIEW.h > 80 ? (halfH / VIEW.h) * 100 : (narrow ? 22 : 14);
-    xPct = (xa >= 50) ? 50 : clamp(xPct, xa, 100 - xa);
-    yb = Math.max(yb, narrow ? 22 : 14);
-    yPct = (yb >= 50) ? 50 : clamp(yPct, yb, 100 - yb);
-    var p = punto(xPct, yPct);
-    var sp = stagePoint(p);
-
-    var el = make('div', 'vfx2-inv vfx2-inv-' + emotion);
-    el.style.left = sp.x + 'px';
-    el.style.top = sp.y + 'px';
-    el.style.setProperty('--size', size + 'px');
-    el.style.setProperty('--c', meta.c);
-    el.style.setProperty('--glow', meta.glow);
-    /* borde de la burbuja = color del bando (rojo/azul), no el de la emoción */
-    el.style.setProperty('--sc', side === 'azul' ? '#38bdf8' : '#ff4d4d');
-
-    /* v3: entrada volando desde un lado (overshoot + onda de aterrizaje). */
-    var from = (o.from === 'rojo' || o.from === 'azul') ? o.from : null;
-    if (from) el.classList.add('vfx2-inv-from-' + from);
-
-    var center = make('div', 'vfx2-inv-center');
-    var enter = make('div', 'vfx2-inv-enter');
-    var body = make('div', 'vfx2-inv-body');
-    var face = make('div', 'vfx2-inv-face');
-    var glow = make('div', 'vfx2-inv-glow');
-    var tag = make('div', 'vfx2-inv-tag');
-    tag.textContent = meta.tag;
-    var em = make('div', 'vfx2-inv-emoji');
-    em.textContent = emoji || meta.emoji;
-
-    // Glow + emoji en el mismo wrapper: el halo queda SIEMPRE centrado detrás de la cara.
-    face.appendChild(glow);
-    face.appendChild(em);
-    body.appendChild(tag);
-    body.appendChild(face);
-    var txt = bubbleText(o.text);
-    if (txt) {
-      var say = make('div', 'vfx2-inv-say');
-      var bubble = make('div', 'vfx2-inv-text');
-      bubble.textContent = txt;
-      bubble.style.maxWidth = Math.round(bubbleMax) + 'px';
-      say.appendChild(bubble);
-      body.appendChild(say);
+    /* v4: anti-solape. Si el bando ya tiene un grande reciente, este emoji
+       espera en cola (con caducidad) en vez de apilarse encima. */
+    if (!LEGACY && !o.force && activeInv[side]) {
+      var big = activeBig[side];
+      var age = big ? nowMs() - big.t0 : 0;
+      var actPrio = big ? big.prio : 1;
+      if (prio <= actPrio && age < CAMBIO_MS) {
+        encolar(side, function () {
+          mostrarInvader(emoji, o, side, emotion, meta, dur, size, prio);
+        }, prio, o.queueMs);
+        return null;
+      }
     }
-    enter.appendChild(body);
-    center.appendChild(enter);
-    el.appendChild(center);
-    dom.appendChild(el);
-    track(el);
+    return mostrarInvader(emoji, o, side, emotion, meta, dur, size, prio);
+  }
 
-    /* v3: cola de un emoji por bando. Si ya había uno, se retira rápido. */
-    var prev = activeInv[side];
-    if (prev && prev !== el) {
-      try { if (prev.__stop) { prev.__stop(); prev.__stop = null; } } catch (e) { /* nada */ }
-      prev.classList.add('vfx2-out');
-      later(function () { removeEl(prev); }, 320);
+  /* Pinta el invasor ya colocado. Separado de invader() para poder encolarlo. */
+  function mostrarInvader(emoji, o, side, emotion, meta, dur, size, prio) {
+    if (!ensureReady()) return null;
+    busy[side] = true;
+    try {
+      var narrow = isNarrow();
+      var hasText = !!bubbleText(o.text);
+
+      /* v3: x/y = % del escenario donde aparece el emoji.
+         Sin x/y -> mismo sitio que la v2 (38 % rojo / 62 % azul, 44 % vertical). */
+      var hasX = o.x != null && isFinite(Number(o.x));
+      var hasY = o.y != null && isFinite(Number(o.y));
+      var xPct = hasX ? num(o.x, 50) : (narrow ? 50 : (side === 'azul' ? 62 : 38));
+      var yPct = hasY ? num(o.y, 44) : (narrow ? 46 : 44);
+      var bubbleMax = narrow
+        ? Math.min(VIEW.w * 0.72, 300)
+        : Math.min(size * 2.6, 380, Math.max(120, VIEW.w * 0.9));
+      /* La pila (etiqueta + emoji + burbuja) tiene que caber entera en el escenario. */
+      var lim = safeLim(size, bubbleMax, hasText);
+      var base = clampPct(xPct, yPct, lim);
+      /* v4: si el otro bando ya tiene un grande encima, se desplaza a un hueco
+         libre (preferencia hacia su propio lado). Si no cabe, se encola. */
+      var spot = (LEGACY || o.force)
+        ? { x: base.x, y: base.y, ok: true }
+        : freeSpot(base.x, base.y, size, bubbleMax, hasText, side, lim);
+      if (!spot.ok) {
+        var tries = (o.__tries || 0) + 1;
+        if (tries <= 3) {
+          var o2 = {};
+          for (var kk in o) o2[kk] = o[kk];
+          o2.__tries = tries;
+          later(function () {
+            encolar(side, function () {
+              mostrarInvader(emoji, o2, side, emotion, meta, dur, size, prio);
+            }, prio, o2.queueMs);
+          }, 160 + tries * 170);
+          return null;
+        }
+        /* Sin hueco tras varios intentos: se coloca igual (mejor un solape leve que perder el emoji). */
+        spot = { x: base.x, y: base.y, ok: true };
+      }
+      var p = punto(spot.x, spot.y);
+      var sp = stagePoint(p);
+
+      var el = make('div', 'vfx2-inv vfx2-inv-' + emotion);
+      el.style.left = sp.x + 'px';
+      el.style.top = sp.y + 'px';
+      el.style.setProperty('--size', size + 'px');
+      el.style.setProperty('--c', meta.c);
+      el.style.setProperty('--glow', meta.glow);
+      /* borde de la burbuja = color del bando (rojo/azul), no el de la emoción */
+      el.style.setProperty('--sc', side === 'azul' ? '#38bdf8' : '#ff4d4d');
+
+      /* v3: entrada volando desde un lado (overshoot + onda de aterrizaje). */
+      var from = (o.from === 'rojo' || o.from === 'azul') ? o.from : null;
+      if (from) el.classList.add('vfx2-inv-from-' + from);
+
+      var center = make('div', 'vfx2-inv-center');
+      var enter = make('div', 'vfx2-inv-enter');
+      var body = make('div', 'vfx2-inv-body');
+      var face = make('div', 'vfx2-inv-face');
+      var glow = make('div', 'vfx2-inv-glow');
+      var tag = make('div', 'vfx2-inv-tag');
+      tag.textContent = meta.tag;
+      var em = make('div', 'vfx2-inv-emoji');
+      /* v4: emoji propio por nombre; Unicode de siempre traducido; si no, texto. */
+      var emoVal = (emoji != null && String(emoji).trim()) ? emoji : meta.emoji;
+      var emoName = setEmojiContent(em, emoVal);
+      if (emoName) el.setAttribute('data-emoji', emoName);
+
+      // Glow + emoji en el mismo wrapper: el halo queda SIEMPRE centrado detrás de la cara.
+      face.appendChild(glow);
+      face.appendChild(em);
+      body.appendChild(tag);
+      body.appendChild(face);
+      var txt = bubbleText(o.text);
+      if (txt) {
+        var say = make('div', 'vfx2-inv-say');
+        var bubble = make('div', 'vfx2-inv-text');
+        bubble.textContent = txt;
+        bubble.style.maxWidth = Math.round(bubbleMax) + 'px';
+        say.appendChild(bubble);
+        body.appendChild(say);
+      }
+      enter.appendChild(body);
+      center.appendChild(enter);
+      el.appendChild(center);
+      dom.appendChild(el);
+      track(el);
+
+      /* v3/v4: un emoji por bando. Si ya había uno, se retira rápido y se suelta
+         su caja para que la cola pueda entrar. */
+      var prev = activeInv[side];
+      if (prev && prev !== el) retirar(side, prev);
+      activeInv[side] = el;
+
+      // Ráfaga inicial + emisor continuo de partículas de la emoción.
+      emitFor(emotion, sp, size);
+      emitFor(emotion, sp, size);
+      if (emotion === 'euforia') confettiRain(side, 46);
+      el.__stop = startEmitter(emotion, sp, size);
+
+      // v3: efectos de pantalla de la emoción (viñeta, shake, desaturación, gotas...).
+      screenFx(emotion, side, sp, size, emoVal, el);
+
+      // Onda de aterrizaje si entra volando desde un lado.
+      if (from) later(function () { landingWave(el, sp, size, meta.c); }, 620);
+
+      /* v4: caja real (ya pintada) para que los pequeños y el otro bando la esquiven. */
+      var bw = 0, bh = 0;
+      try { bw = body.offsetWidth || 0; bh = body.offsetHeight || 0; } catch (e) { /* nada */ }
+      activeBig[side] = {
+        x: sp.x, y: sp.y,
+        w: Math.max(bw || size * 1.05, 180),
+        h: Math.max(bh || size + 120, 150),
+        el: el, t0: nowMs(), prio: prio
+      };
+
+      later(function () { el.classList.add('vfx2-out'); }, Math.max(160, dur - 360));
+      later(function () {
+        removeEl(el);
+        soltar(side, el);          // limpia caja y da paso a la cola
+      }, dur);
+      return el;
+    } finally {
+      busy[side] = false;
     }
-    activeInv[side] = el;
-
-    // Ráfaga inicial + emisor continuo de partículas de la emoción.
-    emitFor(emotion, sp, size);
-    emitFor(emotion, sp, size);
-    if (emotion === 'euforia') confettiRain(side, 46);
-    el.__stop = startEmitter(emotion, sp, size);
-
-    // v3: efectos de pantalla de la emoción (viñeta, shake, desaturación, gotas...).
-    screenFx(emotion, side, sp, size, emoji || meta.emoji, el);
-
-    // Onda de aterrizaje si entra volando desde un lado.
-    if (from) later(function () { landingWave(el, sp, size, meta.c); }, 620);
-
-    later(function () { el.classList.add('vfx2-out'); }, Math.max(160, dur - 360));
-    later(function () {
-      removeEl(el);
-      if (activeInv[side] === el) activeInv[side] = null;
-    }, dur);
-    return el;
   }
 
   /* ==========================================================================
@@ -1281,8 +1992,15 @@
     }
 
     var boom = make('div', 'vfx2-boom');
-    boom.textContent = o.emoji || (power >= 0.5 ? '\uD83D\uDCA5' : '\u2728');
+    setEmojiContent(boom, o.emoji || (power >= 0.5 ? '\uD83D\uDCA5' : '\u2728'));
     boom.style.setProperty('--fs', Math.round(56 + power * 64) + 'px');
+    /* v4: el 💥 del impacto no se pinta encima del emoji grande: se aparta. */
+    var av = avoidBigs(xPct, yPct, 160 + power * 90, 160 + power * 90, 6);
+    if (av.moved) {
+      var bsp = stagePoint(punto(av.x, av.y));
+      boom.style.left = (bsp.x - sp.x) + 'px';
+      boom.style.top = (bsp.y - sp.y) + 'px';
+    }
     root.appendChild(boom);
 
     burstSparks(sp.x, sp.y, color, Math.round(26 + power * 44), power);
@@ -1309,7 +2027,9 @@
     var v = Number(n);
     if (!isFinite(v) || v === 0) return null;
 
-    var p = punto(xPct, yPct);
+    /* v4: el número de daño se aparta de la caja del emoji grande. */
+    var av = avoidBigs(xPct, yPct, 230, 150, 6);
+    var p = punto(av.x, av.y);
     var sp = stagePoint(p);
     var azul = normSide(side) === 'azul';
     var narrow = isNarrow();
@@ -1356,6 +2076,11 @@
     /* No tapar el HUD: la etiqueta vive dentro de la zona segura del escenario. */
     var x = clamp(num(xPct, 50), 10, 90);
     var y = clamp(num(yPct, 44), narrow ? 20 : 15, narrow ? 84 : 87);
+    /* v4: si cae sobre un emoji grande, se aparta (medida estimada de la caja). */
+    var estW = Math.min((stage && stage.clientWidth || 1440) * (narrow ? 0.9 : 0.5),
+      Math.max(160, txt.length * fs * 0.62));
+    var av = avoidBigs(x, y, estW, fs * 1.5, 6);
+    x = av.x; y = av.y;
     var p = punto(x, y);
     var sp = stagePoint(p);
 
@@ -1507,6 +2232,237 @@
   }
 
   /* ==========================================================================
+   * v4 — EFECTOS NUEVOS (activables desde el feed)
+   *   shockwave(xPct,yPct,{power,color})       onda expansiva con polvo
+   *   quake(intensity,{duration,x,y})          grietas + sacudida (terremoto)
+   *   ashfall({duration,density,side})         lluvia de ceniza + penumbra
+   *   cameraFlash({color,opacity,duration})    flash de cámara con obturador
+   *   victory(side,{emoji,text,x,y})           confeti + trofeo + flash + viñeta
+   *   emojiAt(nombre,xPct,yPct,{size,duration}) emoji suelto con anti-solape
+   * ======================================================================== */
+
+  function shockwave(xPct, yPct, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var power = clamp(num(o.power, 0.8), 0, 1);
+    var color = normColor(o.color || (power >= 0.7 ? '#ffb02e' : '#ffe08a'));
+    var p = punto(xPct, yPct);
+    var sp = stagePoint(p);
+    var base = 120 + power * 340;
+
+    var root = make('div', 'vfx2-sw');
+    root.style.left = sp.x + 'px';
+    root.style.top = sp.y + 'px';
+    dom.appendChild(root);
+    track(root);
+
+    var i;
+    for (i = 0; i < 3; i++) {
+      var ring = make('div', 'vfx2-sw-ring');
+      ring.style.setProperty('--s', Math.round(base * (1 + i * 0.42)) + 'px');
+      ring.style.setProperty('--bw', (12 - i * 3) + 'px');
+      ring.style.setProperty('--c', i === 1 ? '#ffffff' : color);
+      ring.style.setProperty('--d', (0.95 + i * 0.18).toFixed(2) + 's');
+      ring.style.setProperty('--delay', (i * 0.06).toFixed(2) + 's');
+      root.appendChild(ring);
+    }
+    var fill = make('div', 'vfx2-sw-ring vfx2-sw-fill');
+    fill.style.setProperty('--s', Math.round(base * 1.1) + 'px');
+    fill.style.setProperty('--c', color);
+    fill.style.setProperty('--d', '0.75s');
+    root.appendChild(fill);
+
+    burstSparks(sp.x, sp.y, color, Math.round(30 + power * 40), power);
+    burstDebris(sp.x, sp.y, Math.round(18 + power * 26), power, debrisColors(color));
+    /* Polvo que se abre en círculo (la firma visual de la onda). */
+    var dust = Math.round(14 + power * 18);
+    for (i = 0; i < dust; i++) {
+      var ang = (Math.PI * 2 * i) / dust + rnd(-0.22, 0.22);
+      var v = rnd(140, 420) * (0.6 + power * 0.6);
+      var dttl = rnd(500, 900);
+      addP({
+        type: 'dot', x: sp.x, y: sp.y,
+        vx: Math.cos(ang) * v, vy: Math.sin(ang) * v * 0.7,
+        g: 60, drag: 2.4, size: rnd(2, 5), color: color,
+        ttl: dttl, life: dttl, alpha: 0.55, blend: 'lighter'
+      });
+    }
+    if (power >= 0.45) shake(0.3 + power * 0.5, { duration: 480 });
+    later(function () { removeEl(root); }, 1600);
+    return root;
+  }
+
+  /* Grietas procedurales en viewBox 1000x1000 (se estiran al escenario). */
+  function crackSVG(cx, cy, n) {
+    var out = '';
+    var i, k;
+    for (i = 0; i < n; i++) {
+      var ang = (Math.PI * 2 * i) / n + rnd(-0.4, 0.4);
+      var x = cx, y = cy;
+      var d = 'M' + x.toFixed(1) + ' ' + y.toFixed(1);
+      var steps = Math.round(rnd(4, 8));
+      for (k = 0; k < steps; k++) {
+        ang += rnd(-0.55, 0.55);
+        x += Math.cos(ang) * rnd(38, 92);
+        y += Math.sin(ang) * rnd(38, 92);
+        d += ' L' + x.toFixed(1) + ' ' + y.toFixed(1);
+      }
+      out += '<path class="vfx2-crack-glow" d="' + d + '" pathLength="100" style="--len:100;--delay:' +
+        (i * 0.045).toFixed(2) + 's"/>';
+      out += '<path d="' + d + '" pathLength="100" style="--len:100;--delay:' +
+        (i * 0.045).toFixed(2) + 's"/>';
+      /* Una rama corta por grieta: se ve más orgánico. */
+      var bx = x, by = y, ba = ang + rnd(0.7, 1.5) * (i % 2 ? 1 : -1);
+      var bd = 'M' + bx.toFixed(1) + ' ' + by.toFixed(1);
+      for (k = 0; k < 3; k++) {
+        ba += rnd(-0.4, 0.4);
+        bx += Math.cos(ba) * rnd(20, 52);
+        by += Math.sin(ba) * rnd(20, 52);
+        bd += ' L' + bx.toFixed(1) + ' ' + by.toFixed(1);
+      }
+      out += '<path d="' + bd + '" pathLength="100" style="--len:100;--delay:' +
+        (0.1 + i * 0.045).toFixed(2) + 's"/>';
+    }
+    return out;
+  }
+
+  function quake(intensity, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var mag = clamp(num(intensity, 0.7), 0, 1);
+    var dur = clamp(num(o.duration, 2400), 600, 8000);
+    var cx = clamp(num(o.x, 50), 2, 98);
+    var cy = clamp(num(o.y, 50), 2, 98);
+
+    var el = make('div', 'vfx2-quake');
+    el.style.setProperty('--d', dur + 'ms');
+    el.innerHTML = '<svg viewBox="0 0 1000 1000" preserveAspectRatio="none">' +
+      crackSVG(500, 500, Math.round(4 + mag * 4)) + '</svg>';
+    dom.appendChild(el);
+    track(el);
+
+    var i;
+    for (i = 0; i < Math.round(20 + mag * 40); i++) {
+      var q = punto(clamp(cx + rnd(-20, 20), 2, 98), clamp(cy + rnd(-14, 14), 2, 98));
+      var qs = stagePoint(q);
+      burstDebris(qs.x, qs.y, 1, 0.15 + mag * 0.5, debrisColors('#8a6b4a'));
+    }
+    shake(0.25 + mag * 0.85, { duration: Math.min(dur, 1200) });
+    if (!lite) vignette(0.16 + mag * 0.22, { color: '#3a2a18', duration: dur });
+    later(function () { removeEl(el); }, dur + 200);
+    return el;
+  }
+
+  function ashfall(opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var dur = clamp(num(o.duration, 5200), 800, 15000);
+    var dens = clamp(num(o.density, 0.5), 0, 1);
+    var side = (o.side === 'rojo' || o.side === 'azul') ? o.side : null;
+
+    var el = make('div', 'vfx2-ash');
+    el.style.setProperty('--d', dur + 'ms');
+    dom.appendChild(el);
+    track(el);
+
+    var porTanda = Math.round(7 + dens * 17);
+    var cada = Math.max(30, 110 - dens * 80);
+    var id = every(function () {
+      for (var i = 0; i < porTanda; i++) {
+        var x = side === 'rojo' ? rnd(-50, VIEW.w * 0.6)
+          : side === 'azul' ? rnd(VIEW.w * 0.4, VIEW.w + 50)
+            : rnd(-20, VIEW.w + 20);
+        var ttl = rnd(3000, 6000);
+        addP({
+          type: 'dot', x: x, y: rnd(-70, -8),
+          vx: rnd(-22, 22), vy: rnd(60, 180),
+          g: 10, drag: 0.995, sway: rnd(14, 44), phase: rnd(0, 6.283),
+          size: rnd(2.6, 6.4), color: pick(['#cfd3d8', '#b3b8be', '#9aa0a6', '#e6e8ea', '#8b9096']),
+          ttl: ttl, life: ttl, alpha: rnd(0.5, 0.9)
+        });
+      }
+    }, cada);
+    later(function () { stopEvery(id); }, dur);
+    later(function () { removeEl(el); }, dur + 160);
+    if (!lite) vignette(0.12, { color: '#20222a', duration: dur });
+    return el;
+  }
+
+  function cameraFlash(opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var color = normColor(o.color || '#ffffff');
+    var dur = clamp(num(o.duration, 620), 200, 2400);
+
+    var el = make('div', 'vfx2-cam');
+    el.style.setProperty('--c', color);
+    el.style.setProperty('--d', dur + 'ms');
+    el.style.setProperty('--o', clamp(num(o.opacity, 0.85), 0, 1).toFixed(2));
+    el.appendChild(make('div', 'vfx2-cam-flash'));
+    if (!lite) {
+      el.appendChild(make('div', 'vfx2-cam-bar vfx2-cam-top'));
+      el.appendChild(make('div', 'vfx2-cam-bar vfx2-cam-bot'));
+      el.appendChild(make('div', 'vfx2-cam-iris'));
+    }
+    screen.appendChild(el);
+    track(el);
+    later(function () { removeEl(el); }, dur + 200);
+    return el;
+  }
+
+  function victory(side, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var s = normSide(side);
+    var x = clamp(num(o.x, s === 'rojo' ? 34 : 66), 12, 88);
+    var y = clamp(num(o.y, 40), 16, 84);
+
+    confetti(s, { count: clamp(num(o.count, 260), 40, 420) });
+    cameraFlash({ color: '#fff7d6', opacity: 0.55, duration: 640 });
+    flash('#ffd45e', { opacity: 0.14, duration: 700 });
+
+    var el = make('div', 'vfx2-vic');
+    dom.appendChild(el);
+    track(el);
+    later(function () { removeEl(el); }, 3000);
+
+    later(function () {
+      invader(o.emoji || 'trofeo', {
+        side: s, emotion: 'euforia', x: x, y: y,
+        size: clamp(num(o.size, defaultSize() * 0.92), 140, 420),
+        duration: 3400, text: o.text || '', from: s, prio: 3, force: true
+      });
+    }, 150);
+    later(function () { shockwave(x, y, { power: 0.9, color: '#ffd45e' }); }, 850);
+    return el;
+  }
+
+  function emojiAt(emoji, xPct, yPct, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var sz = clamp(num(o.size, 84), 24, 300);
+    var dur = clamp(num(o.duration, 1600), 400, 6000);
+    var av = avoidBigs(xPct, yPct, sz * 1.3, sz * 1.3, 8);
+    var p = punto(av.x, av.y);
+    var sp = stagePoint(p);
+    var el = make('div', 'vfx2-react');
+    setEmojiContent(el, emoji || '\u2728');
+    el.style.left = sp.x + 'px';
+    el.style.top = sp.y + 'px';
+    el.style.fontSize = sz + 'px';
+    dom.appendChild(el);
+    track(el);
+    later(function () { removeEl(el); }, dur);
+    return el;
+  }
+
+  /* QA: legacy(true) reproduce el comportamiento v3 (sin anti-solape). */
+  function legacy(v) {
+    LEGACY = !!v;
+    return LEGACY;
+  }
+
+  /* ==========================================================================
    * Compatibilidad con la API v1 del visor actual
    * ======================================================================== */
 
@@ -1535,13 +2491,15 @@
   function spawnReaction(emoji, xPct, yPct, opts) {
     var o = opts || {};
     if (!ensureReady()) return null;
-    var p = punto(xPct, yPct);
+    var sz = clamp(num(o.size, 46), 18, 140);
+    var av = avoidBigs(xPct, yPct, sz * 1.7, sz * 1.7, 6);
+    var p = punto(av.x, av.y);
     var sp = stagePoint(p);
     var el = make('div', 'vfx2-react');
-    el.textContent = emoji || '\u2728';
+    setEmojiContent(el, emoji || '\u2728');
     el.style.left = sp.x + 'px';
     el.style.top = sp.y + 'px';
-    el.style.fontSize = clamp(num(o.size, 46), 18, 140) + 'px';
+    el.style.fontSize = sz + 'px';
     dom.appendChild(el);
     track(el);
     later(function () { removeEl(el); }, 1400);
@@ -1571,7 +2529,7 @@
 
     var size = clamp(num(o.size, 100), 24, 320);
     var el = make('div', 'vfx2-fly');
-    el.textContent = emoji || '\uD83D\uDCA5';
+    setEmojiContent(el, emoji || '\uD83D\uDCA5');
     el.style.fontSize = size + 'px';
     el.style.left = sx + 'px';
     el.style.top = sy + 'px';
@@ -1659,8 +2617,20 @@
     clearTimers();
     P.length = 0;
     spawnDrawId = 0;
+    watchId = 0;
+    rafId = 0;
+    lastT = 0;
+    lastRafT = 0;
     activeInv.rojo = null;
     activeInv.azul = null;
+    activeBig.rojo = null;
+    activeBig.azul = null;
+    cola.rojo.length = 0;
+    cola.azul.length = 0;
+    busy.rojo = false;
+    busy.azul = false;
+    rotando.rojo = false;
+    rotando.azul = false;
     if (ctx) {
       try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { /* nada */ }
     }
@@ -1731,10 +2701,11 @@
   var api = {
     __vfx: VERSION,
     version: VERSION,
-    /* v3: marcas de compatibilidad para consumidores que miran la versión. */
-    apiVersion: 3,
+    /* v4: marcas de compatibilidad para consumidores que miran la versión. */
+    apiVersion: 4,
     esV2: true,
     esV3: true,
+    esV4: true,
 
     init: init,
     invader: invader,
@@ -1748,6 +2719,19 @@
     confetti: confetti,
     clear: clear,
 
+    /* v4: emojis propios + anti-solape + efectos nuevos */
+    emojiAt: emojiAt,
+    emojiNames: emojiNames,
+    emojiInfo: emojiInfo,
+    emojiSVG: emojiSVG,
+    legacy: legacy,
+    stageState: stageState,
+    shockwave: shockwave,
+    quake: quake,
+    ashfall: ashfall,
+    cameraFlash: cameraFlash,
+    victory: victory,
+
     /* compat v1 */
     spawnImpact: spawnImpact,
     spawnDamage: spawnDamage,
@@ -1757,7 +2741,38 @@
     focus: focus,
     setMap: setMap,
     setMotion: setMotion,
-    getMapEl: mapHost
+    getMapEl: mapHost,
+    /* QA: fuerza un repintado del canvas (diagnóstico de partículas) */
+    forzarDibujo: function () { if (ctx) drawP(); return drawCount; },
+    /* QA: simula un frame completo (paso + pintado) y devuelve los ms que cuesta */
+    forzarFrame: function (dt) {
+      if (!ctx) return null;
+      var t0 = nowMs();
+      stepP(clamp(dt || 0.016, 0.001, 0.05));
+      drawP();
+      return Math.round((nowMs() - t0) * 100) / 100;
+    },
+    /* QA: coste medio/máximo del frame simulado (no depende del rAF del navegador) */
+    bench: function (n) {
+      if (!ctx) return null;
+      n = clamp(num(n, 30), 3, 300);
+      var i, t, tot = 0, max = 0, vals = [];
+      for (i = 0; i < n; i++) {
+        t = nowMs();
+        stepP(0.016);
+        drawP();
+        t = nowMs() - t;
+        vals.push(t); tot += t;
+        if (t > max) max = t;
+      }
+      vals.sort(function (a, b) { return a - b; });
+      return {
+        n: n, mediaMs: Math.round((tot / n) * 100) / 100,
+        p95Ms: Math.round(vals[Math.min(n - 1, Math.floor(n * 0.95))] * 100) / 100,
+        maxMs: Math.round(max * 100) / 100, particulas: P.length,
+        view: { w: Math.round(VIEW.w), h: Math.round(VIEW.h) }, dpr: DPR
+      };
+    }
   };
 
   global.ViewerFX = api;

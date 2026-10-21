@@ -82,8 +82,17 @@ KOKORO_DIR = os.environ.get(
     "WB_KOKORO_DIR", os.path.join(RAIZ, "reports", "voz-casting", "v6", "modelos"))
 KOKORO_ONNX = os.path.join(KOKORO_DIR, "kokoro-v1.0.onnx")
 KOKORO_BIN = os.path.join(KOKORO_DIR, "voices-v1.0.bin")
-VOZ_KOKORO = os.environ.get("WB_VOZ_KOKORO", "em_santa")
-VOZ_EDGE = os.environ.get("WB_VOZ_EDGE", "es-CO-SalomeNeural")
+# Voces por defecto (v9.6, 21/10/2026). Se pueden cambiar SIN tocar código con
+# variables de entorno, que es lo que usa el dueño para volver atrás en un reinicio:
+#   VOZ_EDGE / WB_VOZ_EDGE      -> voz de edge (AZUL). Defecto: es-MX-DaliaNeural
+#                                  (antes es-CO-SalomeNeural, plana por el modelo:
+#                                  sd_fr 1,65 vs 2,77 de Dalia con el mismo texto).
+#   VOZ_KOKORO / WB_VOZ_KOKORO  -> voz de Kokoro (ROJO). Defecto: em_santa.
+# Ejemplo para volver a Salome:  $env:VOZ_EDGE="es-CO-SalomeNeural"; node scripts\tts-server.mjs --port 8771
+# El nombre que se anuncia en /health y en la firma del pack es el que quede aquí,
+# así que al cambiarlo cambia también la huella de caché y el pack se regenera solo.
+VOZ_KOKORO = (os.environ.get("VOZ_KOKORO") or os.environ.get("WB_VOZ_KOKORO") or "em_santa").strip()
+VOZ_EDGE = (os.environ.get("VOZ_EDGE") or os.environ.get("WB_VOZ_EDGE") or "es-MX-DaliaNeural").strip()
 
 _ffmpeg = None
 
@@ -343,6 +352,15 @@ def trozos_linea(texto):
     return res
 
 
+# Ganancia de la prosodia POR FRASE (exclamación, pregunta, cierre, coma).
+# 1.0 = receta exacta del casting v8 aprobado → comportamiento intacto.
+# Subirla (variable de entorno VOZ_PROSODIA, p. ej. 2.0) hace que el AZUL
+# contraste más entre frases SIN cambiar de voz ni de timbre: solo separa más
+# el tono de la exclamación, de la pregunta y del cierre. Sirve para probar
+# "más entonación" sobre la voz aprobada sin cambiar de identidad.
+PROSODIA_GANANCIA = float(os.environ.get("VOZ_PROSODIA", "1.0") or 1.0)
+
+
 def prosodia_frase(frase, i, total, emo):
     """(rate_pct, pitch_hz, semi) de esta frase concreta."""
     rate = emo["rate"]
@@ -362,6 +380,12 @@ def prosodia_frase(frase, i, total, emo):
         pitch = emo["fin_pitch"]
     elif frase.endswith(","):
         rate += 2
+    g = PROSODIA_GANANCIA
+    if g != 1.0:
+        # Solo se amplía el DESVÍO respecto del tono base de la emoción; el tono
+        # base y el timbre no se tocan.
+        rate = emo["rate"] + (rate - emo["rate"]) * g
+        pitch = emo["pitch"] + (pitch - emo["pitch"]) * g
     return (acotar(rate, -30, 30), acotar(pitch, -40, 40), acotar(semi, -4.0, 4.0))
 
 

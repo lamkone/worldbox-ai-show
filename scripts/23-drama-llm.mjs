@@ -72,6 +72,207 @@ function anotarFallo(obj) {
   try { fs.appendFileSync(REGISTRO_FALLOS, JSON.stringify(obj) + '\n') } catch { /* sin registro */ }
 }
 
+// ---------------------------------------------------------------- cuaderno de las dos IAs
+
+/**
+ * Memoria PERSISTENTE de cada IA entre partidas. El chat no es memoria: lo que
+ * una IA aprende de una partida (marcador, cómo le fue, qué frases le
+ * funcionaron, de qué presume o se queja) se guarda en disco y se le recuerda
+ * al empezar la siguiente. Sin esto, cada partida empieza de cero y las dos IAs
+ * repiten los mismos chistes para siempre.
+ *
+ *   reports/drama/cuaderno.json       → estado estructurado (fuente de verdad)
+ *   reports/drama/cuaderno-rojo.md    → vista humana
+ *   reports/drama/cuaderno-azul.md    → vista humana
+ *
+ * Lo que se le mete al prompt va TOPADO en caracteres (BLOQUE_MAX). Un cuaderno
+ * que crece sin límite se come el contexto y empeora las réplicas: solo entra
+ * lo que cambia el comportamiento (marcador, racha, últimos resultados y unas
+ * pocas frases que funcionaron). El resto queda en el .md para que lo lea el
+ * dueño, no para el modelo.
+ */
+const CUADERNO_DIR = new URL('../reports/drama/', import.meta.url)
+const CUADERNO_JSON = new URL('cuaderno.json', CUADERNO_DIR)
+const BLOQUE_MAX = 900
+const MAX_HISTORIAL = 12
+const MAX_FRASES = 10
+const MAX_NOTAS = 8
+
+function cuadernoVacio() {
+  const uno = () => ({ marcador: { ganadas: 0, perdidas: 0, empates: 0 }, racha: 0, historial: [], frases: [], notas: [], ultima: null })
+  return { version: 1, actualizado: null, rojo: uno(), azul: uno() }
+}
+
+function cargarCuaderno() {
+  try {
+    const j = JSON.parse(fs.readFileSync(CUADERNO_JSON, 'utf8'))
+    const base = cuadernoVacio()
+    for (const k of ['rojo', 'azul']) {
+      if (j && j[k] && typeof j[k] === 'object') base[k] = { ...base[k], ...j[k] }
+    }
+    return base
+  } catch {
+    return cuadernoVacio()
+  }
+}
+
+const CUADERNO = cargarCuaderno()
+
+const fechaCorta = iso => {
+  const d = iso ? new Date(iso) : new Date()
+  const p = n => String(n).padStart(2, '0')
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+/** Vista humana del cuaderno de un agente (lo que se escribe en el .md). */
+function renderCuaderno(agente) {
+  const c = CUADERNO[agente]
+  const nombre = agente === 'rojo' ? 'ROJO' : 'AZUL'
+  const rival = agente === 'rojo' ? 'AZUL' : 'ROJO'
+  const m = c.marcador
+  const rachaTxt = c.racha > 0 ? `${c.racha} victorias seguidas` : c.racha < 0 ? `${-c.racha} derrotas seguidas` : 'sin racha'
+  const L = []
+  L.push(`# Cuaderno de ${nombre}`)
+  L.push('')
+  L.push(`_Actualizado: ${fechaCorta(CUADERNO.actualizado)} · lo escribe solo \`scripts/23-drama-llm.mjs\`; no editar a mano._`)
+  L.push('')
+  L.push(`## Marcador contra ${rival}`)
+  L.push('')
+  L.push(`- Ganadas: **${m.ganadas}** · Perdidas: **${m.perdidas}** · Empates: **${m.empates}**`)
+  L.push(`- Racha actual: **${rachaTxt}**`)
+  L.push('')
+  L.push('## Últimas partidas')
+  L.push('')
+  if (!c.historial.length) L.push('_Todavía no ha jugado ninguna partida._')
+  else {
+    L.push('| Cuándo | Resultado | Rondas | Bajas causadas | Bajas sufridas |')
+    L.push('|---|---|---|---|---|')
+    for (const h of c.historial) {
+      L.push(`| ${fechaCorta(h.fecha)} | ${h.resultado} | ${h.rondas} | ${h.bajas} | ${h.perdidas} |`)
+    }
+  }
+  L.push('')
+  L.push('## Frases que le funcionaron (se le recuerdan para el estilo, no para repetirlas)')
+  L.push('')
+  if (!c.frases.length) L.push('_Ninguna todavía._')
+  else for (const f of c.frases) L.push(`- "${f}"`)
+  L.push('')
+  L.push('## Notas propias (rencores, excusas, promesas)')
+  L.push('')
+  if (!c.notas.length) L.push('_Ninguna todavía._')
+  else for (const n of c.notas) L.push(`- ${n}`)
+  L.push('')
+  return L.join('\n')
+}
+
+/** Escribe el JSON y los dos .md. Silencioso: el show nunca se para por esto. */
+function guardarCuaderno() {
+  try {
+    CUADERNO.actualizado = new Date().toISOString()
+    fs.mkdirSync(CUADERNO_DIR, { recursive: true })
+    fs.writeFileSync(CUADERNO_JSON, JSON.stringify(CUADERNO, null, 2))
+    for (const ag of ['rojo', 'azul']) {
+      fs.writeFileSync(new URL(`cuaderno-${ag}.md`, CUADERNO_DIR), renderCuaderno(ag))
+    }
+  } catch (e) {
+    anotarFallo({ cuando: new Date().toISOString(), tipo: 'cuaderno', error: String(e) })
+  }
+}
+
+/**
+ * El bloque que se le añade al system prompt. Debe ser corto y en segunda
+ * persona: son cosas que la IA "recuerda", no un informe.
+ */
+function bloqueCuaderno(agente) {
+  const c = CUADERNO[agente]
+  const rival = agente === 'rojo' ? 'AZUL' : 'ROJO'
+  const m = c.marcador
+  const partidas = m.ganadas + m.perdidas + m.empates
+  if (!partidas) return ''
+  const L = []
+  L.push('')
+  L.push(`LO QUE RECUERDAS DE PARTIDAS ANTERIORES CONTRA ${rival} (tu cuaderno):`)
+  const plural = (n, uno, muchos) => `${n} ${n === 1 ? uno : muchos}`
+  L.push(`- Marcador histórico: ${plural(m.ganadas, 'victoria', 'victorias')}, ${plural(m.perdidas, 'derrota', 'derrotas')}, ${plural(m.empates, 'empate', 'empates')}.`)
+  if (c.racha >= 2) L.push(`- Llevas ${c.racha} victorias seguidas: no te confíes, pero tienes derecho a restregarlo.`)
+  else if (c.racha <= -2) L.push(`- Llevas ${-c.racha} derrotas seguidas: estás dolido y lo disimulas mal.`)
+  const u = c.historial[0]
+  if (u) L.push(`- Última partida (${fechaCorta(u.fecha)}): ${u.resultado.toLowerCase()}, ${u.rondas} rondas, ${u.bajas} bajas causadas y ${u.perdidas} sufridas.`)
+  if (c.frases.length) L.push(`- Frases tuyas que ya usaste (NO las repitas; sírvete de su tono): ${c.frases.slice(0, 3).map(f => `"${f}"`).join(' · ')}`)
+  L.push('- Usa esto para picar con datos reales del historial, no para repetir frases.')
+  let txt = L.join('\n')
+  if (txt.length > BLOQUE_MAX) txt = txt.slice(0, BLOQUE_MAX - 1).trimEnd() + '…'
+  return txt
+}
+
+/** El system prompt completo: persona + cuaderno. */
+function systemDe(agente) {
+  const persona = PERSONAS[agente] ?? PERSONAS.rojo
+  return persona.system + bloqueCuaderno(agente)
+}
+
+/**
+ * Apunta el resultado de una partida en el cuaderno del agente. Se llama desde
+ * /verdict (una vez por agente y partida). Idempotente por firma: si el mismo
+ * resultado se repite en menos de 3 min (un reintento), no se apunta dos veces.
+ */
+function apuntarPartida(agente, { ganador, contexto = {}, frase = '' }) {
+  try {
+    const c = CUADERNO[agente]
+    const an = analizar(contexto)
+    const rondas = Number(contexto.rondas ?? an.rondas ?? 0) || 0
+    const g = String(ganador ?? '').toLowerCase()
+    const resultado = g === agente ? 'Victoria' : g === 'empate' ? 'Empate' : 'Derrota'
+    const firma = `${agente}|${g}|${rondas}|${an.misB}|${an.misP}`
+    const ahora = Date.now()
+    if (c.ultima && c.ultima.firma === firma && ahora - c.ultima.ts < 180_000) return false
+    c.ultima = { firma, ts: ahora }
+    if (resultado === 'Victoria') { c.marcador.ganadas++; c.racha = c.racha > 0 ? c.racha + 1 : 1 }
+    else if (resultado === 'Derrota') { c.marcador.perdidas++; c.racha = c.racha < 0 ? c.racha - 1 : -1 }
+    else { c.marcador.empates++; c.racha = 0 }
+    c.historial.unshift({
+      fecha: new Date().toISOString(),
+      resultado,
+      rondas,
+      bajas: an.misB,
+      perdidas: an.misP,
+    })
+    c.historial = c.historial.slice(0, MAX_HISTORIAL)
+    if (frase) {
+      const limpia = String(frase).replace(/["“”]/g, '').slice(0, 160)
+      c.frases.unshift(limpia)
+      c.frases = [...new Set(c.frases)].slice(0, MAX_FRASES)
+      c.notas.unshift(`${resultado} contra ${agente === 'rojo' ? 'AZUL' : 'ROJO'} (${fechaCorta()}): ${limpia.slice(0, 120)}`)
+      c.notas = c.notas.slice(0, MAX_NOTAS)
+    }
+    guardarCuaderno()
+    return true
+  } catch (e) {
+    anotarFallo({ cuando: new Date().toISOString(), tipo: 'cuaderno-apunte', error: String(e) })
+    return false
+  }
+}
+
+/** Guarda una frase recién dicha para que el cuaderno recuerde su estilo. */
+let cuadernoSucio = false
+let cuadernoFlush = null
+function anotarFraseCuaderno(agente, texto) {
+  const t = String(texto ?? '').trim()
+  if (!t || t.length < 12) return
+  const c = CUADERNO[agente]
+  if (!c) return
+  c.frases.unshift(t.slice(0, 160))
+  c.frases = [...new Set(c.frases)].slice(0, MAX_FRASES)
+  cuadernoSucio = true
+  if (!cuadernoFlush) {
+    cuadernoFlush = setTimeout(() => {
+      cuadernoFlush = null
+      if (cuadernoSucio) { cuadernoSucio = false; guardarCuaderno() }
+    }, 2500)
+    cuadernoFlush.unref?.()
+  }
+}
+
 // ---------------------------------------------------------------- credenciales
 
 /** Lee el pool de cuentas del vault de DSH. */
@@ -838,6 +1039,7 @@ function anotarDicha(agente, texto) {
   }
   recientesGlobales.push(String(texto ?? ''))
   while (recientesGlobales.length > 6) recientesGlobales.shift()
+  anotarFraseCuaderno(agente, texto)
 }
 
 /**
@@ -1515,7 +1717,7 @@ async function pedirReplica(agente, instruccion, opts = {}) {
   } = opts
   const persona = PERSONAS[agente] ?? PERSONAS.rojo
   const temp = Math.min(1.1, Math.max(0.5, Number(temperatura) || 0.9))
-  const mensajes = [{ role: 'system', content: persona.system }, ...memoria[agente]]
+  const mensajes = [{ role: 'system', content: systemDe(agente) }, ...memoria[agente]]
   const base = [...mensajes, { role: 'user', content: instruccion }]
 
   const primero = await pedirTexto(agente, base, { maxTokens, temperatura: temp })
@@ -1770,6 +1972,25 @@ async function manejar(req, res) {
       fallos,
       reparaciones,
       uptime_s: Math.round((ahora - inicio) / 1000),
+      cuaderno: {
+        rojo: { partidas: CUADERNO.rojo.historial.length, chars: bloqueCuaderno('rojo').length, racha: CUADERNO.rojo.racha },
+        azul: { partidas: CUADERNO.azul.historial.length, chars: bloqueCuaderno('azul').length, racha: CUADERNO.azul.racha },
+        actualizado: CUADERNO.actualizado,
+      },
+    })
+  }
+  // GET /cuaderno → lo que las dos IAs recuerdan. GET /cuaderno?agente=rojo → solo ese.
+  if (url === '/cuaderno' && req.method === 'GET') {
+    const q = new URL(req.url, 'http://127.0.0.1')
+    const ag = String(q.searchParams.get('agente') ?? '').toLowerCase()
+    if (ag === 'rojo' || ag === 'azul') {
+      return json(res, 200, { ok: true, agente: ag, bloque: bloqueCuaderno(ag), cuaderno: CUADERNO[ag], md: renderCuaderno(ag) })
+    }
+    return json(res, 200, {
+      ok: true,
+      actualizado: CUADERNO.actualizado,
+      rojo: { bloque: bloqueCuaderno('rojo'), cuaderno: CUADERNO.rojo },
+      azul: { bloque: bloqueCuaderno('azul'), cuaderno: CUADERNO.azul },
     })
   }
   if (url === '/line' && req.method === 'POST') {
@@ -1919,6 +2140,9 @@ async function manejar(req, res) {
         `Máximo 20 palabras, una sola frase.`,
       { maxTokens: 60, temperatura: 0.9, validarSalida: false },
     )
+    // La partida se apunta en el cuaderno de la IA ANTES de devolver la frase:
+    // así el resultado queda guardado aunque el director corte la conexión.
+    apuntarPartida(agente, { ganador, contexto: b.contexto ?? {}, frase: r.ok ? r.texto : '' })
     return json(res, 200, r.ok ? { ok: true, texto: r.texto } : { ok: false, error: r.error })
   }
   return json(res, 404, { ok: false, error: 'ruta desconocida' })

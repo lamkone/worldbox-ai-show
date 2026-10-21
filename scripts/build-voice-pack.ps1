@@ -60,6 +60,17 @@ function Prop {
     return $def
 }
 
+# Huella corta del TEXTO de la frase. Los seq se repiten entre partidas (1, 2, 3...),
+# asi que para saber si el MP3 que ya esta en disco sirve hay que comparar el texto:
+# si no, se queda el audio de la partida anterior con el texto nuevo en pantalla.
+function HuellaTexto([string]$t) {
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        $b = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($t))
+        return (([System.BitConverter]::ToString($b)) -replace '-', '').Substring(0, 16).ToLower()
+    } finally { $sha.Dispose() }
+}
+
 if (-not (Test-Path -LiteralPath $ShowJson)) { throw "No existe el show.json: $ShowJson" }
 $show = Get-Content -LiteralPath $ShowJson -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not $show.eventos) { throw "El show.json no tiene eventos: $ShowJson" }
@@ -132,11 +143,13 @@ if (Test-Path -LiteralPath (Join-Path $OutDir 'voz.json')) {
 }
 
 $nuevos = 0; $saltados = 0; $fallos = 0; $bytesTotal = 0
+$seqsVistos = New-Object System.Collections.Generic.HashSet[string]
 $i = 0
 foreach ($ev in $eventos) {
     $i++
     $seq = [string]$ev.seq
     if (-not $seq) { $seq = [string]$i }
+    [void]$seqsVistos.Add($seq)
     $archivo = $seq + '.mp3'
     $ruta = Join-Path $OutDir $archivo
     $agenteEv = [string](Prop $ev 'agente')
@@ -147,16 +160,20 @@ foreach ($ev in $eventos) {
     if (-not $emoEv) { $emoEv = [string](Prop $ev 'tono') }
     $emocion = if ($emoEv) { $emoEv } else { 'neutral' }
 
+    $texto = [string]$ev.texto
+    $huella = HuellaTexto $texto
+
     if ((-not $forzar) -and (Test-Path -LiteralPath $ruta) -and $manifiesto.eventos.Contains($seq)) {
-        # Si la emoción cambió respecto al pack anterior, el MP3 ya no vale.
-        if ([string](Prop $manifiesto.eventos[$seq] 'emocion') -eq $emocion) {
+        # El MP3 anterior solo vale si es la MISMA frase con la MISMA emocion.
+        # Los seq se repiten en cada partida: comparando solo la emocion se
+        # quedaria el audio de la partida anterior con el texto nuevo.
+        if (([string](Prop $manifiesto.eventos[$seq] 'emocion') -eq $emocion) -and ([string](Prop $manifiesto.eventos[$seq] 'hash') -eq $huella)) {
             $saltados++
             $bytesTotal += (Get-Item -LiteralPath $ruta).Length
             continue
         }
     }
 
-    $texto = [string]$ev.texto
     $url = $Servicio + '/tts?v=' + $agente + '&t=' + [uri]::EscapeDataString($texto) + '&e=' + [uri]::EscapeDataString($emocion)
     try {
         $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -164,7 +181,7 @@ foreach ($ev in $eventos) {
         $sw.Stop()
         $len = (Get-Item -LiteralPath $ruta).Length
         if ($len -lt 800) { throw "audio vacio ($len B)" }
-        $manifiesto.eventos[$seq] = [ordered]@{ archivo = $archivo; bytes = $len; agente = $agente; emocion = $emocion; ms = [int]$sw.ElapsedMilliseconds }
+        $manifiesto.eventos[$seq] = [ordered]@{ archivo = $archivo; bytes = $len; agente = $agente; emocion = $emocion; hash = $huella; ms = [int]$sw.ElapsedMilliseconds }
         $nuevos++
         $bytesTotal += $len
         Escribir ("  [{0}/{1}] seq={2,-4} {3,-6} {4,-11} {5,7:N0} B {6,5} ms  {7}" -f $i, $eventos.Count, $seq, $agente, $emocion, $len, $sw.ElapsedMilliseconds, $texto.Substring(0, [Math]::Min(48, $texto.Length))) 'DarkGray'
@@ -182,6 +199,16 @@ if ($fallos -gt 0) {
     Escribir ("FALLOS: " + $fallos + " de " + $eventos.Count + " frases. NO se toca el pack anterior.") 'Red'
     Escribir '  Comprueba el servicio de voz (http://127.0.0.1:8771/health) y vuelve a lanzarlo.' 'Red'
     exit 1
+}
+
+# Solo los eventos de ESTA partida. El manifiesto arrastraba los de partidas
+# anteriores, y como la limpieza de huerfanos usa sus claves, sus MP3 no se
+# borraban nunca: el pack crecia sin control (62 eventos para 37 frases).
+foreach ($k in @($manifiesto.eventos.Keys)) {
+    if (-not $seqsVistos.Contains([string]$k)) {
+        Escribir ("  evento de otra partida descartado: seq=" + $k) 'Yellow'
+        $manifiesto.eventos.Remove($k)
+    }
 }
 
 # Limpia MP3 huerfanos de eventos que ya no existen (partidas distintas).

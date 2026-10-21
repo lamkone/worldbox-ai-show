@@ -86,6 +86,12 @@ public static class WbStream
     // mantiene 2,5 s para clientes que sondean despacio, pero no sirve para buscar
     // el pico porque repite el mismo valor viejo.
     static volatile int _lspike, _lcx = -1, _lcy = -1;
+    // Valores CRUDOS (0..10000 del frame COMPLETO) tal como los mide DetectExplosion.
+    // La conversión al recorte publicado se hace UNA sola vez por frame en
+    // CaptureLoop. Antes se renormalizaban in situ los campos ya publicados y cada
+    // frame volvía a transformar el valor transformado: deriva geométrica que
+    // acababa sacando el punto del encuadre y la cámara saltaba a otro sitio.
+    static int _rcx = -1, _rcy = -1, _rscx = -1, _rscy = -1, _rlcx = -1, _rlcy = -1;
     static long _lastSpikeTicks;
     // cuándo ocurrió el pico (ms Unix), para que el motor sepa si es de ESTA bomba
     // o de una anterior que aún está en la ventana de 2,5 s
@@ -341,17 +347,18 @@ public static class WbStream
                 double ex0 = _cx0, ey0 = _cy0, ex1 = _cx1, ey1 = _cy1;
                 if (_autoCrop && _ax1 > _ax0) { ex0 = _ax0; ey0 = _ay0; ex1 = _ax1; ey1 = _ay1; }
 
-                // Renormaliza los centroides (0..10000 del frame completo) al recorte
-                // que se publica: si no, el visor apuntaria a otro sitio.
-                if (ex0 > 0 || ey0 > 0 || ex1 < 1 || ey1 < 1)
-                {
-                    _cx = Renorm(_cx, ex0, ex1);
-                    _cy = Renorm(_cy, ey0, ey1);
-                    _scx = Renorm(_scx, ex0, ex1);
-                    _scy = Renorm(_scy, ey0, ey1);
-                    _lcx = Renorm(_lcx, ex0, ex1);
-                    _lcy = Renorm(_lcy, ey0, ey1);
-                }
+                // Los centroides se miden en el frame COMPLETO (campos _r*) y se
+                // convierten al recorte publicado UNA sola vez por frame. Hacerlo
+                // sobre los campos ya publicados era el bug de la cámara: cada
+                // frame re-aplicaba la transformación, el valor derivaba hasta
+                // salirse del encuadre (Renorm devolvía -1) y el motor acababa
+                // apuntando al centro del mapa o a cualquier sitio.
+                _cx = Renorm(_rcx, ex0, ex1);
+                _cy = Renorm(_rcy, ey0, ey1);
+                _scx = Renorm(_rscx, ex0, ex1);
+                _scy = Renorm(_rscy, ey0, ey1);
+                _lcx = Renorm(_rlcx, ex0, ex1);
+                _lcy = Renorm(_rlcy, ey0, ey1);
 
                 BitmapSource src = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, bits, w * h * 4, w * 4);
                 if (ex0 > 0 || ey0 > 0 || ex1 < 1 || ey1 < 1)
@@ -442,10 +449,10 @@ public static class WbStream
         _power = count;
         if (count > 40)
         {
-            _cx = (int)((double)sx / count / w * 10000);
-            _cy = (int)((double)sy / count / h * 10000);
+            _rcx = (int)((double)sx / count / w * 10000);
+            _rcy = (int)((double)sy / count / h * 10000);
         }
-        else { _cx = -1; _cy = -1; }
+        else { _rcx = -1; _rcy = -1; }
 
         // --- 2) rejilla de luminancia ---
         int n = GRID_W * GRID_H;
@@ -476,6 +483,9 @@ public static class WbStream
         int spike = 0;
         int core = 0;
         long bx = 0, by = 0;
+        // centroide de TODO lo iluminado: es el centro del fogonazo cuando el
+        // destello es ancho y no tiene núcleo blanco (napalm, explosiones grandes)
+        long ax = 0, ay = 0;
         for (int i = 0; i < n; i++)
         {
             int cur = lum[i];
@@ -484,6 +494,8 @@ public static class WbStream
             if (d > 26)
             {
                 spike++;
+                ax += (i % GRID_W);
+                ay += (i / GRID_W);
                 if (d > 70)
                 {
                     core++;
@@ -505,23 +517,28 @@ public static class WbStream
         // Pico del frame actual: esto es lo que muestrea el motor para buscar el
         // máximo de la ventana (el latch de abajo se queda pegado al último valor).
         _lspike = spike;
+        // Centro del fogonazo: si hay núcleo blanco, el núcleo; si el destello es
+        // ancho y débil (napalm), el centroide de todo lo iluminado. Antes, cuando
+        // no había núcleo, se conservaba el punto del fogonazo ANTERIOR y el motor
+        // apuntaba a la bomba que ya había estallado.
+        int px = -1, py = -1;
         if (core > 4)
         {
-            _lcx = (int)((double)bx / core / GRID_W * 10000);
-            _lcy = (int)((double)by / core / GRID_H * 10000);
+            px = (int)((double)bx / core / GRID_W * 10000);
+            py = (int)((double)by / core / GRID_H * 10000);
         }
-        else if (spike <= 30)
+        else if (spike > 30 && spike < (int)(n * 0.7))
         {
-            _lcx = -1; _lcy = -1;
+            // >70% de la rejilla iluminada = flash global (rayo, cambio de luz,
+            // ventana), no una bomba: no se publica punto.
+            px = (int)((double)ax / spike / GRID_W * 10000);
+            py = (int)((double)ay / spike / GRID_H * 10000);
         }
+        _rlcx = px; _rlcy = py;
         if (spike > 30)
         {
             _spike = spike;
-            if (core > 4)
-            {
-                _scx = (int)((double)bx / core / GRID_W * 10000);
-                _scy = (int)((double)by / core / GRID_H * 10000);
-            }
+            if (px >= 0) { _rscx = px; _rscy = py; }
             _lastSpikeTicks = Stopwatch.GetTimestamp();
             _spikeUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         }

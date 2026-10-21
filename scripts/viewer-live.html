@@ -963,7 +963,7 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
     const raw = window.ViewerFX;
     const host = $('#fx-host');
     if (!raw || !host) {
-      return { v2: false, invader() {}, impact() {}, damage() {}, label() {}, sparks() {}, shake() {}, flash() {}, vignette() {}, confetti() {}, clear() {}, ok: false };
+      return { v2: false, invader() {}, impact() {}, damage() {}, label() {}, sparks() {}, shake() {}, flash() {}, vignette() {}, confetti() {}, clear() {}, shockwave() {}, quake() {}, ashfall() {}, cameraFlash() {}, victory() {}, emojiAt() {}, ok: false };
     }
     /* v3 también usa el contrato v2 (apiVersion 3, esV3); solo v1 es legacy */
     const esV2 = String(raw.version || '').charAt(0) !== '1';
@@ -1042,6 +1042,14 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
         if (esV2) { try { raw.confetti(side, o || {}); return true; } catch (e) { return false; } }
         return false;
       },
+      /* v4: efectos nuevos. Devuelven true si el motor los pinto y false si no
+         (asi el visor puede hacer su propio respaldo sin duplicar el efecto). */
+      shockwave(x, y, o) { if (typeof raw.shockwave === 'function') { try { raw.shockwave(x, y, o || {}); return true; } catch (e) {} } return false; },
+      quake(intensidad, o) { if (typeof raw.quake === 'function') { try { raw.quake(intensidad, o || {}); return true; } catch (e) {} } return false; },
+      ashfall(o) { if (typeof raw.ashfall === 'function') { try { raw.ashfall(o || {}); return true; } catch (e) {} } return false; },
+      cameraFlash(o) { if (typeof raw.cameraFlash === 'function') { try { raw.cameraFlash(o || {}); return true; } catch (e) {} } return false; },
+      victory(side, o) { if (typeof raw.victory === 'function') { try { raw.victory(side, o || {}); return true; } catch (e) {} } return false; },
+      emojiAt(emoji, x, y, o) { if (typeof raw.emojiAt === 'function') { try { raw.emojiAt(emoji, x, y, o || {}); return true; } catch (e) {} } return false; },
       clear() { try { raw.clear(); } catch (e) {} }
     };
   })();
@@ -1457,6 +1465,20 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
     if (tval) tval.textContent = Math.round(tension) + '%';
     /* música: la intensidad sigue a la tensión dramática */
     try { if (window.ShowMusic && window.ShowMusic.setIntensidad) window.ShowMusic.setIntensidad(tension / 100); } catch (e) {}
+    /* música: pista automática según la fase (espera / chill / tensión / combate alternado / victoria).
+       cambiarA() es idempotente, así que pedirla en cada refresco no reinicia la pista. */
+    try {
+      if (window.ShowMusic && window.ShowMusic.auto) {
+        window.ShowMusic.auto({
+          fase: fin ? 'final' : (st.ronda ? 'ronda' : 'espera'),
+          ronda: st.ronda,
+          rondas: st.rondas,
+          terminada: fin,
+          drama: d,
+          historial: st.historial || []
+        });
+      }
+    } catch (e) {}
     if (cajaT) {
       cajaT.classList.toggle('alta', tension >= 70);
       cajaT.classList.toggle('media', tension >= 40 && tension < 70);
@@ -1752,6 +1774,7 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
     let confeti = false;
     if (FX.ok) {
       confeti = FX.confetti(lado, { count: 220 });
+      FX.victory(lado, { text: '¡CAMPEÓN!', count: 18 });
       FX.flash(lado === 'rojo' ? '#ff4757' : '#3d9bff', { opacity: 0.22, duration: 900 });
     }
     if (!confeti) lluviaEmojis();
@@ -1905,7 +1928,7 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
   }
   /* El impacto se pinta donde está el objetivo de cámara en pantalla, no siempre
      en el centro: con zoom, el centro de la pantalla no es el punto bombardeado. */
-  function impactoCentral(power, punto) {
+  function impactoCentral(power, punto, tipoBomba) {
     setTimeout(function () {
       const p = clamp(Number(power) || 0.7, 0.3, 1);
       let pt = { x: 50, y: 50 };
@@ -1918,6 +1941,13 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
         debris: true,
         shake: clamp(0.35 + p * 0.6, 0, 1)
       });
+      /* v4: onda de choque y terremoto; la napalm deja caer ceniza */
+      const atomica = String(tipoBomba || '').toLowerCase().indexOf('atomic') >= 0;
+      FX.shockwave(pt.x, pt.y, { power: p });
+      FX.quake(atomica ? 0.9 : 0.55, { duration: atomica ? 700 : 460, x: pt.x, y: pt.y });
+      if (String(tipoBomba || '').toLowerCase().indexOf('napalm') >= 0) {
+        FX.ashfall({ duration: 4200, density: 0.8 });
+      }
     }, 620);
   }
   function sacudirPanel(lado) {
@@ -2110,7 +2140,7 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
       if (hayCam) foco(Number(cam.x), Number(cam.y), Number(cam.zoom) || 1.5, Number(cam.ms) || 0, false);
       else if (punto) foco(punto.x, punto.y, 1.4, CFG.holdMs, false);
       const poder = poderDe(e.power);
-      impactoCentral(poder, punto);
+      impactoCentral(poder, punto, e.power);
       sacudirCamara(poder);
       /* v5.2: el rótulo y su número se pintan juntos, con la cámara ya asentada,
          para que no se pisen aunque el plano esté moviéndose. */
@@ -2139,7 +2169,7 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
         };
       }
       ultimoEmoji = { t: tEmo, x: pt.x, y: pt.y };
-      FX.invader(String(e.texto || '😤'), {
+      FX.invader(String(e.emoji || e.texto || '😤'), {
         side: lado,
         emotion: emocionDe(e),
         x: pt.x,
@@ -2149,6 +2179,18 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
         size: ES_MOVIL ? 210 : 330,
         duration: 3400
       });
+    } else if (tipo === 'efecto') {
+      /* efectos v4 pedidos desde el feed: fx = onda|terremoto|ceniza|flash|victoria-rojo|victoria-azul */
+      const fx = String(e.fx || '').toLowerCase();
+      const px = Number.isFinite(Number(e.x)) ? Number(e.x) : 50;
+      const py = Number.isFinite(Number(e.y)) ? Number(e.y) : 48;
+      const pw = Number.isFinite(Number(e.power)) ? Number(e.power) : 0.85;
+      if (fx === 'onda') FX.shockwave(px, py, { power: pw });
+      else if (fx === 'terremoto') FX.quake(pw, { x: px, y: py });
+      else if (fx === 'ceniza') FX.ashfall({ density: pw });
+      else if (fx === 'flash') FX.cameraFlash({ opacity: Math.min(0.85, pw) });
+      else if (fx === 'victoria-rojo') FX.victory('rojo', { x: px, y: py });
+      else if (fx === 'victoria-azul') FX.victory('azul', { x: px, y: py });
     } else if (tipo === 'tropas') {
       const punto = puntoDeEvento(e.x, e.y);
       if (punto) ultimoPuntoVentana = punto;
@@ -2427,6 +2469,21 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
     BASE = ep.base;
     STREAM_BASE = ep.streamBase;
     SIN_SENAL = ep.sinSenal;
+
+    /* Voces: la página /live/ publicada en GitHub Pages resuelve el túnel del
+     * directo aquí. Sin esto ViewerVoz no tiene servicio en *.github.io y cae a
+     * la voz del navegador (el dueño lo oye como "las voces antiguas"). En
+     * localhost/127.0.0.1 NO se inyecta: viewer-voice.js ya apunta a 8771. */
+    try {
+      if (BASE && window.ViewerVoz && window.ViewerVoz.setBase) {
+        var hostVoz = String(location.hostname || '');
+        if (!/^(localhost|127\.0\.0\.1)$/i.test(hostVoz)) {
+          window.ViewerVoz.setBase(BASE);
+          if (window.ViewerVoz.activarSiParam) window.ViewerVoz.activarSiParam();
+          actualizarBotonVoz();
+        }
+      }
+    } catch (e) { /* si falla, ViewerVoz sigue con la resolución por hostname */ }
 
     if (SIN_SENAL) { modoSinSenal(); return; }
 

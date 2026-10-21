@@ -2975,9 +2975,16 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
     llanto: { emoji: '😭', color: '#4d8dff' },
     burla: { emoji: '😂', color: '#ffd166' },
     euforia: { emoji: '🎉', color: '#ff7ad9' },
-    panico: { emoji: '😱', color: '#b45cff' }
+    panico: { emoji: '😱', color: '#b45cff' },
+    /* v9.6: las cuatro emociones del motor de voz. Sin ellas el visor descartaba
+       la emocion explicita del evento y 20 de las 37 lineas del show sonaban en
+       directo con otra emocion distinta de la del pack pregrabado. */
+    enfadado: { emoji: '😡', color: '#ff4d5e' },
+    confuso: { emoji: '😕', color: '#9aa4ff' },
+    triste: { emoji: '😢', color: '#4d8dff' },
+    neutral: { emoji: '😐', color: '#9aa0a6' }
   };
-  var EMO_VALIDAS = ['furia', 'llanto', 'burla', 'euforia', 'panico'];
+  var EMO_VALIDAS = ['furia', 'llanto', 'burla', 'euforia', 'panico', 'enfadado', 'confuso', 'triste', 'neutral'];
   var GLIFOS = [
     ['furia', '😡😠🤬🔥💢👿😤'],
     ['llanto', '😭😢😥🥲😿😞😔'],
@@ -3354,6 +3361,32 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
       if (externo && typeof externo.confetti === 'function') { try { externo.confetti(side, o); return; } catch (e) { } }
       interno.confetti(side, o);
     },
+    /* --- v4 (viewer-fx.js): efectos nuevos. Si el motor cargado es v3 o
+       anterior se degradan a "no hacer nada" y la repeticion sigue igual. --- */
+    shockwave: function (xp, yp, o) {
+      if (externo && typeof externo.shockwave === 'function') { try { externo.shockwave(xp, yp, o); return true; } catch (e) { } }
+      return false;
+    },
+    quake: function (intensidad, o) {
+      if (externo && typeof externo.quake === 'function') { try { externo.quake(intensidad, o); return true; } catch (e) { } }
+      return false;
+    },
+    ashfall: function (o) {
+      if (externo && typeof externo.ashfall === 'function') { try { externo.ashfall(o); return true; } catch (e) { } }
+      return false;
+    },
+    cameraFlash: function (o) {
+      if (externo && typeof externo.cameraFlash === 'function') { try { externo.cameraFlash(o); return true; } catch (e) { } }
+      return false;
+    },
+    victory: function (side, o) {
+      if (externo && typeof externo.victory === 'function') { try { externo.victory(side, o); return true; } catch (e) { } }
+      return false;
+    },
+    emojiAt: function (emoji, xp, yp, o) {
+      if (externo && typeof externo.emojiAt === 'function') { try { externo.emojiAt(emoji, xp, yp, o); return true; } catch (e) { } }
+      return false;
+    },
     clear: function () {
       if (externo && typeof externo.clear === 'function') { try { externo.clear(); } catch (e) { } }
       interno.clear();
@@ -3441,6 +3474,7 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
   var AUDIOUI = null;              // window.ShowAudioUI
   var audioDesbloqueado = false;   // ya hubo un gesto del usuario (autoplay)
   var ultimaIntensidad = -1;       // última intensidad musical enviada
+  var ultimaAutoMusica = -1e9;     // última vez que se pidió pista automática (ms de show)
 
   function normalizar(d) {
     if (!d || typeof d !== 'object') return null;
@@ -3912,6 +3946,19 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
       ultimaIntensidad = S.tension;
       try { MUSICA.setIntensidad(S.tension); } catch (e) { }
     }
+    /* Música v2: la pista se elige sola segun fase, ronda y tension (freno de 500 ms). */
+    if (MUSICA && typeof MUSICA.auto === 'function' && (S.t - ultimaAutoMusica) > 500) {
+      ultimaAutoMusica = S.t;
+      try {
+        MUSICA.auto({
+          fase: S.fin ? 'final' : (S.ronda === 0 ? 'espera' : 'ronda'),
+          ronda: S.ronda,
+          rondas: num(D && D.totalRondas, 6),
+          terminada: !!S.fin,
+          drama: { tension: S.tension * 100 }
+        });
+      } catch (e) { }
+    }
   }
   function anadirActividad(w) {
     actividad.push({ t: S.t, w: w });
@@ -4045,6 +4092,8 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
     estadoPanel(lado, 'GANADOR');
     estadoPanel(lado === 'rojo' ? 'azul' : 'rojo', 'DERROTADO');
     if (!sil) {
+      /* v4: fuegos artificiales y lluvia de trofeos del bando ganador */
+      FX.victory(lado, { text: '¡CAMPEÓN!', count: 18 });
       FX.confetti(lado, { count: 150 });
       FX.invader('🏆', { side: lado, emotion: 'euforia', size: tamEmoji() * 1.05, duration: 5600, text: '¡CAMPEÓN!' });
       FX.flash('#fff6d0', { opacity: 0.22, duration: 700 });
@@ -4148,7 +4197,7 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
         if (!sil) {
           var emo = emocionDeEvento(ev);
           var posEmo = puntoAccionEmoji(lado);
-          FX.invader(String(ev.texto || ev.emoji || EMO[emo].emoji), {
+          FX.invader(String(ev.emoji || ev.texto || EMO[emo].emoji), {
             side: lado, emotion: emo,
             size: tamEmoji() * (0.75 + 0.45 * clamp(num(ev.intensidad, 1), 0, 1)),
             duration: 3600, x: posEmo.x, y: posEmo.y, from: lado,
@@ -4178,6 +4227,10 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
             size: esMovil() ? 30 : 62
           });
           FX.impact(xp, yp, { power: power, debris: true });
+          /* v4: onda de choque, temblor del mapa y ceniza si es napalm */
+          FX.shockwave(xp, yp, { power: power, color: lado === 'rojo' ? '#ff8a94' : '#8ab6ff' });
+          FX.quake(power === 'atomic_bomb' ? 0.9 : 0.55, { duration: power === 'atomic_bomb' ? 700 : 460, x: xp, y: yp });
+          if (power === 'napalm_bomb') FX.ashfall({ duration: 4200, density: 0.8, side: lado });
           FX.shake(power === 'atomic_bomb' ? 0.95 : 0.62, { duration: power === 'atomic_bomb' ? 560 : 400 });
           FX.flash(power === 'atomic_bomb' ? '#fff3d0' : '#ffd9a0', { opacity: power === 'atomic_bomb' ? 0.5 : 0.32, duration: 360 });
           FX.vignette(0.45, { color: power === 'napalm_bomb' ? '#ff5a3d' : '#ffd166', duration: 950 });
@@ -4288,7 +4341,7 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
     S.playing = false;
     S.t = S.dur;
     el.btnPlay.classList.remove('on');
-    pararMusica();
+    if (MUSICA && typeof MUSICA.setFase === 'function') { try { MUSICA.setFase('victoria'); } catch (e) { } } else pararMusica();
     actualizarReloj(); actualizarProgreso();
     S.tension = 1; el.tensionFill.style.width = '100%'; el.tensionPct.textContent = '100%'; ultimoPct = 100;
     mostrarVictoria(sil);
@@ -4298,6 +4351,7 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
     S.fin = false;
     S.idx = 0;
     S.ronda = 0;
+    if (MUSICA && typeof MUSICA.setAuto === 'function') { try { MUSICA.setAuto(); } catch (e) { } }
     S.bajas = { rojo: 0, azul: 0 };
     S.perdidas = { rojo: 0, azul: 0 };
     S.impactos = 0; S.mayor = 0; S.tension = 0.3;

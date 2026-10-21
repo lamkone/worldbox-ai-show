@@ -191,6 +191,20 @@
     return baseTTS;
   }
 
+  /* Inyección explícita del servicio de voz. La página /live/ publicada en GitHub
+   * Pages resuelve el túnel del directo (window.__WB_ENDPOINTS_READY__) y nos lo
+   * pasa aquí; sin esto, en *.github.io caeríamos a speechSynthesis (voz del
+   * navegador) y el dueño oiría "las voces antiguas". Acepta '' para volver a
+   * la resolución automática por hostname. */
+  function setBase(b) {
+    try {
+      if (b === undefined || b === null) delete global.__WB_TTS_BASE__;
+      else global.__WB_TTS_BASE__ = String(b);
+    } catch (e) { /* sin acceso al global: seguimos con lo que hubiera */ }
+    baseTTS = null;               // fuerza a recalcular en la próxima petición
+    return baseResuelta();
+  }
+
   function urlTTS(texto, agente, emocion) {
     var b = baseResuelta();
     if (!b) return '';
@@ -506,7 +520,8 @@
     getVolumen: getVolumen,
     duck: duck,
     motor: function () { return motor; },
-    baseTTS: baseResuelta
+    baseTTS: baseResuelta,
+    setBase: setBase
   };
   /* Propiedad cómoda: ViewerVoz.volumen = 0.6  /  ViewerVoz.volumen -> 0.6 */
   try {

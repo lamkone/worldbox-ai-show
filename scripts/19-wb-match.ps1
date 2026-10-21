@@ -102,6 +102,14 @@ $script:StreamUrl = 'http://127.0.0.1:8767'
 # cuándo se fijó el último plano, para que el visor sepa si ya caducó
 $script:CamaraTick = 0
 $script:ImpactoTick = 0
+# Último impacto SÍ detectado en pantalla (x,y 0..100 del frame visible). Se usa
+# como cámara de emergencia si un bombardeo no da fogonazo, para no saltar al
+# centro del mapa (que es lo que se veía como "zoom a un sitio random").
+$script:UltimoBueno = $null
+# Pares (tile del mapa, punto en pantalla) de los impactos ya detectados. La
+# cámara del juego no se mueve durante la partida, así que tile->pantalla es una
+# proyección afín y con 2 pares buenos se puede predecir dónde caerá la bomba.
+$script:CalibPuntos = New-Object System.Collections.Generic.List[object]
 
 # ---------------------------------------------------------------- utilidades
 function Get-Scoreboard {
@@ -492,7 +500,8 @@ function New-Plan {
 # bomba que acaba de estallar. El fogonazo no sale en el mismo instante en que se
 # lanza la bomba: tarda un pico, así que se sondea durante un rato. Solo vale un
 # pico POSTERIOR a -DesdeMs, para no reutilizar el de la bomba anterior.
-# x/y son 0..100 del frame visible; poder va 0..1.
+# x/y son 0..100 del RECORTE del mapa (el mismo espacio que publica el stream en
+# lcx/lcy y el que consume el visor en camara.x/y); poder va 0..1.
 function Get-ImpactoStream {
   param([long]$DesdeMs = 0, [int]$MaxEsperaMs = 2600, [int]$PasoMs = 90)
   # El fogonazo de una bomba es un pico de pocos frames. Nos quedamos con el MAYOR
@@ -505,12 +514,19 @@ function Get-ImpactoStream {
       $r = Invoke-RestMethod -Uri ($script:StreamUrl + '/stats') -TimeoutSec 2
       if ($null -ne $r) {
         $spike = 0; if ($null -ne $r.lspike) { $spike = [double]$r.lspike }
-        if ($spike -ge 60) {
-          $cx = 0; $cy = 0
-          if ($null -ne $r.lcx) { $cx = [double]$r.lcx }
-          if ($null -ne $r.lcy) { $cy = [double]$r.lcy }
-          if ($cx -gt 0 -and $cy -gt 0) {
+        # 'stick' es el instante del último frame con fogonazo. Solo sirve un pico
+        # que haya ocurrido DESPUÉS del lanzamiento: si es más viejo, es el de la
+        # bomba anterior y nos llevaría a un punto que no es el de esta explosión.
+        $stick = 0; if ($null -ne $r.stick) { $stick = [double]$r.stick }
+        $fresco = ($DesdeMs -le 0) -or ($stick -ge $DesdeMs)
+        if ($spike -ge 60 -and $fresco) {
+          $valido = ($null -ne $r.lcx) -and ($null -ne $r.lcy) -and
+                    ([double]$r.lcx -ge 0) -and ([double]$r.lcy -ge 0)
+          if ($valido) {
+            $cx = [double]$r.lcx; $cy = [double]$r.lcy
             if ($null -eq $mejor -or $spike -gt $mejor.spike) {
+              # lcx/lcy vienen en BASE 10000 del recorte (4293 = 42,93 %); el
+              # visor consume camara.x/y en 0..100. Dividir entre 100 UNA vez.
               $mejor = [pscustomobject]@{ x = $cx / 100.0; y = $cy / 100.0; spike = $spike }
             }
           }
@@ -538,6 +554,58 @@ function Set-CamaraImpacto {
   $script:Impacto = [ordered]@{ x = [math]::Round($X, 1); y = [math]::Round($Y, 1); poder = [math]::Round($Poder, 2) }
   $script:CamaraTick = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
   $script:ImpactoTick = $script:CamaraTick
+}
+
+# ------------------------------------------- cámara de emergencia (sin fogonazo)
+# La cámara del juego no se mueve durante la partida, así que tile del mapa ->
+# pantalla es una proyección afín (pantalla% = a * tile + b). Aprendiendo pares
+# (tile del objetivo, punto detectado) de los impactos que SÍ se ven, se puede
+# predecir dónde va a caer un bombardeo cuyo fogonazo no se ha detectado. Eso es
+# lo que evita el 50,50 del centro del mapa.
+function Add-CalibracionCamara {
+  param([double]$TileX, [double]$TileY, [double]$CamX, [double]$CamY)
+  $script:CalibPuntos.Add([pscustomobject]@{ tx = $TileX; ty = $TileY; cx = $CamX; cy = $CamY })
+  while ($script:CalibPuntos.Count -gt 24) { $script:CalibPuntos.RemoveAt(0) }
+}
+
+function Get-AfinEje {
+  param($Puntos, [string]$CampoTile, [string]$CampoPantalla)
+  $n = 0; $sx = 0.0; $sy = 0.0; $sxx = 0.0; $sxy = 0.0
+  foreach ($p in $Puntos) {
+    $x = [double]$p.$CampoTile; $y = [double]$p.$CampoPantalla
+    $n++; $sx += $x; $sy += $y; $sxx += $x * $x; $sxy += $x * $y
+  }
+  if ($n -lt 2) { return $null }
+  $den = $n * $sxx - $sx * $sx
+  if ([math]::Abs($den) -lt 1e-6) { return $null }
+  $a = ($n * $sxy - $sx * $sy) / $den
+  $b = ($sy - $a * $sx) / $n
+  return [pscustomobject]@{ a = $a; b = $b }
+}
+
+function Get-CamaraDesdeTile {
+  param([double]$TileX, [double]$TileY)
+  $pts = $script:CalibPuntos
+  if ($null -eq $pts -or $pts.Count -lt 2) { return $null }
+  $fx = Get-AfinEje -Puntos $pts -CampoTile 'tx' -CampoPantalla 'cx'
+  $fy = Get-AfinEje -Puntos $pts -CampoTile 'ty' -CampoPantalla 'cy'
+  if ($null -eq $fx -or $null -eq $fy) { return $null }
+  # un ajuste absurdo (puntos degenerados o de otro frame) no se usa
+  if ($fx.a -lt 0.005 -or $fx.a -gt 0.6 -or $fy.a -lt 0.005 -or $fy.a -gt 0.6) { return $null }
+  $px = $fx.a * $TileX + $fx.b
+  $py = $fy.a * $TileY + $fy.b
+  if ($px -lt -2 -or $px -gt 102 -or $py -lt -2 -or $py -gt 102) { return $null }
+  return [pscustomobject]@{ x = [math]::Max(0.0, [math]::Min(100.0, $px)); y = [math]::Max(0.0, [math]::Min(100.0, $py)) }
+}
+
+# Punto al que apuntar cuando el detector no ve el fogonazo. En orden:
+# 1) proyección tile->pantalla aprendida; 2) último impacto bueno; 3) centro.
+function Get-CamaraEmergencia {
+  param([double]$TileX, [double]$TileY)
+  $pred = Get-CamaraDesdeTile -TileX $TileX -TileY $TileY
+  if ($null -ne $pred) { return [pscustomobject]@{ x = $pred.x; y = $pred.y; origen = 'calib' } }
+  if ($null -ne $script:UltimoBueno) { return [pscustomobject]@{ x = $script:UltimoBueno.x; y = $script:UltimoBueno.y; origen = 'ultimo' } }
+  return [pscustomobject]@{ x = 50.0; y = 50.0; origen = 'centro' }
 }
 
 function Save-Frame {
@@ -903,16 +971,23 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
             if (-not $corto) { $corto = $p.power }
             [void]$script:AccionesRonda[$agente].Add($corto)
             # La cámara va al fogonazo: se sondea el detector hasta que lo ve.
+            # Si no lo ve (napalm ancho, frame perdido), NO se cae al centro del
+            # mapa: se predice el punto con la calibración tile->pantalla.
             $tBomba = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
             $imp = Get-ImpactoStream -DesdeMs $tBomba -MaxEsperaMs 3200
+            $origen = 'detector'
             if ($imp) {
               Set-CamaraImpacto -X $imp.x -Y $imp.y -Poder $imp.poder -Ms 2400
+              Add-CalibracionCamara -TileX $p.x -TileY $p.y -CamX $imp.x -CamY $imp.y
+              $script:UltimoBueno = [pscustomobject]@{ x = $imp.x; y = $imp.y }
               Write-Output ("[cam] bomb $($corto) tile=($($p.x),$($p.y)) -> ($($imp.x),$($imp.y)) spike=$($imp.spike) poder=$($imp.poder) zoom=$($script:Camara.zoom)")
             } else {
-              # sin detector, cae al centro del mapa con un plano suave
-              Set-CamaraImpacto -X 50 -Y 50 -Poder 0.5 -Ms 1600
+              $em = Get-CamaraEmergencia -TileX $p.x -TileY $p.y
+              Set-CamaraImpacto -X $em.x -Y $em.y -Poder 0.5 -Ms 1600
+              $origen = $em.origen
+              Write-Output ("[cam] bomb $($corto) tile=($($p.x),$($p.y)) SIN fogonazo -> ($($em.x),$($em.y)) origen=$origen")
             }
-            $camExtra = @{ x = $script:Camara.x; y = $script:Camara.y; zoom = $script:Camara.zoom; ms = $script:Camara.ms }
+            $camExtra = @{ x = $script:Camara.x; y = $script:Camara.y; zoom = $script:Camara.zoom; ms = $script:Camara.ms; origen = $origen }
             Add-Feed -Agente $agente -Tipo 'bomba' -Texto $p.nota -Extra @{ power = $p.power; x = $p.x; y = $p.y; camara = $camExtra }
             Add-ShowEvent -Tipo 'bomba' -Agente $agente -Texto $p.nota -Extra @{ power = $p.power; camara = $camExtra } | Out-Null
             $script:Narrador = $p.nota

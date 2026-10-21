@@ -77,10 +77,26 @@ let ffmpegBuscado = false;
  * El post-proceso (EQ, compresión, reverb de sala) NO va aquí: se aplica al
  * generar el pack de voces (scripts/build-voice-pack.ps1) y al banco natural/.
  *
- * La voz se puede cambiar sin tocar el código:
- *   WB_VOZ_ROJO=es-AR-TomasNeural  WB_VOZ_AZUL=es-MX-DaliaNeural  node scripts/tts-server.mjs
+ * La voz se puede cambiar sin tocar el código. Se aceptan dos nombres por perfil
+ * (el genérico primero, el histórico después); gana el primero que esté definido:
+ *   VOZ_EDGE      / WB_VOZ_AZUL      -> AZUL  (defecto v9.6: es-MX-DaliaNeural)
+ *   VOZ_KOKORO    / WB_VOZ_ROJO      -> ROJO  (defecto: em_santa)
+ *   VOZ_SISTEMA   / WB_VOZ_SISTEMA   -> SISTEMA (defecto: es-ES-ElviraNeural)
+ * Ejemplos:
+ *   $env:VOZ_EDGE="es-CO-SalomeNeural"; node scripts\tts-server.mjs --port 8771   # volver a Salome
+ *   $env:VOZ_EDGE="es-ES-XimenaNeural"; node scripts\tts-server.mjs --port 8771   # probar Ximena
+ * La voz entra en la marca de caché (linea ~403) y en la firma del pack, así que al
+ * cambiarla se regeneran los MP3 solos y el pack se firma distinto: no hay riesgo de
+ * servir audio de la voz vieja con la huella de la nueva.
  */
-const vozEnv = (nombre, porDefecto) => (process.env[nombre] || porDefecto);
+const vozEnv = (...args) => {
+  const porDefecto = args.pop();
+  for (const nombre of args) {
+    const v = process.env[nombre];
+    if (v && String(v).trim()) return String(v).trim();
+  }
+  return porDefecto;
+};
 const RATE = process.env.WB_TTS_RATE || '-4%';
 const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 
@@ -135,32 +151,64 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 // no del diseno). v9.2 habia pasado a linea completa para quitar el "mas robotico"
 // y con ello se perdio la actuacion; el dueño dijo despues que las frases del
 // casting sonaban mas naturales. Kokoro NO se toca: ya coincide con el v8.
-const MOTOR_VERSION = 'v9.5';
+// v9.6: BUG DE ALIAS. El cerebro dramatico etiqueta las replicas con tonos que
+// NO son las cinco emociones del motor (chulo 6, nervios 19, golpe 2, llanto 1 en
+// show.json) y ALIAS_EMOCION no los conocia -> 28 de 40 lineas del pack se
+// sintetizaban en NEUTRAL. El visor (viewer-voice.js:46-60) ya los traducia, asi
+// que el directo pedia e=burla y el pack quedaba en neutral: pack y directo NO
+// servian lo mismo. Ahora la tabla es ESPEJO EXACTO de la del visor y la
+// normalizacion quita acentos igual que viewer-voice.js:63-71.
+// v9.6 (voz): el AZUL pasa de es-CO-SalomeNeural a es-MX-DaliaNeural. Motivo
+// medido con el mismo texto y la misma emocion: Salome es la voz MAS PLANA de las
+// 11 de edge (sd_fr intra-frase 1,65 semitonos, rango suave 4,11, 26,4 % del
+// tiempo pegado a la mediana) y subir la prosodia por frase x2/x3 NO la mueve
+// (1,59/1,75): la planitud es del modelo, no de la receta. Dalia da +68 % de
+// sd_fr (2,77), +75 % de rango (7,20), 20,1 % de tiempo plano y es la voz de
+// timbre MAS PARECIDO a la referencia aprobada (dM MFCC 18,3/7,3 frente a
+// 21,2/21,9 de Salome): mejora la entonacion sin cambiar de personaje. Kokoro
+// (ROJO) no se toca: ya era el que mas movia el tono (sd_fr 4,96-5,29).
+// Es reversible en un reinicio: VOZ_EDGE=es-CO-SalomeNeural.
+const MOTOR_VERSION = 'v9.6';
 const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
 const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {
-  rojo: { voz: vozEnv('WB_VOZ_ROJO', 'em_santa'), motor: 'kokoro', rate: RATE, pitch: PITCH },
-  azul: { voz: vozEnv('WB_VOZ_AZUL', 'es-CO-SalomeNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
-  sistema: { voz: vozEnv('WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
+  rojo: { voz: vozEnv('VOZ_KOKORO', 'WB_VOZ_ROJO', 'em_santa'), motor: 'kokoro', rate: RATE, pitch: PITCH },
+  azul: { voz: vozEnv('VOZ_EDGE', 'WB_VOZ_AZUL', 'es-MX-DaliaNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
+  sistema: { voz: vozEnv('VOZ_SISTEMA', 'WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
 };
 
 /* Emociones que entiende el motor. */
 const EMOCIONES = ['neutral', 'burla', 'enfadado', 'triste', 'confuso'];
 /* Los nombres de tono que ya usa el cerebro dramático (23-drama-llm.mjs) y los
  * emojis del visor (llanto, furia, euforia...) se traducen a las cinco de voz,
- * para no tener que cambiar el guion entero. */
+ * para no tener que cambiar el guion entero.
+ * v9.6: ESPEJO EXACTO de ALIAS_EMOCION en viewer-voice.js:46-60. Si se añade una
+ * clave allí, hay que añadirla aquí (y al revés) o pack y directo divergen. */
 const ALIAS_EMOCION = {
   neutral: 'neutral', normal: 'neutral', neutro: 'neutral', '': 'neutral',
-  burla: 'burla', chuleria: 'burla', chulería: 'burla', euforia: 'burla', pique: 'burla',
-  sarcasmo: 'burla', ironia: 'burla', ironía: 'burla',
-  enfadado: 'enfadado', enfado: 'enfadado', rabia: 'enfadado', furia: 'enfadado',
-  panico: 'enfadado', pánico: 'enfadado', cabreo: 'enfadado', amenaza: 'enfadado',
-  triste: 'triste', llanto: 'triste', pena: 'triste', derrota: 'triste', drama: 'triste',
+  // --- burla (viewer-voice.js:47-50) ---
+  burla: 'burla', chuleria: 'burla', chulo: 'burla', chulito: 'burla',
+  sarcasmo: 'burla', ironia: 'burla', euforia: 'burla', pique: 'burla',
+  vacile: 'burla', broma: 'burla', triunfo: 'burla', choteo: 'burla',
+  // --- enfadado (viewer-voice.js:51-54) ---
+  enfadado: 'enfadado', rabia: 'enfadado', furia: 'enfadado', panico: 'enfadado',
+  cabreo: 'enfadado', amenaza: 'enfadado', grito: 'enfadado', cabreado: 'enfadado',
+  enfado: 'enfadado', golpe: 'enfadado', dolor: 'enfadado',
+  // --- triste (viewer-voice.js:55-57) ---
+  triste: 'triste', llanto: 'triste', pena: 'triste', derrota: 'triste',
+  drama: 'triste', tristeza: 'triste', lamento: 'triste', resignacion: 'triste',
+  // --- confuso (viewer-voice.js:58-60) ---
   confuso: 'confuso', duda: 'confuso', sorpresa: 'confuso', desconcierto: 'confuso',
+  confusion: 'confuso', nervios: 'confuso', nervioso: 'confuso',
 };
 
+/* Igual que viewer-voice.js:63-68: quita acentos antes de buscar. */
+function sinAcentos(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 function normalizarEmocion(e) {
-  const clave = String(e || '').trim().toLowerCase();
+  const clave = sinAcentos(String(e || '').trim().toLowerCase());
   return ALIAS_EMOCION[clave] || 'neutral';
 }
 

@@ -89,8 +89,15 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
  * ---------------------------------------------------------------------------
  * El casting acabó eligiendo DOS voces y "solo volumen igualado, sin EQ":
  *   rojo    -> Kokoro em_santa      (onnx local, ~2,5 s por línea, sin red)
- *   azul    -> edge-tts Salomé      (red, ~1,2 s por línea)
+ *   azul    -> Kokoro ef_dora       (onnx local; v9.3, antes edge Salomé)
  *   sistema -> edge-tts Elvira      (avisos del show)
+ *
+ * v9.3 (21/10): el AZUL pasa de edge Salomé a Kokoro ef_dora. Medido con
+ * reports/qa/probe-prosodia-azul.py sobre la misma frase y las 5 emociones:
+ * entonación dentro de línea 5,78 -> 9,36 semitonos (+62 %) y la línea pasa de
+ * 8,65 s a 5,44 s (Salomé se arrastraba). Sigue habiendo dos voces distintas:
+ * F0 134,6 Hz (rojo) vs 168,7 Hz (azul). Se puede volver con WB_VOZ_AZUL, pero
+ * entonces hay que devolver también el motor a 'edge'.
  * Las dos se clavan a -16,0 LUFS con ganancia lineal + limitador de picos, así
  * que suenan al mismo volumen cuando hablan entre ellas (medido: ±0,1 LU).
  *
@@ -106,12 +113,12 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 // v9.1: el motor bajo el techo del limitador de 0,98 a 0,85 (-1,4 dBFS) porque el
 // MP3 decodificado sobrepicaba +0,6 dBFS en las lineas percusivas. Cambia el audio,
 // asi que la version entra en la marca de cache y los MP3 viejos se regeneran solos.
-const MOTOR_VERSION = 'v9.2';
+const MOTOR_VERSION = 'v9.3';
 const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
 const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {
   rojo: { voz: vozEnv('WB_VOZ_ROJO', 'em_santa'), motor: 'kokoro', rate: RATE, pitch: PITCH },
-  azul: { voz: vozEnv('WB_VOZ_AZUL', 'es-CO-SalomeNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
+  azul: { voz: vozEnv('WB_VOZ_AZUL', 'ef_dora'), motor: 'kokoro', rate: RATE, pitch: PITCH },
   sistema: { voz: vozEnv('WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
 };
 

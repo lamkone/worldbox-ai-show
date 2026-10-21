@@ -88,21 +88,28 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
  * MOTOR v9 (decidido con el dueño en reports/voz-casting/v6/)
  * ---------------------------------------------------------------------------
  * El casting acabó eligiendo DOS voces y "solo volumen igualado, sin EQ":
- *   rojo    -> Kokoro em_santa      (onnx local, ~2,5 s por línea, sin red)
- *   azul    -> Kokoro ef_dora       (onnx local; v9.3, antes edge Salomé)
- *   sistema -> edge-tts Elvira      (avisos del show)
+ *   rojo    -> Kokoro em_santa          (onnx local, ~2,5 s por línea, sin red)
+ *   azul    -> edge es-CO-SalomeNeural  (la que el dueño eligió en el casting)
+ *   sistema -> edge-tts Elvira          (avisos del show)
  *
- * v9.3 (21/10): el AZUL pasa de edge Salomé a Kokoro ef_dora. Medido con
- * reports/qa/probe-prosodia-azul.py sobre la misma frase y las 5 emociones:
- * entonación dentro de línea 5,78 -> 9,36 semitonos (+62 %) y la línea pasa de
- * 8,65 s a 5,44 s (Salomé se arrastraba). Sigue habiendo dos voces distintas:
- * F0 134,6 Hz (rojo) vs 168,7 Hz (azul). Se puede volver con WB_VOZ_AZUL, pero
- * entonces hay que devolver también el motor a 'edge'.
+ * v9.4 (21/10): el AZUL vuelve a edge Salomé y el Kokoro deja de llevar
+ * pitch-shift. Las dos cosas son el mismo problema: el dueño dijo "la voz es la
+ * misma pero suena a voces distintas entre frases". Medido con
+ * reports/qa/probe-timbre-pack.py: el rubberband que aplicábamos al Kokoro movía
+ * los FORMANTES junto con el tono, así que la misma voz sonaba a otra persona
+ * según la emoción (distancia MFCC entre-emociones 14,2 frente a 7,4 dentro del
+ * mismo texto = ratio 1,90; con edge, que mueve el tono de forma nativa, el ratio
+ * era 0,89). Quitar el pitch-shift deja ratio ≈1 y no cuesta naturalidad porque
+ * la emoción sigue en el ritmo y las pausas. El azul vuelve a Salomé porque el
+ * cambio a ef_dora (v9.3) se hizo mirando solo la entonación y contra la elección
+ * explícita del dueño. Se puede volver a probar ef_dora con WB_VOZ_AZUL=ef_dora,
+ * pero entonces hay que devolver el motor a 'kokoro'.
  * Las dos se clavan a -16,0 LUFS con ganancia lineal + limitador de picos, así
  * que suenan al mismo volumen cuando hablan entre ellas (medido: ±0,1 LU).
  *
  * Además cada línea lleva EMOCIÓN (neutral/burla/enfadado/triste/confuso) y el
- * motor mueve ritmo, tono y pausas. La emoción la elige el cerebro dramático.
+ * motor mueve ritmo, pausas y (solo en edge, de forma nativa) el tono. La emoción
+ * la elige el cerebro dramático.
  *
  * El trabajo pesado lo hace scripts/voz-engine.py, que se queda vivo como
  * proceso hijo (cargar Kokoro cuesta 1,3 s y la primera síntesis 6 s: se pagan
@@ -113,12 +120,19 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 // v9.1: el motor bajo el techo del limitador de 0,98 a 0,85 (-1,4 dBFS) porque el
 // MP3 decodificado sobrepicaba +0,6 dBFS en las lineas percusivas. Cambia el audio,
 // asi que la version entra en la marca de cache y los MP3 viejos se regeneran solos.
-const MOTOR_VERSION = 'v9.3';
+// v9.4: se quita el pitch-shift (rubberband) del Kokoro y el AZUL vuelve a edge
+// Salome, que es lo que el dueño eligio en el casting. Motivo medido: el rubberband
+// mueve los formantes junto con el tono y el mismo personaje suena a otra persona
+// segun la emocion (ratio MFCC entre-emociones/dentro-texto 1,90 en Kokoro frente a
+// 0,89 en edge). La emocion se queda en ritmo y pausas, que no toca el timbre.
+// Cambia el audio, asi que la version entra en la marca de cache y el pack se
+// regenera solo.
+const MOTOR_VERSION = 'v9.4';
 const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
 const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {
   rojo: { voz: vozEnv('WB_VOZ_ROJO', 'em_santa'), motor: 'kokoro', rate: RATE, pitch: PITCH },
-  azul: { voz: vozEnv('WB_VOZ_AZUL', 'ef_dora'), motor: 'kokoro', rate: RATE, pitch: PITCH },
+  azul: { voz: vozEnv('WB_VOZ_AZUL', 'es-CO-SalomeNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
   sistema: { voz: vozEnv('WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
 };
 

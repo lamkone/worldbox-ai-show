@@ -110,16 +110,30 @@ def log(msg):
 # Emociones -> prosodia
 # --------------------------------------------------------------------------
 # rate  : % de cambio de ritmo base (edge lo usa tal cual; Kokoro lo pasa a speed)
-# pitch : Hz de desvío base en edge; 'semi' = semitonos para Kokoro
+# pitch : Hz de desvío base en edge. Lo aplica el PROPIO sintetizador neural, que
+#         mueve el tono conservando los formantes: es lo que sonaba natural en el
+#         casting v8 que el dueño aprobó.
+# semi  : semitonos de pitch-shift para Kokoro. SIEMPRE 0 desde v9.4.
 # vol   : % de volumen en edge (el volumen final se iguala igualmente)
 # pausa : multiplicador del silencio entre frases
 # fin_* : cómo acaba la ÚLTIMA frase (la caída de la entonación)
+#
+# POR QUÉ semi = 0 (medido el 21/10 con reports\qa\probe-timbre-pack.py):
+# el tono de Kokoro se desplazaba DESPUÉS de sintetizar con ffmpeg rubberband, y
+# rubberband mueve los formantes junto con el tono -> cambia el tamaño aparente
+# del tracto vocal y el personaje suena a OTRA PERSONA según la emoción. Medido
+# en el pack real: distancia MFCC ENTRE emociones = 14,2 frente a 7,4 entre
+# textos de la MISMA emoción -> ratio 1,90 (el doble de variación entre
+# emociones que entre frases). Con edge el mismo ratio era 0,89 porque el pitch
+# lo aplica el sintetizador y conserva el timbre.
+# La emoción de Kokoro se queda SOLO en ritmo (speed) y pausas: no toca el
+# timbre, así que la voz es siempre la misma persona.
 EMOCIONES = {
-    "neutral":  dict(rate=0,   pitch=0,   semi=0.0,  vol=0,  pausa=1.00, fin_rate=-12, fin_pitch=-6,  fin_semi=-0.3),
-    "burla":    dict(rate=6,   pitch=8,   semi=1.5,  vol=0,  pausa=1.15, fin_rate=-4,  fin_pitch=+3,  fin_semi=+0.5),
-    "enfadado": dict(rate=12,  pitch=-5,  semi=-1.2, vol=5,  pausa=0.75, fin_rate=-3,  fin_pitch=-3,  fin_semi=-0.4),
-    "triste":   dict(rate=-14, pitch=-10, semi=-2.5, vol=-4, pausa=1.35, fin_rate=-20, fin_pitch=-12, fin_semi=-1.2),
-    "confuso":  dict(rate=-6,  pitch=4,   semi=1.0,  vol=0,  pausa=1.20, fin_rate=-2,  fin_pitch=+10, fin_semi=+0.9),
+    "neutral":  dict(rate=0,   pitch=0,   semi=0.0, vol=0,  pausa=1.00, fin_rate=-12, fin_pitch=-6,  fin_semi=0.0),
+    "burla":    dict(rate=6,   pitch=8,   semi=0.0, vol=0,  pausa=1.15, fin_rate=-4,  fin_pitch=+3,  fin_semi=0.0),
+    "enfadado": dict(rate=12,  pitch=-5,  semi=0.0, vol=5,  pausa=0.75, fin_rate=-3,  fin_pitch=-3,  fin_semi=0.0),
+    "triste":   dict(rate=-14, pitch=-10, semi=0.0, vol=-4, pausa=1.35, fin_rate=-20, fin_pitch=-12, fin_semi=0.0),
+    "confuso":  dict(rate=-6,  pitch=4,   semi=0.0, vol=0,  pausa=1.20, fin_rate=-2,  fin_pitch=+10, fin_semi=0.0),
 }
 
 
@@ -333,19 +347,19 @@ def prosodia_frase(frase, i, total, emo):
     """(rate_pct, pitch_hz, semi) de esta frase concreta."""
     rate = emo["rate"]
     pitch = emo["pitch"]
-    semi = emo["semi"]
+    # El semi NO se toca por frase: cualquier desplazamiento de tono en Kokoro se
+    # aplica después con rubberband y arrastra los formantes (ver nota de
+    # EMOCIONES). Aquí solo cambian ritmo, pitch nativo de edge y pausas.
+    semi = 0.0
     if frase.endswith("!"):
         rate += 8
         pitch += 5
-        semi += 0.5
     elif frase.endswith("?"):
         rate += 3
         pitch += 6
-        semi += 0.7
     elif i == total - 1:
         rate = emo["fin_rate"]
         pitch = emo["fin_pitch"]
-        semi = emo["fin_semi"]
     elif frase.endswith(","):
         rate += 2
     return (acotar(rate, -30, 30), acotar(pitch, -40, 40), acotar(semi, -4.0, 4.0))

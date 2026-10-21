@@ -106,7 +106,7 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 // v9.1: el motor bajo el techo del limitador de 0,98 a 0,85 (-1,4 dBFS) porque el
 // MP3 decodificado sobrepicaba +0,6 dBFS en las lineas percusivas. Cambia el audio,
 // asi que la version entra en la marca de cache y los MP3 viejos se regeneran solos.
-const MOTOR_VERSION = 'v9.1';
+const MOTOR_VERSION = 'v9.2';
 const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
 const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {
@@ -656,7 +656,7 @@ const servidor = http.createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     return json(res, 200, {
-      ok: true, servicio: 'worldbox-tts', version: '2.0.0',
+      ok: true, servicio: 'worldbox-tts', version: '2.1.0',
       motor: MOTOR === 'legacy' ? 'edge-tts clasico' : 'v9 (Kokoro rojo + edge azul, volumen igualado)',
       motorVersion: MOTOR_VERSION,
       motorEstado,

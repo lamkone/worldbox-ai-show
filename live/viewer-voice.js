@@ -26,7 +26,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.3.0';
+  var VERSION = '2.4.0';
   var MAX_TEXTO = 240;
   var MAX_COLA = 6;
   var TIMEOUT_FETCH = 9000;
@@ -203,12 +203,36 @@
   /* -------------------------------------------------------------------------
    * Motor 0: pack de voces pregrabadas (la repetición publicada)
    * ---------------------------------------------------------------------- */
+  /* Huella del pack: cambia si cambia CUALQUIER mp3 (tamaño) o la firma del
+   * motor. Se usa como ?v= en la URL para que un pack nuevo no se sirva desde
+   * la caché del navegador con los mp3 viejos (eso mezclaba voces: unas líneas
+   * del pack nuevo y otras del viejo, porque todos los packs usan N.mp3). */
+  function huellaPack(manifiesto, evs) {
+    try {
+      var s = String((manifiesto && (manifiesto.firma || manifiesto.motor)) || '');
+      var claves = Object.keys(evs || {}).sort(function (a, b) { return (+a) - (+b); });
+      for (var i = 0; i < claves.length; i++) {
+        var e = evs[claves[i]];
+        if (e && typeof e === 'object') s += '|' + claves[i] + ':' + (e.archivo || '') + ':' + (e.bytes || 0);
+        else s += '|' + claves[i] + ':' + e;
+      }
+      var h = 5381;
+      for (var j = 0; j < s.length; j++) h = ((h * 33) ^ s.charCodeAt(j)) >>> 0;
+      return h.toString(36);
+    } catch (e) { return ''; }
+  }
+
   function usarPack(base, manifiesto) {
     try {
       if (!base) { pack = null; return false; }
       var evs = (manifiesto && (manifiesto.eventos || manifiesto)) || {};
-      pack = { base: String(base).replace(/\/+$/, ''), eventos: evs };
-      log('pack de voces:', Object.keys(evs).length, 'eventos en', pack.base);
+      pack = {
+        base: String(base).replace(/\/+$/, ''),
+        eventos: evs,
+        version: huellaPack(manifiesto, evs)
+      };
+      log('pack de voces:', Object.keys(evs).length, 'eventos en', pack.base,
+          'v=' + pack.version);
       return true;
     } catch (e) { pack = null; return false; }
   }
@@ -218,7 +242,7 @@
     var e = pack.eventos[seq] || pack.eventos[String(seq)];
     if (!e) return '';
     var archivo = (typeof e === 'string') ? e : (e.archivo || (seq + '.mp3'));
-    return pack.base + '/' + archivo;
+    return pack.base + '/' + archivo + (pack.version ? '?v=' + pack.version : '');
   }
 
   function pedirPack(url, texto, agente, emocion) {

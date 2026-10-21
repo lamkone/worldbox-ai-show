@@ -301,6 +301,34 @@ def partir_frases(texto):
     return res or [(str(texto).strip(), 320)]
 
 
+# A partir de aquí la línea se parte SOLO si es muy larga. Trocear una línea
+# normal en frases (y más aún en comas) reinicia la entonación de cada trozo y
+# la deja plana y mecánica: es lo que el dueño describió como "más robótico,
+# no tiene tanta entonación como antes". Una línea corta va ENTERA de una vez.
+LIMITE_LINEA = 300
+
+
+def trozos_linea(texto):
+    """[(trozo, pausa_ms)]. Línea corta -> un solo trozo (pausa 0 = sin añadido).
+    Línea larga -> se parte por final de frase, nunca por comas."""
+    t = str(texto).strip()
+    if len(t) <= LIMITE_LINEA:
+        return [(t, 0)]
+    trozos = [x.strip() for x in re.split(r'(?<=[.!?…])\s+', t) if x.strip()]
+    if len(trozos) <= 1:
+        return [(t, 0)]
+    res = []
+    for x in trozos:
+        if x.endswith("!"):
+            pausa = 280
+        elif x.endswith("?"):
+            pausa = 240
+        else:
+            pausa = 320
+        res.append((x, pausa))
+    return res
+
+
 def prosodia_frase(frase, i, total, emo):
     """(rate_pct, pitch_hz, semi) de esta frase concreta."""
     rate = emo["rate"]
@@ -360,25 +388,34 @@ def kokoro_cargar():
 
 
 def kokoro_linea(texto, emo, voz=None):
-    """Sintetiza frase a frase con speed propio. Devuelve (pcm, sr, semi_global)."""
+    """Sintetiza la línea de una vez (una sola llamada a Kokoro).
+
+    Kokoro ya respeta las pausas de la puntuación dentro de la frase, así que una
+    sola llamada conserva la entonación natural de la línea entera. Solo se
+    trocea si la línea pasa de LIMITE_LINEA caracteres."""
     import numpy as np
     if not kokoro_cargar():
         raise RuntimeError("kokoro no disponible")
     voz = voz or VOZ_KOKORO
-    frases = partir_frases(texto)
+    frases = trozos_linea(texto)
+    speed = acotar(1.0 + emo["rate"] / 100.0, 0.6, 1.6)
+    if len(frases) == 1:
+        audio, sr = _K.create(frases[0][0], voice=voz, speed=speed, lang="es",
+                              sentence_pause=0.25, clause_pause=0.1)
+        pcm = np.asarray(audio, dtype="float32")
+        pcm = np.concatenate([pcm, np.zeros(int(sr * 0.06), dtype="float32")])
+        return pcm, sr, float(emo["semi"])
     trozos = []
     sr = SR
     for i, (f, pausa) in enumerate(frases):
         rate, _pitch, _semi = prosodia_frase(f, i, len(frases), emo)
-        speed = acotar(1.0 + rate / 100.0, 0.6, 1.6)
-        audio, sr = _K.create(f, voice=voz, speed=speed, lang="es",
+        sp = acotar(1.0 + rate / 100.0, 0.6, 1.6)
+        audio, sr = _K.create(f, voice=voz, speed=sp, lang="es",
                               sentence_pause=0.25, clause_pause=0.1)
         trozos.append(np.asarray(audio, dtype="float32"))
         trozos.append(np.zeros(int(sr * (pausa * emo["pausa"]) / 1000.0), dtype="float32"))
     trozos.append(np.zeros(int(sr * 0.06), dtype="float32"))
     pcm = np.concatenate(trozos) if trozos else np.zeros(1, dtype="float32")
-    # Un solo desplazamiento de tono para toda la línea: el tono de la emoción.
-    # (El matiz frase a frase ya lo lleva la velocidad, que es gratis.)
     return pcm, sr, float(emo["semi"])
 
 
@@ -386,8 +423,8 @@ def kokoro_linea(texto, emo, voz=None):
 # Motor B: edge-tts (azul)
 # --------------------------------------------------------------------------
 def edge_linea(texto, emo, voz=None):
-    """Frase a frase con rate/pitch/volume propios; las peticiones van EN PARALELO
-    (una ida y vuelta de red en vez de N) y se unen con silencio real."""
+    """Una sola petición con la línea entera: edge-tts ya entona la frase completa
+    y respeta la puntuación. Solo se trocea si pasa de LIMITE_LINEA caracteres."""
     import numpy as np
     import soundfile as sf
     import edge_tts
@@ -410,7 +447,11 @@ def edge_linea(texto, emo, voz=None):
                 pass
 
     async def todas():
-        frases = partir_frases(texto)
+        frases = trozos_linea(texto)
+        if len(frases) == 1:
+            a, sr = await una(frases[0][0], fmt_rate(emo["rate"]),
+                              fmt_pitch(emo["pitch"]), fmt_vol(emo["vol"]))
+            return np.concatenate([a, np.zeros(int(sr * 0.06), dtype="float32")]), sr
         tareas = []
         for i, (f, pausa) in enumerate(frases):
             rate, pitch, _semi = prosodia_frase(f, i, len(frases), emo)

@@ -4435,7 +4435,11 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
   var PACK_VOZ = null;
   function cargarPackVoz() {
     try {
-      fetch('voz/voz.json', { cache: 'force-cache' })
+      /* no-cache: el manifiesto SIEMPRE se revalida (GitHub Pages manda ETag,
+         así que sale gratis). Con force-cache el navegador podía quedarse con
+         un voz.json viejo y servir mp3 viejos con los nombres nuevos: unas
+         líneas con la voz nueva y otras con la vieja. */
+      fetch('voz/voz.json', { cache: 'no-cache' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (m) {
           PACK_VOZ = m || null;

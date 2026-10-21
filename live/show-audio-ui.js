@@ -16,7 +16,7 @@
   'use strict';
   if (window.ShowAudioUI && window.ShowAudioUI.version) return;
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var LS_KEY = 'wb-show-audio-v1';
 
   var estado = {
@@ -96,6 +96,7 @@
     aplicarVoz();
     aplicarMusica();
     actualizarBotones();
+    sincronizarControles();   // el rótulo del botón de silencio (Silenciar/Activar) y los sliders
     guardarLS();
   }
 

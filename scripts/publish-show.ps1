@@ -73,9 +73,15 @@ $vozDir = Join-Path $demoDir 'voz'
 $vozOk = $false
 try {
   $saludVoz = Invoke-RestMethod 'http://127.0.0.1:8771/health' -TimeoutSec 3
-  if ($saludVoz.ok) {
+  $vozViva = $false
+  if ($null -ne $saludVoz -and $saludVoz.PSObject.Properties['ok']) { $vozViva = [bool]$saludVoz.ok }
+  if ($vozViva) {
     & (Join-Path $PSScriptRoot 'build-voice-pack.ps1') -ShowJson $showReal -OutDir $vozDir -Servicio 'http://127.0.0.1:8771'
-    $vozOk = ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE)
+    # $LASTEXITCODE solo existe si en este proceso se ha ejecutado algun .exe;
+    # leerlo a secas revienta bajo Set-StrictMode.
+    $codigoVoz = 0
+    if (Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue) { $codigoVoz = [int]$LASTEXITCODE }
+    $vozOk = ($codigoVoz -eq 0)
     Write-Host ('  voces: pack generado en demo\voz ({0} MP3)' -f (Get-ChildItem -LiteralPath $vozDir -Filter '*.mp3' -File -ErrorAction SilentlyContinue).Count)
   }
 } catch {

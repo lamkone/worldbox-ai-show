@@ -52,6 +52,14 @@ $Servicio = $Servicio.TrimEnd('/')
 
 function Escribir($msg, $color = 'Gray') { Write-Host $msg -ForegroundColor $color }
 
+# Lee una propiedad que puede no existir sin romper bajo Set-StrictMode
+# (publish-show.ps1 activa StrictMode y este script hereda el modo).
+function Prop {
+    param($obj, [string]$name, $def = '')
+    if ($null -ne $obj -and $obj.PSObject.Properties[$name]) { return $obj.$name }
+    return $def
+}
+
 if (-not (Test-Path -LiteralPath $ShowJson)) { throw "No existe el show.json: $ShowJson" }
 $show = Get-Content -LiteralPath $ShowJson -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not $show.eventos) { throw "El show.json no tiene eventos: $ShowJson" }
@@ -60,8 +68,9 @@ if (-not $show.eventos) { throw "El show.json no tiene eventos: $ShowJson" }
 try {
     $salud = Invoke-RestMethod ($Servicio + '/health') -TimeoutSec 5
     $quien = ($salud.perfiles.PSObject.Properties | ForEach-Object { "$($_.Name)=$($_.Value)" }) -join ', '
-    Escribir ("Servicio de voz OK: " + $salud.motor + "  [" + $quien + "]  post=" + $salud.postproceso) 'Green'
-    if ($salud.emociones) { Escribir ("  emociones: " + ($salud.emociones -join ', ')) 'Green' }
+    Escribir ("Servicio de voz OK: " + (Prop $salud 'motor') + "  [" + $quien + "]  post=" + (Prop $salud 'postproceso')) 'Green'
+    $emSrv = Prop $salud 'emociones' @()
+    if ($emSrv) { Escribir ("  emociones: " + ($emSrv -join ', ')) 'Green' }
 } catch {
     throw "El servicio de voz no responde en $Servicio. Arrancalo con: node scripts\tts-server.mjs --port 8771"
 }
@@ -73,11 +82,11 @@ Escribir ("Frases a sintetizar: " + $eventos.Count + "  (tipos: " + ($Tipos -joi
 
 $manifiesto = [ordered]@{
     version   = 3
-    motor     = [string]$salud.motorVersion
+    motor     = [string](Prop $salud 'motorVersion')
     voces     = [ordered]@{
-        rojo    = [string]$salud.perfiles.rojo
-        azul    = [string]$salud.perfiles.azul
-        sistema = [string]$salud.perfiles.sistema
+        rojo    = [string](Prop (Prop $salud 'perfiles' $null) 'rojo')
+        azul    = [string](Prop (Prop $salud 'perfiles' $null) 'azul')
+        sistema = [string](Prop (Prop $salud 'perfiles' $null) 'sistema')
     }
     generado  = (Get-Date).ToString('o')
     origen    = (Split-Path -Leaf $ShowJson)
@@ -87,10 +96,10 @@ $manifiesto = [ordered]@{
 # Firma de la CONFIGURACION de voz: si cambian las voces, el motor, las emociones
 # o el post-proceso, los MP3 viejos ya no suenan igual y hay que regenerar el
 # pack entero. Asi no hace falta acordarse de pasar -Forzar.
-$firmaNueva = 'motor=' + [string]$salud.motorVersion
+$firmaNueva = 'motor=' + [string](Prop $salud 'motorVersion')
 $firmaNueva += '|' + ((@('rojo', 'azul', 'sistema') | ForEach-Object { "$_=" + $manifiesto.voces[$_] }) -join ';')
-$firmaNueva += '|emo=' + (@($salud.emociones) -join ',')
-$firmaNueva += '|post=' + [string]$salud.postproceso + '|norm=' + [string]$salud.normalizacion
+$firmaNueva += '|emo=' + (@(Prop $salud 'emociones' @()) -join ',')
+$firmaNueva += '|post=' + [string](Prop $salud 'postproceso') + '|norm=' + [string](Prop $salud 'normalizacion')
 $manifiesto.firma = $firmaNueva
 $forzar = [bool]$Forzar
 if (Test-Path -LiteralPath (Join-Path $OutDir 'voz.json')) {
@@ -130,14 +139,17 @@ foreach ($ev in $eventos) {
     if (-not $seq) { $seq = [string]$i }
     $archivo = $seq + '.mp3'
     $ruta = Join-Path $OutDir $archivo
-    $agente = if ($ev.agente -eq 'rojo' -or $ev.agente -eq 'azul') { $ev.agente } else { 'sistema' }
+    $agenteEv = [string](Prop $ev 'agente')
+    $agente = if ($agenteEv -eq 'rojo' -or $agenteEv -eq 'azul') { $agenteEv } else { 'sistema' }
     # Emoción de la frase: la que eligió el cerebro dramático (campo 'emocion');
     # en partidas viejas solo hay 'tono', que el servicio traduce igual.
-    $emocion = [string]$(if ($ev.emocion) { $ev.emocion } elseif ($ev.tono) { $ev.tono } else { 'neutral' })
+    $emoEv = [string](Prop $ev 'emocion')
+    if (-not $emoEv) { $emoEv = [string](Prop $ev 'tono') }
+    $emocion = if ($emoEv) { $emoEv } else { 'neutral' }
 
     if ((-not $forzar) -and (Test-Path -LiteralPath $ruta) -and $manifiesto.eventos.Contains($seq)) {
         # Si la emoción cambió respecto al pack anterior, el MP3 ya no vale.
-        if ([string]$manifiesto.eventos[$seq].emocion -eq $emocion) {
+        if ([string](Prop $manifiesto.eventos[$seq] 'emocion') -eq $emocion) {
             $saltados++
             $bytesTotal += (Get-Item -LiteralPath $ruta).Length
             continue

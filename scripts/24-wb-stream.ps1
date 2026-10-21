@@ -18,7 +18,13 @@ param(
     [int]$MaxWidth = 1280,
     [int]$Quality = 78,
     [int]$Fps = 20,
-    [string]$ProcessName = 'worldbox'
+    [string]$ProcessName = 'worldbox',
+    # Recorte normalizado (0..1) sobre la ventana capturada: sirve para publicar SOLO
+    # el mapa del juego (sin el fondo azul ni el HUD de WorldBox). Por defecto, todo.
+    [double]$CropX0 = 0,
+    [double]$CropY0 = 0,
+    [double]$CropX1 = 1,
+    [double]$CropY1 = 1
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationCore -ErrorAction Stop
@@ -37,6 +43,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -87,16 +94,25 @@ public static class WbStream
     static double _fps;
     static int _maxW = 1280, _quality = 78, _targetFps = 20, _port = 8767;
     static string _procName = "worldbox";
+    // Recorte normalizado del frame antes de publicarlo (0..1). El visor recibe SOLO
+    // la zona del mapa; las coordenadas cx/cy se renormalizan a este recorte.
+    static double _cx0 = 0, _cy0 = 0, _cx1 = 1, _cy1 = 1;
     static Thread _capThread, _srvThread;
     static TcpListener _listener;
     static volatile int _hwndFound;
     static volatile string _err = "";
     static readonly object _frameLock = new object();
 
-    public static string Start(int port, int maxW, int quality, int fps, string procName)
+    public static string Start(int port, int maxW, int quality, int fps, string procName,
+                               double cx0, double cy0, double cx1, double cy1)
     {
         if (_run) return "already-running";
         _port = port; _maxW = maxW; _quality = quality; _targetFps = Math.Max(1, fps); _procName = procName;
+        // Sanea el recorte: dentro de 0..1, con al menos un 5% de ancho/alto.
+        _cx0 = Math.Max(0, Math.Min(0.95, cx0));
+        _cy0 = Math.Max(0, Math.Min(0.95, cy0));
+        _cx1 = Math.Max(_cx0 + 0.05, Math.Min(1, cx1));
+        _cy1 = Math.Max(_cy0 + 0.05, Math.Min(1, cy1));
         _run = true;
 
         _listener = new TcpListener(IPAddress.Loopback, _port);
@@ -113,13 +129,25 @@ public static class WbStream
         _srvThread.Name = "wb-http";
         _srvThread.Start();
 
-        return "started port=" + _port + " maxW=" + _maxW + " q=" + _quality + " fps=" + _targetFps;
+        return "started port=" + _port + " maxW=" + _maxW + " q=" + _quality + " fps=" + _targetFps +
+               " crop=" + _cx0.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy0.ToString("0.###", CultureInfo.InvariantCulture) +
+               "," + _cx1.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy1.ToString("0.###", CultureInfo.InvariantCulture);
     }
 
     public static void Stop()
     {
         _run = false;
         try { if (_listener != null) _listener.Stop(); } catch { }
+    }
+
+    // Pasa una coordenada normalizada (0..10000) del frame completo a coordenadas
+    // del recorte publicado. -1 se queda en -1 ("no hay dato").
+    static int Renorm(int v, double a, double b)
+    {
+        if (v < 0) return -1;
+        double t = (v / 10000.0 - a) / Math.Max(0.0001, b - a);
+        if (t < 0 || t > 1) return -1;
+        return (int)Math.Round(t * 10000.0);
     }
 
     static string Esc(string v)
@@ -192,7 +220,31 @@ public static class WbStream
 
                 DetectExplosion(bits, w, h);
 
+                // Renormaliza los centroides (0..10000 del frame completo) al recorte
+                // que se publica: si no, el visor apuntaria a otro sitio.
+                if (_cx0 > 0 || _cy0 > 0 || _cx1 < 1 || _cy1 < 1)
+                {
+                    _cx = Renorm(_cx, _cx0, _cx1);
+                    _cy = Renorm(_cy, _cy0, _cy1);
+                    _scx = Renorm(_scx, _cx0, _cx1);
+                    _scy = Renorm(_scy, _cy0, _cy1);
+                    _lcx = Renorm(_lcx, _cx0, _cx1);
+                    _lcy = Renorm(_lcy, _cy0, _cy1);
+                }
+
                 BitmapSource src = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, bits, w * h * 4, w * 4);
+                if (_cx0 > 0 || _cy0 > 0 || _cx1 < 1 || _cy1 < 1)
+                {
+                    int rx = (int)Math.Round(_cx0 * w), ry = (int)Math.Round(_cy0 * h);
+                    int rw = (int)Math.Round((_cx1 - _cx0) * w), rh = (int)Math.Round((_cy1 - _cy0) * h);
+                    if (rx < 0) rx = 0; if (ry < 0) ry = 0;
+                    if (rx + rw > w) rw = w - rx; if (ry + rh > h) rh = h - ry;
+                    if (rw > 0 && rh > 0)
+                    {
+                        src = new CroppedBitmap(src, new Int32Rect(rx, ry, rw, rh));
+                        w = rw; h = rh;
+                    }
+                }
                 if (_maxW > 0 && w > _maxW)
                 {
                     double s = (double)_maxW / w;
@@ -504,7 +556,7 @@ $refs = $refs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
 Add-Type -TypeDefinition $cs -Language CSharp -ReferencedAssemblies $refs -ErrorAction Stop
 
-Write-Host ([WbStream]::Start($Port, $MaxWidth, $Quality, $Fps, $ProcessName))
+Write-Host ([WbStream]::Start($Port, $MaxWidth, $Quality, $Fps, $ProcessName, $CropX0, $CropY0, $CropX1, $CropY1))
 Write-Host ("stream: http://localhost:{0}/stream.mjpg" -f $Port)
 Write-Host ("stats:  http://localhost:{0}/stats" -f $Port)
 

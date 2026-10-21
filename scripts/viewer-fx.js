@@ -1,22 +1,30 @@
 /*!
- * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v2.0.0)
+ * viewer-fx.js — motor de efectos de espectáculo de "WorldBox AI Show" (v3.0.0)
  * ============================================================================
  * ÚNICA capa de efectos sobre el mapa. Sin dependencias, sin módulos ES, sin
  * CDN, sin build: funciona con <script src="viewer-fx.js"> tanto por HTTP como
  * con file://. Inyecta sus estilos una sola vez (<style id="vfx2-css">).
  *
- * API (contrato SHOW-V3 §3):
+ * API (contrato SHOW-V4 §4):
  * ----------------------------------------------------------------------------
- *   ViewerFX.version;                                   // '2.0.0'
+ *   ViewerFX.version;                                   // '3.0.0'
+ *   ViewerFX.apiVersion;                                // 3
  *   ViewerFX.init({ map: Element, motion: 'full'|'lite', maxEffects: 24 });
  *
  *   // Emoji invasor gigante, animación propia por emoción
- *   ViewerFX.invader(emoji, { side, emotion, size, duration, text });
+ *   ViewerFX.invader(emoji, { side, emotion, size, duration, text, x, y, from });
+ *       x,y  = % del escenario donde aparece (sin x/y: comportamiento v2 38/62 %)
+ *       from = 'rojo'|'azul' -> entra volando desde ese lado (overshoot + onda)
+ *       text = frase de la IA -> burbuja bajo el emoji (máx. 2 líneas / 190 chars)
+ *       Cola: máximo 1 emoji activo por bando (el anterior se retira).
+ *
+ *   // Etiqueta grande de acción en % del mapa (¡BOMBA ATÓMICA!, ¡TROPAS!...)
+ *   ViewerFX.label(texto, xPct, yPct, { color, size, ms, kick });  // -> Element
  *
  *   // Impacto en % del mapa (0..100): onda, escombros, chispas, destello
  *   ViewerFX.impact(xPct, yPct, { power, color, emoji, debris, shake });
  *
- *   ViewerFX.damage(n, xPct, yPct, side);       // número flotante
+ *   ViewerFX.damage(n, xPct, yPct, side);       // número flotante 90-110 px
  *   ViewerFX.sparks(xPct, yPct, { color, count });
  *   ViewerFX.shake(strength, { duration });     // 0..1
  *   ViewerFX.flash(color, { opacity, duration });
@@ -24,10 +32,11 @@
  *   ViewerFX.confetti(side, { count });         // 'rojo'|'azul'|'mix'
  *   ViewerFX.clear();
  *
- * Compatibilidad con la API v1 que usa el visor actual (alias a lo nuevo):
+ * Compatibilidad TOTAL con la API v2 y v1 (alias a lo nuevo):
  *   spawnImpact(x,y,power,opts), spawnDamage(n,x,y,side,opts), flyEmoji(emoji,opts),
  *   flash, vignette, shake, spawnReaction, tremblePanel, focus, setMap, getMapEl,
- *   setMotion.
+ *   setMotion. Las firmas v2 no cambian; `version` pasa a '3.0.0' (apiVersion 3)
+ *   y se exponen esV2/esV3 por si algún consumidor mira la versión.
  *
  * Reglas que cumple este fichero:
  *   - Solo transform/opacity en animaciones CSS (más hue-rotate del arcoíris,
@@ -44,7 +53,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.0.0';
+  var VERSION = '3.0.0';
   if (global.ViewerFX && global.ViewerFX.__vfx === VERSION) return;
 
   var doc = global.document;
@@ -180,7 +189,11 @@
    * ======================================================================== */
 
   function ensureStyles() {
-    if (doc.getElementById('vfx2-css')) return;
+    var old = doc.getElementById('vfx2-css');
+    if (old && old.getAttribute('data-vfx') === VERSION) return;
+    if (old && old.parentNode) {
+      try { old.parentNode.removeChild(old); } catch (e) { /* nada */ }
+    }
     var css = [
       /* ---- capas ---- */
       '#vfx2-stage{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:60;',
@@ -201,19 +214,37 @@
       'height:calc(var(--size) * 2.1);transform:translate(-50%,-50%);border-radius:50%;',
       'background:radial-gradient(circle,var(--glow) 0%,rgba(0,0,0,0) 62%);opacity:.46;',
       'filter:blur(18px);animation:vfx2-pulse 1.6s ease-in-out infinite;pointer-events:none}',
-      '.vfx2-inv-tag{position:relative;font:900 13px/1 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
-      'letter-spacing:.24em;text-transform:uppercase;color:var(--c);padding:6px 12px 5px;border-radius:999px;',
-      'background:rgba(6,9,16,.62);border:1px solid var(--c);box-shadow:0 0 14px var(--glow),inset 0 0 10px rgba(0,0,0,.5);',
-      'margin-bottom:10px;white-space:nowrap;text-indent:.24em}',
+      /* etiqueta de emoción: GRANDE y SIEMPRE visible (v3) */
+      '.vfx2-inv-tag{position:relative;font:900 clamp(20px,1.85vw,34px)/1 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
+      'letter-spacing:.16em;text-transform:uppercase;color:#fff;padding:9px 22px 8px;border-radius:999px;',
+      'background:rgba(5,8,14,.78);border:2.5px solid var(--c);',
+      'box-shadow:0 0 28px var(--glow),0 8px 26px rgba(0,0,0,.6),inset 0 0 16px rgba(0,0,0,.6);',
+      'text-shadow:0 0 20px var(--glow),0 2px 0 rgba(0,0,0,.9);',
+      'margin-bottom:12px;white-space:nowrap;text-indent:.16em;animation:vfx2-tagpulse 1.7s ease-in-out infinite}',
       '.vfx2-inv-emoji{position:relative;font-size:var(--size);line-height:.92;',
       'filter:drop-shadow(0 14px 30px rgba(0,0,0,.62)) drop-shadow(0 0 30px var(--glow));',
       'will-change:transform,filter}',
-      '.vfx2-inv-text{position:relative;margin-top:12px;max-width:calc(var(--size) * 3.4);',
-      'font:800 clamp(15px,1.9vw,30px)/1.18 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
-      'color:#fff;text-align:center;font-style:italic;letter-spacing:.01em;',
-      'text-shadow:0 2px 0 rgba(0,0,0,.85),0 0 20px var(--glow),0 4px 18px rgba(0,0,0,.7);',
+      /* burbuja de diálogo bajo el emoji (v3): máx. 2 líneas, borde del bando */
+      '.vfx2-inv-say{position:relative;margin-top:14px;display:flex;justify-content:center;',
       'animation:vfx2-textin .5s cubic-bezier(.2,1.4,.4,1) .14s both}',
+      '.vfx2-inv-say:before{content:"";position:absolute;left:50%;top:-7px;width:13px;height:13px;',
+      'background:rgba(4,7,12,.88);border-left:2px solid var(--sc,var(--c));border-top:2px solid var(--sc,var(--c));',
+      'transform:translateX(-50%) rotate(45deg);border-top-left-radius:3px;z-index:2}',
+      '.vfx2-inv-text{position:relative;z-index:1;max-width:min(calc(var(--size) * 2.6),380px);',
+      'font:800 clamp(15px,1.1vw,18px)/1.3 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
+      'color:#fff;text-align:center;letter-spacing:.005em;background:rgba(4,7,12,.88);',
+      'border:2px solid var(--sc,var(--c));border-radius:16px;padding:9px 15px 10px;',
+      'box-shadow:0 12px 34px rgba(0,0,0,.66),0 0 24px var(--glow),inset 0 0 18px rgba(0,0,0,.5);',
+      'text-shadow:0 2px 0 rgba(0,0,0,.9),0 1px 10px rgba(0,0,0,.75);',
+      'display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}',
       '.vfx2-inv.vfx2-out .vfx2-inv-enter{animation:vfx2-out .34s ease-in forwards}',
+      /* v3: entrada volando desde un lado con overshoot (aterriza con onda) */
+      '.vfx2-inv-from-rojo .vfx2-inv-enter{animation:vfx2-fly-l .8s cubic-bezier(.2,.84,.24,1) both}',
+      '.vfx2-inv-from-azul .vfx2-inv-enter{animation:vfx2-fly-a .8s cubic-bezier(.2,.84,.24,1) both}',
+      /* v3: ecos del emoji (burla) */
+      '.vfx2-echo{position:absolute;left:0;top:0;line-height:1;pointer-events:none;',
+      'transform:translate(-50%,-50%);filter:drop-shadow(0 8px 18px rgba(0,0,0,.5));',
+      'animation:vfx2-echo 1.35s ease-out both}',
 
       /* entrada por emoción (--s0 SIEMPRE 1: en el primer frame ya se ve a tamaño final) */
       '.vfx2-inv-furia{--dx:-180px;--dy:0px;--s0:1;--r0:-10deg}',
@@ -258,10 +289,10 @@
       'letter-spacing:-.035em;transform:translate(-50%,-50%);white-space:nowrap;will-change:transform,opacity;',
       'animation:vfx2-dmg 1.9s cubic-bezier(.16,.9,.2,1) forwards;font-variant-numeric:tabular-nums;',
       'paint-order:stroke fill}',
-      '.vfx2-dmg-r{color:#fff4f4;-webkit-text-stroke:2.5px #4a0a0a;',
-      'text-shadow:-3px -3px 0 #5b0d0d,3px -3px 0 #5b0d0d,-3px 3px 0 #5b0d0d,3px 3px 0 #5b0d0d,0 6px 0 #3d0505,0 0 30px rgba(255,70,60,.95),0 10px 26px rgba(0,0,0,.85)}',
-      '.vfx2-dmg-a{color:#eef9ff;-webkit-text-stroke:2.5px #04283a;',
-      'text-shadow:-3px -3px 0 #06344d,3px -3px 0 #06344d,-3px 3px 0 #06344d,3px 3px 0 #06344d,0 6px 0 #041f30,0 0 30px rgba(56,189,248,.95),0 10px 26px rgba(0,0,0,.85)}',
+      '.vfx2-dmg-r{color:#fff4f4;-webkit-text-stroke:4px #420808;',
+      'text-shadow:-4px -4px 0 #5b0d0d,4px -4px 0 #5b0d0d,-4px 4px 0 #5b0d0d,4px 4px 0 #5b0d0d,0 8px 0 #3d0505,0 0 36px rgba(255,70,60,.95),0 12px 30px rgba(0,0,0,.9)}',
+      '.vfx2-dmg-a{color:#eef9ff;-webkit-text-stroke:4px #031f2e;',
+      'text-shadow:-4px -4px 0 #06344d,4px -4px 0 #06344d,-4px 4px 0 #06344d,4px 4px 0 #06344d,0 8px 0 #041f30,0 0 36px rgba(56,189,248,.95),0 12px 30px rgba(0,0,0,.9)}',
 
       /* ---- reacciones / vuelo (compat v1) ---- */
       '.vfx2-react{position:absolute;transform:translate(-50%,-50%);line-height:1;',
@@ -276,10 +307,35 @@
       '.vfx2-vignette{position:absolute;inset:0;opacity:0;transition:opacity .45s ease;',
       'background:radial-gradient(ellipse at center,rgba(0,0,0,0) 42%,var(--c) 100%)}',
 
+      /* ---- v3: etiqueta grande de acción (¡BOMBA ATÓMICA!, ¡TROPAS!...) ---- */
+      '.vfx2-label{position:absolute;transform:translate(-50%,-50%);z-index:9;pointer-events:none;',
+      'font:900 var(--fs,64px)/1 ui-sans-serif,system-ui,"Segoe UI",Roboto,Arial,sans-serif;',
+      'letter-spacing:.015em;text-transform:uppercase;white-space:nowrap;',
+      'color:var(--c,#ffd36b);-webkit-text-stroke:var(--stroke,5px) rgba(0,0,0,.94);paint-order:stroke fill;',
+      'text-shadow:0 0 34px var(--glow,rgba(255,211,107,.8)),0 10px 34px rgba(0,0,0,.9);',
+      'animation:vfx2-label var(--d,1.7s) cubic-bezier(.16,.9,.2,1) forwards;will-change:transform,opacity}',
+
+      /* ---- v3: efectos de pantalla por emoción ---- */
+      '.vfx2-desat{position:absolute;inset:0;pointer-events:none;z-index:0;background:rgba(146,158,182,.16);',
+      '-webkit-backdrop-filter:grayscale(.84) saturate(.55) contrast(1.02);',
+      'backdrop-filter:grayscale(.84) saturate(.55) contrast(1.02);',
+      'animation:vfx2-desat var(--d,.55s) ease-out forwards;will-change:opacity}',
+      '.vfx2-rainbow{position:absolute;inset:-8%;pointer-events:none;z-index:55;',
+      'background:linear-gradient(102deg,#ff3b30 0%,#ff9f0a 18%,#ffd60a 34%,#34d399 50%,#38bdf8 66%,#a78bfa 84%,#ff3b30 100%);',
+      'filter:blur(48px) saturate(1.35);mix-blend-mode:screen;opacity:0;',
+      'animation:vfx2-rbsweep var(--d,.9s) ease-out forwards;will-change:opacity,transform}',
+
       /* ---- lite ---- */
       '.vfx2-lite .vfx2-inv-body,.vfx2-lite .vfx2-inv-emoji,.vfx2-lite .vfx2-inv-glow,',
-      '.vfx2-lite .vfx2-inv-tag,.vfx2-lite .vfx2-inv-text{animation:none!important}',
-      '.vfx2-lite .vfx2-inv-enter{animation:vfx2-in .3s ease-out both}',
+      '.vfx2-lite .vfx2-inv-tag,.vfx2-lite .vfx2-inv-text,.vfx2-lite .vfx2-inv-say{animation:none!important}',
+      '.vfx2-lite .vfx2-inv-enter,.vfx2-lite .vfx2-inv-from-rojo .vfx2-inv-enter,',
+      '.vfx2-lite .vfx2-inv-from-azul .vfx2-inv-enter{animation:vfx2-in .3s ease-out both}',
+      '.vfx2-lite .vfx2-echo{display:none}',
+      /* Modo lite: la etiqueta y el daño deben verse SIEMPRE (estáticos).
+         No usan animación porque con prefers-reduced-motion los navegadores
+         fuerzan animation-duration:.001ms!important y acabarían en opacity 0. */
+      '.vfx2-lite .vfx2-label{animation:none!important;opacity:1}',
+      '.vfx2-lite .vfx2-dmg{animation:none!important;opacity:1}',
 
       /* ---- keyframes ---- */
       '@keyframes vfx2-in{0%{opacity:1;transform:translate(0,0) scale(1) rotate(0deg)}',
@@ -348,10 +404,36 @@
       '@keyframes vfx2-react{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}',
       '18%{opacity:1;transform:translate(-50%,-70%) scale(1.1)}',
       '100%{opacity:0;transform:translate(-50%,-210%) scale(.9)}}',
-      '@keyframes vfx2-flash{0%{opacity:var(--o,.35)}14%{opacity:var(--o,.35)}100%{opacity:0}}'
+      '@keyframes vfx2-flash{0%{opacity:var(--o,.35)}14%{opacity:var(--o,.35)}100%{opacity:0}}',
+
+      /* ---- v3 ---- */
+      '@keyframes vfx2-tagpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.055)}}',
+      '@keyframes vfx2-fly-l{0%{opacity:0;transform:translate(-60vw,-4vh) scale(.6) rotate(-16deg)}',
+      '9%{opacity:1}',
+      '54%{opacity:1;transform:translate(4.6vw,1vh) scale(1.1) rotate(2.4deg)}',
+      '70%{transform:translate(-1.9vw,0) scale(.97) rotate(-1.2deg)}',
+      '84%{transform:translate(.7vw,0) scale(1.02) rotate(.4deg)}',
+      '100%{opacity:1;transform:translate(0,0) scale(1) rotate(0)}}',
+      '@keyframes vfx2-fly-a{0%{opacity:0;transform:translate(60vw,-4vh) scale(.6) rotate(16deg)}',
+      '9%{opacity:1}',
+      '54%{opacity:1;transform:translate(-4.6vw,1vh) scale(1.1) rotate(-2.4deg)}',
+      '70%{transform:translate(1.9vw,0) scale(.97) rotate(1.2deg)}',
+      '84%{transform:translate(-.7vw,0) scale(1.02) rotate(-.4deg)}',
+      '100%{opacity:1;transform:translate(0,0) scale(1) rotate(0)}}',
+      '@keyframes vfx2-echo{0%{opacity:.5;transform:translate(-50%,-50%) scale(.9)}',
+      '100%{opacity:0;transform:translate(calc(-50% + var(--ex,0px)),calc(-50% + var(--ey,0px))) scale(1.32)}}',
+      '@keyframes vfx2-label{0%{opacity:0;transform:translate(-50%,-50%) scale(.5) rotate(-4deg)}',
+      '11%{opacity:1;transform:translate(-50%,-50%) scale(calc(1 + .16 * var(--kick,1))) rotate(1.2deg)}',
+      '23%{opacity:1;transform:translate(-50%,-50%) scale(.975) rotate(-.6deg)}',
+      '33%{opacity:1;transform:translate(-50%,-50%) scale(1.015) rotate(0deg)}',
+      '72%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0deg)}',
+      '100%{opacity:0;transform:translate(-50%,-50%) scale(1.06) translateY(-16px) rotate(0deg)}}',
+      '@keyframes vfx2-desat{0%{opacity:0}10%{opacity:1}62%{opacity:.92}100%{opacity:0}}',
+      '@keyframes vfx2-rbsweep{0%{opacity:0;transform:translateY(-6%)}12%{opacity:.3}55%{opacity:.22}100%{opacity:0;transform:translateY(2%)}}'
     ].join('');
     var st = make('style');
     st.id = 'vfx2-css';
+    st.setAttribute('data-vfx', VERSION);
     st.appendChild(doc.createTextNode(css));
     (doc.head || doc.documentElement).appendChild(st);
   }
@@ -867,6 +949,8 @@
     }
   };
 
+  var activeInv = { rojo: null, azul: null };
+
   function normEmotion(e) {
     var s = String(e || '').toLowerCase();
     return EM[s] ? s : 'furia';
@@ -876,9 +960,38 @@
     return String(s || '').toLowerCase() === 'azul' ? 'azul' : 'rojo';
   }
 
+  function isNarrow() { return (global.innerWidth || 1280) < 720; }
+
+  /* Tamaño por defecto v3: 280-420 px escritorio / 180-240 px móvil. */
   function defaultSize() {
     var w = global.innerWidth || 1280;
-    return clamp(w * 0.22, 96, 340);
+    if (w < 720) return clamp(w * 0.52, 180, 240);
+    return clamp(w * 0.245, 280, 420);
+  }
+
+  /* Color flexible: admite '#rrggbb', 'rojo', 'azul', 'oro'. */
+  function normColor(c) {
+    var s = String(c == null ? '' : c).trim().toLowerCase();
+    if (s === 'rojo' || s === 'red') return '#ff4d4d';
+    if (s === 'azul' || s === 'blue') return '#38bdf8';
+    if (s === 'oro' || s === 'gold' || s === 'amarillo') return '#ffd36b';
+    return c ? String(c) : '#ffd36b';
+  }
+
+  function hexGlow(c) {
+    var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(c || '').trim());
+    if (!m) return 'rgba(255,211,107,.85)';
+    var h = m[1];
+    if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
+    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' +
+      parseInt(h.slice(4, 6), 16) + ',.85)';
+  }
+
+  /* Texto de la burbuja: una línea lógica, máx. 190 chars (2 líneas por CSS). */
+  function bubbleText(t) {
+    var s = String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+    if (s.length > 190) s = s.slice(0, 187).replace(/[\s,;:.!¡?¿]+$/, '') + '\u2026';
+    return s;
   }
 
   function emitFor(emotion, pt, size) {
@@ -908,26 +1021,162 @@
     };
   }
 
+  /* Onda de aterrizaje del emoji que entra volando: anillos + chispas. */
+  function landingWave(el, sp, size, color) {
+    if (!el || !el.parentNode || el.classList.contains('vfx2-out')) return;
+    var i, ring;
+    if (!lite) {
+      for (i = 0; i < 2; i++) {
+        ring = make('div', 'vfx2-ring');
+        ring.style.setProperty('--s', Math.round(size * (1.45 + i * 0.72)) + 'px');
+        ring.style.setProperty('--bw', (6 - i * 2) + 'px');
+        ring.style.setProperty('--c', i === 0 ? '#ffffff' : color);
+        ring.style.setProperty('--d', (0.6 + i * 0.16).toFixed(2) + 's');
+        ring.style.setProperty('--delay', (i * 0.06).toFixed(2) + 's');
+        if (el.firstChild) el.insertBefore(ring, el.firstChild);
+        else el.appendChild(ring);
+      }
+    }
+    burstSparks(sp.x, sp.y + size * 0.3, color, lite ? 6 : 20, 0.5);
+    if (!lite) shake(0.32, { duration: 420 });
+  }
+
+  /* Ecos del emoji (burla): copias que salen hacia los lados y se desvanecen. */
+  function echoes(el, emoji, size, color) {
+    if (!el || lite) return;
+    var offs = [[-1, -0.35], [1, -0.2], [-0.7, 0.45]];
+    for (var i = 0; i < offs.length; i++) {
+      var e = make('div', 'vfx2-echo');
+      e.textContent = emoji;
+      e.style.fontSize = Math.round(size * (0.72 - i * 0.06)) + 'px';
+      e.style.color = color;
+      e.style.setProperty('--ex', (offs[i][0] * size * 0.62).toFixed(0) + 'px');
+      e.style.setProperty('--ey', (offs[i][1] * size * 0.62).toFixed(0) + 'px');
+      e.style.animationDelay = (i * 0.13).toFixed(2) + 's';
+      el.appendChild(e);
+    }
+  }
+
+  /* Gotas azules cayendo por toda la pantalla (llanto). */
+  function blueDrops(count) {
+    if (!ctx || !stage) return;
+    var n = Math.round(count * (lite ? 0.35 : 1));
+    for (var i = 0; i < n; i++) {
+      var ttl = rnd(800, 1600);
+      addP({
+        type: 'tear', x: rnd(-20, VIEW.w + 20), y: rnd(-VIEW.h * 0.1, VIEW.h * 0.5),
+        vx: rnd(-18, 18), vy: rnd(140, 380),
+        g: 640, drag: 0.999, size: rnd(5, 11),
+        rot: 0, vr: rnd(-1.4, 1.4),
+        color: pick(['#7dd3fc', '#38bdf8', '#bae6fd', '#0ea5e9']),
+        life: ttl, ttl: ttl, alpha: rnd(0.65, 1)
+      });
+    }
+  }
+
+  /* Desaturación breve de pantalla (pánico).
+     Se pinta DENTRO del escenario y por debajo de los emojis (z-index 0 vs 6) para que
+     desature el mapa y no la cara del emoji, que debe seguir leyéndose. */
+  function desat(ms) {
+    if (!ensureReady() || lite) return null;
+    var host = dom || screen;
+    if (!host) return null;
+    var d = clamp(num(ms, 700), 120, 4000);
+    var el = make('div', 'vfx2-desat');
+    el.style.setProperty('--d', d + 'ms');
+    if (host === dom) host.insertBefore(el, host.firstChild); else host.appendChild(el);
+    later(function () { try { if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* nada */ } }, d + 80);
+    return el;
+  }
+
+  /* Arcoíris de fondo (euforia). Se pinta en el HOST del mapa, justo DEBAJO del escenario
+     (z-index 55 < 60), así el blend screen tiñe el mapa y no la cara ni la etiqueta del emoji. */
+  function rainbowSweep(ms) {
+    if (!ensureReady() || lite) return null;
+    var host = (stage && stage.parentNode) || dom || screen;
+    if (!host) return null;
+    var d = clamp(num(ms, 1000), 200, 5000);
+    var el = make('div', 'vfx2-rainbow');
+    el.style.setProperty('--d', d + 'ms');
+    if (stage && stage.parentNode === host) host.insertBefore(el, stage);
+    else host.appendChild(el);
+    later(function () { try { if (el.parentNode) el.parentNode.removeChild(el); } catch (e) { /* nada */ } }, d + 80);
+    return el;
+  }
+
+  /* Efectos de pantalla propios de cada emoción (además del emoji). */
+  function screenFx(emotion, side, sp, size, emoji, el) {
+    if (lite) {
+      /* En lite/reduced-motion no hay animaciones: viñeta (transición de opacidad
+         aplicada inline) en vez de flash, que depende de @keyframes. */
+      if (emotion === 'furia') vignette(0.4, { color: 'rgba(255,24,24,.9)', duration: 1200 });
+      return;
+    }
+    if (emotion === 'furia') {
+      vignette(0.62, { color: 'rgba(255,24,24,.92)', duration: 1600 });
+      shake(0.62, { duration: 780 });
+      flash('#ff2d2d', { opacity: 0.08, duration: 260 });
+    } else if (emotion === 'panico') {
+      shake(0.52, { duration: 900 });
+      desat(1600);
+      glitchBits(sp.x, sp.y - size * 0.3, 14);
+    } else if (emotion === 'llanto') {
+      blueDrops(30);
+      tears(sp.x, sp.y + size * 0.15, 16);
+      vignette(0.3, { color: 'rgba(30,90,220,.85)', duration: 1400 });
+    } else if (emotion === 'euforia') {
+      confettiRain(side === 'azul' ? 'azul' : 'rojo', 120);
+      rainbowSweep(1800);
+      stars(sp.x, sp.y - size * 0.45, 22);
+    } else if (emotion === 'burla') {
+      echoes(el, emoji, size, EM[emotion].c);
+    }
+  }
+
   function invader(emoji, opts) {
     var o = opts || {};
     if (!ensureReady()) return null;
 
     var emotion = normEmotion(o.emotion);
     var side = normSide(o.side);
+    var meta = EM[emotion];
+    var narrow = isNarrow();
     var dur = clamp(num(o.duration, 3200), 900, 15000);
-    var size = clamp(num(o.size, defaultSize()), 64, 520);
-    var narrow = (global.innerWidth || 1280) < 720;
-    var xPct = narrow ? 50 : (side === 'azul' ? 62 : 38);
-    var p = punto(xPct, narrow ? 46 : 44);
+    var size = clamp(num(o.size, defaultSize()), 140, 560);
+
+    /* v3: x/y = % del escenario donde aparece el emoji.
+       Sin x/y -> mismo sitio que la v2 (38 % rojo / 62 % azul, 44 % vertical). */
+    var hasX = o.x != null && isFinite(Number(o.x));
+    var hasY = o.y != null && isFinite(Number(o.y));
+    var xPct = hasX ? num(o.x, 50) : (narrow ? 50 : (side === 'azul' ? 62 : 38));
+    var yPct = hasY ? num(o.y, 44) : (narrow ? 46 : 44);
+    /* La pila (etiqueta + emoji + burbuja) tiene que caber entera en el escenario:
+       se limita el punto para que no se recorte ni se meta bajo el HUD. */
+    var bubbleMax = narrow
+      ? Math.min(VIEW.w * 0.72, 300)
+      : Math.min(size * 2.6, 380, Math.max(120, VIEW.w * 0.9));
+    var halfW = Math.max(size * 0.52, bubbleMax * 0.5) + 10;
+    var halfH = (size + 150) / 2;
+    var xa = VIEW.w > 80 ? (halfW / VIEW.w) * 100 : 9;
+    var yb = VIEW.h > 80 ? (halfH / VIEW.h) * 100 : (narrow ? 22 : 14);
+    xPct = (xa >= 50) ? 50 : clamp(xPct, xa, 100 - xa);
+    yb = Math.max(yb, narrow ? 22 : 14);
+    yPct = (yb >= 50) ? 50 : clamp(yPct, yb, 100 - yb);
+    var p = punto(xPct, yPct);
     var sp = stagePoint(p);
 
-    var meta = EM[emotion];
     var el = make('div', 'vfx2-inv vfx2-inv-' + emotion);
     el.style.left = sp.x + 'px';
     el.style.top = sp.y + 'px';
     el.style.setProperty('--size', size + 'px');
     el.style.setProperty('--c', meta.c);
     el.style.setProperty('--glow', meta.glow);
+    /* borde de la burbuja = color del bando (rojo/azul), no el de la emoción */
+    el.style.setProperty('--sc', side === 'azul' ? '#38bdf8' : '#ff4d4d');
+
+    /* v3: entrada volando desde un lado (overshoot + onda de aterrizaje). */
+    var from = (o.from === 'rojo' || o.from === 'azul') ? o.from : null;
+    if (from) el.classList.add('vfx2-inv-from-' + from);
 
     var center = make('div', 'vfx2-inv-center');
     var enter = make('div', 'vfx2-inv-enter');
@@ -944,10 +1193,14 @@
     face.appendChild(em);
     body.appendChild(tag);
     body.appendChild(face);
-    if (o.text) {
-      var txt = make('div', 'vfx2-inv-text');
-      txt.textContent = String(o.text);
-      body.appendChild(txt);
+    var txt = bubbleText(o.text);
+    if (txt) {
+      var say = make('div', 'vfx2-inv-say');
+      var bubble = make('div', 'vfx2-inv-text');
+      bubble.textContent = txt;
+      bubble.style.maxWidth = Math.round(bubbleMax) + 'px';
+      say.appendChild(bubble);
+      body.appendChild(say);
     }
     enter.appendChild(body);
     center.appendChild(enter);
@@ -955,14 +1208,32 @@
     dom.appendChild(el);
     track(el);
 
+    /* v3: cola de un emoji por bando. Si ya había uno, se retira rápido. */
+    var prev = activeInv[side];
+    if (prev && prev !== el) {
+      try { if (prev.__stop) { prev.__stop(); prev.__stop = null; } } catch (e) { /* nada */ }
+      prev.classList.add('vfx2-out');
+      later(function () { removeEl(prev); }, 320);
+    }
+    activeInv[side] = el;
+
     // Ráfaga inicial + emisor continuo de partículas de la emoción.
     emitFor(emotion, sp, size);
     emitFor(emotion, sp, size);
     if (emotion === 'euforia') confettiRain(side, 46);
     el.__stop = startEmitter(emotion, sp, size);
 
+    // v3: efectos de pantalla de la emoción (viñeta, shake, desaturación, gotas...).
+    screenFx(emotion, side, sp, size, emoji || meta.emoji, el);
+
+    // Onda de aterrizaje si entra volando desde un lado.
+    if (from) later(function () { landingWave(el, sp, size, meta.c); }, 620);
+
     later(function () { el.classList.add('vfx2-out'); }, Math.max(160, dur - 360));
-    later(function () { removeEl(el); }, dur);
+    later(function () {
+      removeEl(el);
+      if (activeInv[side] === el) activeInv[side] = null;
+    }, dur);
     return el;
   }
 
@@ -1041,19 +1312,66 @@
     var p = punto(xPct, yPct);
     var sp = stagePoint(p);
     var azul = normSide(side) === 'azul';
+    var narrow = isNarrow();
     var el = make('div', 'vfx2-dmg ' + (azul ? 'vfx2-dmg-a' : 'vfx2-dmg-r'));
     var prefix = o.prefix != null ? String(o.prefix) : '\u2212';
     el.textContent = prefix + fmtNum(v);
     el.style.left = sp.x + 'px';
     el.style.top = sp.y + 'px';
     var mag = clamp(Math.log(Math.max(1, Math.abs(v))) / Math.LN10 / 2.6, 0, 1);
-    el.style.setProperty('--fs', Math.round(num(o.size, 56 + mag * 16)) + 'px');
-    el.style.setProperty('--arc', ((azul ? -1 : 1) * rnd(14, 30)).toFixed(0) + 'px');
+    /* v3: 90-110 px en escritorio (68-86 en móvil para no desbordar 390 px). */
+    var base = narrow ? 68 + mag * 18 : 90 + mag * 20;
+    el.style.setProperty('--fs', Math.round(clamp(num(o.size, base), 28, 170)) + 'px');
+    el.style.setProperty('--arc', ((azul ? -1 : 1) * rnd(14, 34)).toFixed(0) + 'px');
     dom.appendChild(el);
     track(el);
 
-    burstSparks(sp.x, sp.y, azul ? '#7dd3fc' : '#fca5a5', 12, 0.45);
+    burstSparks(sp.x, sp.y, azul ? '#7dd3fc' : '#fca5a5', Math.round(18 + mag * 14), 0.55);
+    stars(sp.x, sp.y, 7, azul ? '#bae6fd' : '#fecaca');
+    if (!lite) shake(0.26 + mag * 0.3, { duration: 560 });
     later(function () { removeEl(el); }, 2050);
+    return el;
+  }
+
+  /* ==========================================================================
+   * v3 — Etiqueta grande de acción (¡BOMBA ATÓMICA!, ¡TROPAS!, ¡ATAQUE!...)
+   * ======================================================================== */
+
+  function label(text, xPct, yPct, opts) {
+    var o = opts || {};
+    if (!ensureReady()) return null;
+    var txt = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    if (!txt) return null;
+
+    var narrow = isNarrow();
+    var w = global.innerWidth || 1440;
+    var fs = num(o.size, 0);
+    if (!fs) fs = narrow ? clamp(w * 0.105, 30, 48) : clamp(w * 0.062, 46, 96);
+    fs = clamp(fs, 20, 150);
+
+    var color = normColor(o.color);
+    var ms = clamp(num(o.ms, 1700), 300, 6000);
+    var kick = clamp(num(o.kick, 1), 0, 1);
+
+    /* No tapar el HUD: la etiqueta vive dentro de la zona segura del escenario. */
+    var x = clamp(num(xPct, 50), 10, 90);
+    var y = clamp(num(yPct, 44), narrow ? 20 : 15, narrow ? 84 : 87);
+    var p = punto(x, y);
+    var sp = stagePoint(p);
+
+    var el = make('div', 'vfx2-label');
+    el.textContent = txt.toUpperCase();
+    el.style.left = sp.x + 'px';
+    el.style.top = sp.y + 'px';
+    el.style.setProperty('--fs', Math.round(fs) + 'px');
+    el.style.setProperty('--stroke', Math.max(4, Math.round(fs * 0.085)) + 'px');
+    el.style.setProperty('--c', color);
+    el.style.setProperty('--glow', hexGlow(color));
+    el.style.setProperty('--kick', String(kick));
+    el.style.setProperty('--d', ms + 'ms');
+    dom.appendChild(el);
+    track(el);
+    later(function () { removeEl(el); }, ms + 120);
     return el;
   }
 
@@ -1312,6 +1630,8 @@
     clearTimers();
     P.length = 0;
     spawnDrawId = 0;
+    activeInv.rojo = null;
+    activeInv.azul = null;
     if (ctx) {
       try { ctx.clearRect(0, 0, VIEW.w, VIEW.h); } catch (e) { /* nada */ }
     }
@@ -1382,11 +1702,16 @@
   var api = {
     __vfx: VERSION,
     version: VERSION,
+    /* v3: marcas de compatibilidad para consumidores que miran la versión. */
+    apiVersion: 3,
+    esV2: true,
+    esV3: true,
 
     init: init,
     invader: invader,
     impact: impact,
     damage: damage,
+    label: label,
     sparks: sparks,
     shake: shake,
     flash: flash,

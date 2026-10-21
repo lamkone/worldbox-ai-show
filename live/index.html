@@ -43,7 +43,7 @@
   --line:rgba(255,255,255,.12);
   --line-fuerte:rgba(255,255,255,.22);
   --sombra:0 18px 50px rgba(0,0,0,.55);
-  --panel-w:318px; --cab-h:58px; --pie-h:80px; --radio:16px;
+  --panel-w:380px; --cab-h:58px; --pie-h:80px; --radio:16px;
   --blur:blur(18px) saturate(1.3);
 }
 body.light{
@@ -71,8 +71,25 @@ b,strong{font-weight:800}
    2. Escenario: mapa a pantalla completa
    ============================================================ */
 #escenario{position:fixed;inset:0;z-index:0;overflow:hidden;background:#04070d}
-#frame{position:absolute;inset:0;width:100%;height:100%;display:block;background:#04070d;image-rendering:auto}
+#frame{position:absolute;inset:0;width:100%;height:100%;display:block;background:#04070d;image-rendering:auto;filter:contrast(1.04) saturate(1.06)}
 #fx-host{position:absolute;inset:0;z-index:3;pointer-events:none;transition:z-index 0s}
+/* etiqueta local de respaldo si ViewerFX aún no expone label() */
+.fx-lbl{
+  position:absolute;transform:translate(-50%,-50%) scale(.55);
+  font:900 clamp(30px,6vw,76px)/1 system-ui,-apple-system,sans-serif;letter-spacing:.02em;
+  color:#fff;white-space:nowrap;pointer-events:none;opacity:0;
+  text-shadow:0 0 2px rgba(0,0,0,.92),0 4px 0 rgba(0,0,0,.5),0 0 28px currentColor;
+  -webkit-text-stroke:clamp(2px,.3vw,4px) rgba(0,0,0,.82);
+  will-change:transform,opacity;
+}
+.fx-lbl.on{animation:fxLbl 1600ms cubic-bezier(.16,1,.3,1) forwards}
+@keyframes fxLbl{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.5)}
+  14%{opacity:1;transform:translate(-50%,-50%) scale(1.15)}
+  26%{transform:translate(-50%,-50%) scale(1)}
+  72%{opacity:1;transform:translate(-50%,-52%) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-66%) scale(1.03)}
+}
 /* viñeta cinematográfica estática (decorado de escenario, no efecto de juego) */
 #escenario::after{
   content:'';position:absolute;inset:0;z-index:1;pointer-events:none;
@@ -187,7 +204,7 @@ body.light .marca .marca-txt strong{background:linear-gradient(90deg,#0d1726,#3b
 .p-dot{width:8px;height:8px;border-radius:50%;background:var(--r);box-shadow:0 0 12px var(--r)}
 #p-azul .p-dot{background:var(--a);box-shadow:0 0 12px var(--a)}
 .p-nombre{
-  font-size:19px;font-weight:900;line-height:1.1;letter-spacing:.01em;
+  font-size:17px;font-weight:900;line-height:1.1;letter-spacing:.01em;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto;
 }
 .p-unid{display:flex;align-items:baseline;gap:7px;flex:0 0 auto}
@@ -236,8 +253,8 @@ body.light .marca .marca-txt strong{background:linear-gradient(90deg,#0d1726,#3b
 .p-chat::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:99px}
 .p-chat::-webkit-scrollbar-track{background:transparent}
 .msg{
-  background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:10px;
-  padding:6px 9px;font-size:12px;line-height:1.34;color:var(--txt);
+  background:rgba(255,255,255,.055);border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px;font-size:16px;line-height:1.4;color:var(--txt);
   overflow-wrap:anywhere;word-break:break-word;flex:0 0 auto;
 }
 #p-rojo .msg{border-left:2px solid rgba(255,71,87,.55)}
@@ -515,10 +532,10 @@ body.cine .btn:hover{opacity:1}
   .p-chat-h{display:none}
   .p-chat{flex:1 1 auto;gap:3px;min-height:0;overflow-y:auto;padding-right:0}
   .msg{
-    font-size:10.5px;padding:3px 6px;border-radius:7px;line-height:1.3;
-    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+    font-size:13.5px;padding:5px 7px;border-radius:8px;line-height:1.35;
+    display:block;overflow-wrap:anywhere;
   }
-  .msg.emoji,.msg.emoji.fuerte{display:block;font-size:17px;padding:0 1px;line-height:1.1;text-align:left;-webkit-line-clamp:unset;overflow:visible}
+  .msg.emoji,.msg.emoji.fuerte{display:block;font-size:20px;padding:1px 1px;line-height:1.1;text-align:left;overflow:visible}
   /* ---------- 4) pie: pista + tensión + stats ---------- */
   #pie{
     left:0;right:0;bottom:0;height:var(--pie-h);border-radius:0;border-left:0;border-right:0;
@@ -593,11 +610,9 @@ body.cine .btn:hover{opacity:1}
   .grid-vic{margin:7px 0 9px}
   .marcador-vic{margin:7px 0 2px}
 }
-@media (prefers-reduced-motion:reduce){
-  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
-  #ticker{animation:none!important}
-  .tension.alta .tbar{animation:none!important}
-}
+html.modo-lite *,html.modo-lite *::before,html.modo-lite *::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+html.modo-lite #ticker{animation:none!important}
+html.modo-lite .tension.alta .tbar{animation:none!important}
 </style>
 </head>
 <body>
@@ -663,6 +678,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     <button class="btn" id="btn-cine" title="Modo cine (C)" aria-label="Modo cine">🎬</button>
     <button class="btn" id="btn-full" title="Pantalla completa (F)" aria-label="Pantalla completa">⛶</button>
     <button class="btn" id="btn-sonido" title="Sonido (M)" aria-label="Sonido">🔇</button>
+    <button class="btn" id="btn-voz" title="Voces (V)" aria-label="Voces">🔇</button>
     <button class="btn" id="btn-theme" title="Tema claro/oscuro (T)" aria-label="Cambiar tema">🌙</button>
     <button class="btn" id="btn-reset" title="Restablecer layout (R)" aria-label="Restablecer">↺</button>
   </div>
@@ -746,6 +762,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
 </div>
 
 <script src="viewer-fx.js"></script>
+<script src="viewer-voice.js"></script>
 <script>
 /* ============================================================
    WorldBox AI Show · visor v3 "broadcast"
@@ -775,8 +792,18 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   try { mqMovil.addEventListener('change', e => { ES_MOVIL = e.matches; }); }
   catch (e) { try { mqMovil.addListener(e2 => { ES_MOVIL = e2.matches; }); } catch (e3) {} }
 
-  let PREFIERE_MENOS = false;
-  try { PREFIERE_MENOS = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+  // El espectáculo manda: por defecto animación COMPLETA. En esta máquina Windows tiene
+  // las animaciones del sistema desactivadas, así que prefers-reduced-motion NO se usa
+  // como auto-lite (dejaba el show sin FX). El modo lite es opt-in: ?motion=lite
+  // (o window.__WB_SET_MOTION__(true) desde consola).
+  let PREFIERE_MENOS = /[?&]motion=(lite|reduced|off)\b/i.test(location.search);
+  try {
+    if (PREFIERE_MENOS) document.documentElement.classList.add('modo-lite');
+    window.__WB_SET_MOTION__ = function (lite) {
+      PREFIERE_MENOS = !!lite;
+      document.documentElement.classList.toggle('modo-lite', !!lite);
+    };
+  } catch (e) {}
 
   const CFG = {
     pollMs: 900,
@@ -794,7 +821,12 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     })()
   };
 
-  const RECORTE = { x0: 0.25, y0: 0.16, x1: 0.79, y1: 0.79 };
+  /* Recorte del mapa dentro del fotograma capturado.
+     v4.1: el stream YA publica solo el mapa (24-wb-stream.ps1 -CropX0/-CropY0/-CropX1/-CropY1
+     recorta la ventana de WorldBox a x 0.297-0.764, y 0.165-0.753), así que el fotograma que
+     llega es el mapa entero: aquí no hay nada que recortar. Las coordenadas cx/cy del stream
+     vienen ya renormalizadas a este recorte, por lo que el mapeo es identidad. */
+  const RECORTE = { x0: 0, y0: 0, x1: 1, y1: 1 };
   const VENTANA = { w: 1280, h: 720 };   // ventana capturada de WorldBox (px) para eventos crudos
 
   /* ------------------------------------------------------------
@@ -854,7 +886,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   const K_TEMA = 'wb7-tema';
   const K_LOCK = 'wb7-lock';
   const K_CINE = 'wb7-cine';
-  const K_PANEL = 'wb7-panel';
+  const K_PANEL = 'wb8-panel';
   const K_SONIDO = 'wb7-sonido';
 
   function aplicarTema(claro) {
@@ -876,8 +908,8 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     try { localStorage.setItem(K_LOCK, on ? '1' : '0'); } catch (e) {}
   }
   function aplicarPanel(px) {
-    const max = Math.min(430, Math.round(window.innerWidth * 0.30));
-    const w = clamp(px || 318, 258, Math.max(280, max));
+    const max = Math.min(470, Math.round(window.innerWidth * 0.34));
+    const w = clamp(px || 380, 300, Math.max(320, max));
     document.documentElement.style.setProperty('--panel-w', w + 'px');
     /* En móvil el ancho de panel es 100%: no guardar ese valor para escritorio */
     if (!ES_MOVIL) { try { localStorage.setItem(K_PANEL, String(w)); } catch (e) {} }
@@ -892,7 +924,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
         if (document.body.classList.contains('locked') || ES_MOVIL) return;
         ev.preventDefault();
         const x0 = ev.clientX;
-        const actual = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-w')) || 318;
+        const actual = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--panel-w')) || 380;
         try { el.setPointerCapture(ev.pointerId); } catch (e) {}
         function mover(e2) {
           aplicarPanel(actual + (e2.clientX - x0) * signo);
@@ -988,15 +1020,37 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   }
 
   /* ------------------------------------------------------------
+     Voces (viewer-voice.js): botón 🔊, tecla V, se lee el chat nuevo
+     ------------------------------------------------------------ */
+  function vozDisponible() {
+    try { return !!(window.ViewerVoz && window.ViewerVoz.disponible && window.ViewerVoz.disponible()); } catch (e) { return false; }
+  }
+  function actualizarBotonVoz() {
+    const b = $('#btn-voz');
+    if (!b) return;
+    let on = false;
+    try { on = !!(window.ViewerVoz && window.ViewerVoz.activo && window.ViewerVoz.activo()); } catch (e) {}
+    b.textContent = on ? '🔊' : '🔇';
+    b.classList.toggle('on', on);
+    b.title = on ? 'Voces (V): activadas' : 'Voces (V): silenciadas';
+  }
+  function alternarVoz() {
+    if (!vozDisponible()) return;
+    try { if (window.ViewerVoz.alternar) window.ViewerVoz.alternar(); } catch (e) {}
+    actualizarBotonVoz();
+  }
+
+  /* ------------------------------------------------------------
      ViewerFX: v2 del contrato; adaptador para v1; ausencia tolerada
      ------------------------------------------------------------ */
   const FX = (function () {
     const raw = window.ViewerFX;
     const host = $('#fx-host');
     if (!raw || !host) {
-      return { v2: false, invader() {}, impact() {}, damage() {}, sparks() {}, shake() {}, flash() {}, vignette() {}, confetti() {}, clear() {}, ok: false };
+      return { v2: false, invader() {}, impact() {}, damage() {}, label() {}, sparks() {}, shake() {}, flash() {}, vignette() {}, confetti() {}, clear() {}, ok: false };
     }
-    const esV2 = String(raw.version || '').charAt(0) === '2';
+    /* v3 también usa el contrato v2 (apiVersion 3, esV3); solo v1 es legacy */
+    const esV2 = String(raw.version || '').charAt(0) !== '1';
     try {
       if (esV2) raw.init({ map: host, motion: PREFIERE_MENOS ? 'lite' : 'full', maxEffects: CFG.maxEfectos });
       else raw.init({ map: host, motion: PREFIERE_MENOS ? 'reduced' : 'full', maxEffects: CFG.maxEfectos });
@@ -1004,21 +1058,52 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     function v1reaccion(emoji, x, y) {
       try { raw.spawnReaction(emoji, clamp(x, 4, 96), clamp(y, 4, 96), { duration: 2800 }); } catch (e) {}
     }
+    /* Respaldo DOM de FX.label si el módulo FX aún no lo trae (se retira solo). */
+    let capaEtiquetas = null;
+    function etiquetaLocal(texto, x, y, o) {
+      if (PREFIERE_MENOS) return null;
+      try {
+        if (!capaEtiquetas) {
+          capaEtiquetas = document.createElement('div');
+          capaEtiquetas.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+          host.appendChild(capaEtiquetas);
+        }
+        const el = document.createElement('div');
+        el.className = 'fx-lbl';
+        el.textContent = String(texto || '');
+        el.style.left = clamp(x, 2, 98) + '%';
+        el.style.top = clamp(y, 2, 98) + '%';
+        if (o.color) el.style.color = o.color;
+        if (o.size) el.style.fontSize = Math.round(Number(o.size) || 64) + 'px';
+        capaEtiquetas.appendChild(el);
+        void el.offsetWidth;
+        el.classList.add('on');
+        setTimeout(function () { try { el.remove(); } catch (e) {} }, Math.max(600, Number(o.ms) || 1600) + 140);
+        return el;
+      } catch (e) { return null; }
+    }
     return {
       ok: true,
       v2: esV2,
       invader(emoji, o) {
         o = o || {};
         if (esV2) { try { raw.invader(emoji, o); } catch (e) {} }
-        else v1reaccion(emoji, o.side === 'azul' ? 68 : 32, 44);
+        else v1reaccion(emoji, Number.isFinite(Number(o.x)) ? Number(o.x) : (o.side === 'azul' ? 68 : 32), Number.isFinite(Number(o.y)) ? Number(o.y) : 44);
+      },
+      label(texto, x, y, o) {
+        o = o || {};
+        if (typeof raw.label === 'function') {
+          try { return raw.label(String(texto), clamp(x, 2, 98), clamp(y, 2, 98), o); } catch (e) {}
+        }
+        return etiquetaLocal(texto, x, y, o);
       },
       impact(x, y, o) {
         o = o || {};
         if (esV2) { try { raw.impact(x, y, o); } catch (e) {} }
         else { try { raw.spawnImpact(clamp(x, 2, 98), clamp(y, 2, 98), clamp(o.power || 0.7, 0.1, 1), { emoji: o.emoji || '💥' }); } catch (e) {} }
       },
-      damage(n, x, y, side) {
-        if (esV2) { try { raw.damage(n, x, y, side); } catch (e) {} }
+      damage(n, x, y, side, o) {
+        if (esV2) { try { raw.damage(n, x, y, side, o || {}); } catch (e) {} }
         else { try { raw.spawnDamage(n, clamp(x, 4, 96), clamp(y, 4, 96), side); } catch (e) {} }
       },
       sparks(x, y, o) {
@@ -1055,66 +1140,117 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     fx: 0.5, fy: 0.5, fz: 1,
     tx: 0.5, ty: 0.5, tz: 1,
     holdMs: CFG.holdMs, holdHasta: 0,
-    vx: 1, vy: 1,
+    reposo: { x: 0.5, y: 0.5 },   /* punto de reposo: cerca del último interés, nunca el centro */
+    vueltaA: { x: 0.5, y: 0.5 },
+    shakeT0: -1e9, shakeDur: 220, shakeAmp: 0,
+    vx: 1, vy: 1, cx: 0.5, cy: 0.5,   /* centro efectivo dibujado (tras clamp) */
     ux: NaN, uy: NaN, uz: NaN   /* última cámara dibujada (para no redibujar de más) */
   };
   let ultimoFocoT = -1e9;
   let ultimoFoco = { x: -9, y: -9 };
+
+  const easeOutQuint = k => 1 - Math.pow(1 - k, 5);
+
+  /* Zoom máximo v4: el stream va a 1920 px y el recorte ya no amplía el JPEG,
+     así que el techo baja (1.55 escritorio / 1.35 móvil) y el overshoot de
+     +0.12 entra dentro de ese techo. */
+  function zMaxCamara() { return ES_MOVIL ? 1.35 : 1.55; }
+
+  /* Deriva tipo cámara en mano: Lissajous suave alrededor del reposo (3-4 %). */
+  function deriva(t) {
+    const s = t * 0.00042;
+    return {
+      x: Math.sin(s) * 0.034 + Math.sin(s * 2.3 + 1.7) * 0.009,
+      y: Math.cos(s * 0.83) * 0.025 + Math.cos(s * 2.9) * 0.008
+    };
+  }
 
   function foco(xPctVentana, yPctVentana, zoom, msHold, forzar) {
     const rx = RECORTE.x1 - RECORTE.x0;
     const ry = RECORTE.y1 - RECORTE.y0;
     let tx = (Number(xPctVentana) / 100 - RECORTE.x0) / rx;
     let ty = (Number(yPctVentana) / 100 - RECORTE.y0) / ry;
-    if (!isFinite(tx) || !isFinite(ty)) return;
-    tx = clamp(tx, 0.07, 0.93);
-    ty = clamp(ty, 0.07, 0.93);
-    const zmax = ES_MOVIL ? 1.6 : 1.7;
-    const tz = clamp(Number(zoom) || 1.6, 1.05, zmax);
+    if (!isFinite(tx) || !isFinite(ty)) return false;
+    tx = clamp(tx, 0.06, 0.94);
+    ty = clamp(ty, 0.06, 0.94);
     const t = ahora();
+    /* anti-jitter: mismo punto (<3 %) y <700 ms -> no re-dispara el plano */
     if (!forzar && t - ultimoFocoT < 700 &&
-        Math.abs(tx - ultimoFoco.x) < 0.04 && Math.abs(ty - ultimoFoco.y) < 0.04) return;
+        Math.abs(tx - ultimoFoco.x) < 0.03 && Math.abs(ty - ultimoFoco.y) < 0.03) return false;
     ultimoFocoT = t;
     ultimoFoco = { x: tx, y: ty };
+    const zTecho = zMaxCamara();
+    /* el objetivo deja sitio al overshoot (+0.12) sin pasarse del techo */
+    const tz = clamp(Number(zoom) || 1.4, 1.0, Math.max(1.0, zTecho - 0.12));
     CAM.fase = 'ida';
     CAM.t0 = t;
-    CAM.dur = CFG.idaMs;
+    CAM.dur = ES_MOVIL ? 700 : clamp(900 + (tz - 1) * 500, 900, 1200);
     CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
     CAM.tx = tx; CAM.ty = ty; CAM.tz = tz;
     CAM.holdMs = Math.max(CFG.holdMs, Number(msHold) || 0);
+    CAM.reposo = { x: clamp(tx, 0.16, 0.84), y: clamp(ty, 0.16, 0.84) };
+    return true;
   }
+
+  /* Micro-shake de cámara al impactar: offset 2-6 px durante 220 ms. */
+  function sacudirCamara(poder) {
+    if (PREFIERE_MENOS) return;
+    CAM.shakeT0 = ahora();
+    CAM.shakeAmp = clamp(2 + (Number(poder) || 0.6) * 4, 2, 6);
+  }
+  function camaraSacudiendose(t) { return (t - CAM.shakeT0) < CAM.shakeDur; }
 
   function tickCamara(t) {
     if (CAM.fase === 'ida') {
       const k = clamp((t - CAM.t0) / CAM.dur, 0, 1);
-      const e = easeInOutCubic(k);
+      const e = easeOutQuint(k);
       CAM.x = lerp(CAM.fx, CAM.tx, e);
       CAM.y = lerp(CAM.fy, CAM.ty, e);
-      CAM.z = lerp(CAM.fz, CAM.tz, e);
-      if (k >= 1) { CAM.fase = 'hold'; CAM.holdHasta = t + CAM.holdMs; }
+      /* overshoot de zoom +0.12: sube con la ida y asienta en el último 28 % */
+      if (k < 0.72) {
+        CAM.z = lerp(CAM.fz, CAM.tz + 0.12, easeOutQuint(clamp(k / 0.72, 0, 1)));
+      } else {
+        CAM.z = lerp(CAM.tz + 0.12, CAM.tz, easeInOutCubic(clamp((k - 0.72) / 0.28, 0, 1)));
+      }
+      if (k >= 1) { CAM.fase = 'hold'; CAM.holdHasta = t + CAM.holdMs; CAM.t0 = t; }
     } else if (CAM.fase === 'hold') {
-      CAM.x = CAM.tx; CAM.y = CAM.ty; CAM.z = CAM.tz;
+      if (PREFIERE_MENOS) {
+        CAM.x = CAM.tx; CAM.y = CAM.ty; CAM.z = CAM.tz;
+      } else {
+        /* micro-drift de cámara en mano: ±0.6 % / ±0.4 % y ±0.4 % de zoom */
+        const s = (t - CAM.t0) * 0.0016;
+        CAM.x = clamp(CAM.tx + Math.sin(s) * 0.006, 0.02, 0.98);
+        CAM.y = clamp(CAM.ty + Math.cos(s * 0.83) * 0.004, 0.02, 0.98);
+        CAM.z = CAM.tz * (1 + Math.sin(s * 1.11) * 0.004);
+      }
       if (t >= CAM.holdHasta) {
         CAM.fase = 'vuelta';
         CAM.t0 = t;
-        CAM.dur = CFG.vueltaMs;
+        CAM.dur = 900;
         CAM.fx = CAM.x; CAM.fy = CAM.y; CAM.fz = CAM.z;
+        const d = PREFIERE_MENOS ? { x: 0, y: 0 } : deriva(t);
+        CAM.vueltaA = {
+          x: clamp(CAM.reposo.x + d.x, 0.03, 0.97),
+          y: clamp(CAM.reposo.y + d.y, 0.03, 0.97)
+        };
       }
     } else if (CAM.fase === 'vuelta') {
       const k = clamp((t - CAM.t0) / CAM.dur, 0, 1);
-      const e = easeOutCubic(k);
-      CAM.x = lerp(CAM.fx, 0.5, e);
-      CAM.y = lerp(CAM.fy, 0.5, e);
+      const e = easeInOutCubic(k);
+      CAM.x = lerp(CAM.fx, CAM.vueltaA.x, e);
+      CAM.y = lerp(CAM.fy, CAM.vueltaA.y, e);
       CAM.z = lerp(CAM.fz, 1, e);
       if (k >= 1) CAM.fase = 'neutro';
-    } else if (!PREFIERE_MENOS) {
-      /* deriva lenta cuando no hay acción */
-      const s = t * 0.00006;
-      CAM.x = 0.5 + Math.sin(s) * 0.030;
-      CAM.y = 0.5 + Math.cos(s * 0.83) * 0.024;
-      CAM.z = 1 + Math.sin(s * 0.7) * 0.012;
     } else {
-      CAM.x = 0.5; CAM.y = 0.5; CAM.z = 1;
+      /* reposo: deriva suave alrededor del último interés (nunca al centro) */
+      if (PREFIERE_MENOS) {
+        CAM.x = CAM.reposo.x; CAM.y = CAM.reposo.y; CAM.z = 1;
+      } else {
+        const d = deriva(t);
+        CAM.x = clamp(CAM.reposo.x + d.x, 0.02, 0.98);
+        CAM.y = clamp(CAM.reposo.y + d.y, 0.02, 0.98);
+        CAM.z = 1 + Math.sin(t * 0.00019) * 0.010;
+      }
     }
   }
 
@@ -1122,12 +1258,14 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   function aPantalla(xPctVentana, yPctVentana) {
     const rx = RECORTE.x1 - RECORTE.x0;
     const ry = RECORTE.y1 - RECORTE.y0;
-    const px = clamp((Number(xPctVentana) / 100 - RECORTE.x0) / rx, -0.2, 1.2);
-    const py = clamp((Number(yPctVentana) / 100 - RECORTE.y0) / ry, -0.2, 1.2);
-    let sx = ((px - CAM.x) * CAM.vx + 0.5) * 100;
-    let sy = ((py - CAM.y) * CAM.vy + 0.5) * 100;
-    if (!isFinite(sx) || !isFinite(sy) || sx < -12 || sx > 112 || sy < -12 || sy > 112) { sx = 50; sy = 50; }
-    return { x: clamp(sx, 3, 97), y: clamp(sy, 3, 97) };
+    const px = clamp((Number(xPctVentana) / 100 - RECORTE.x0) / rx, -0.3, 1.3);
+    const py = clamp((Number(yPctVentana) / 100 - RECORTE.y0) / ry, -0.3, 1.3);
+    const cx = isFinite(CAM.cx) ? CAM.cx : CAM.x;
+    const cy = isFinite(CAM.cy) ? CAM.cy : CAM.y;
+    let sx = ((px - cx) * CAM.vx + 0.5) * 100;
+    let sy = ((py - cy) * CAM.vy + 0.5) * 100;
+    if (!isFinite(sx) || !isFinite(sy)) { sx = 50; sy = 50; }
+    return { x: clamp(sx, 2, 98), y: clamp(sy, 2, 98) };
   }
 
   /* ------------------------------------------------------------
@@ -1197,7 +1335,8 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     const tDib = ahora();
     const quieta = Math.abs(CAM.x - CAM.ux) < 0.0004 &&
                    Math.abs(CAM.y - CAM.uy) < 0.0004 &&
-                   Math.abs(CAM.z - CAM.uz) < 0.0008;
+                   Math.abs(CAM.z - CAM.uz) < 0.0008 &&
+                   !camaraSacudiendose(tDib);
     const fpsRef = clamp(Number(statsStream.fps) || 15, 8, 30);
     if (quieta && tDib - ultimoDibujo < 1000 / fpsRef) return;
     ultimoDibujo = tDib;
@@ -1221,6 +1360,19 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     const centroY = oy + CAM.y * ry;
     let sx = clamp(centroX - sw / 2, ox, ox + rx - sw);
     let sy = clamp(centroY - sh / 2, oy, oy + ry - sh);
+    /* centro efectivo tras el clamp: aPantalla() lo usa para clavar los FX */
+    CAM.cx = clamp((sx + sw / 2 - ox) / rx, 0, 1);
+    CAM.cy = clamp((sy + sh / 2 - oy) / ry, 0, 1);
+
+    /* micro-shake de cámara al impactar: mueve el encuadre 2-6 px durante 220 ms */
+    const tShake = tDib - CAM.shakeT0;
+    if (tShake >= 0 && tShake < CAM.shakeDur) {
+      const dk = 1 - tShake / CAM.shakeDur;
+      const amp = CAM.shakeAmp * dk * dk;            // px CSS
+      const escSrc = sw / Math.max(1, w);            // px CSS -> px de la imagen
+      sx = clamp(sx + Math.sin(tShake * 0.23) * amp * escSrc, ox, ox + rx - sw);
+      sy = clamp(sy + Math.cos(tShake * 0.19) * amp * 0.7 * escSrc, oy, oy + ry - sh);
+    }
 
     /* Nitidez: en pantallas grandes el recorte se amplía mucho y el pixel-art de
        WorldBox queda más limpio con muestreo nearest. Con la cámara acercada
@@ -1306,8 +1458,11 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
             (!isFinite(lspike) || lspike >= 55)) {
           const t = ahora();
           if (t - ultimoFocoT > 7000 && CAM.fase === 'neutro') {
-            foco(Number(s.cx) / 100, Number(s.cy) / 100, 1.5, CFG.holdMs, true);
-            impactoCentral(clamp(Number(s.power) / 2600, 0.25, 0.85), { x: Number(s.cx) / 100, y: Number(s.cy) / 100 });
+            const px = Number(s.cx) / 100, py = Number(s.cy) / 100;
+            ultimoPuntoVentana = { x: px, y: py };
+            foco(px, py, 1.45, CFG.holdMs, true);
+            sacudirCamara(clamp(Number(s.power) / 2600, 0.3, 0.85));
+            impactoCentral(clamp(Number(s.power) / 2600, 0.25, 0.85), { x: px, y: py });
           }
         }
       }
@@ -1506,6 +1661,11 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     d.className = 'msg' + (soloEmoji ? ' emoji' : '') + ((Number(e.intensidad) || 0) >= 0.9 ? ' fuerte' : '');
     if (animar && !PREFIERE_MENOS) d.classList.add('entra');
     d.textContent = texto;
+    if (!soloEmoji) {
+      ultimaFrase[lado] = texto;
+      /* voces: cada línea nueva del chat se lee (si el módulo está activo) */
+      if (animar && window.ViewerVoz) { try { window.ViewerVoz.decir(texto, lado); } catch (err) {} }
+    }
     const pegado = (cont.scrollHeight - cont.scrollTop - cont.clientHeight) < 90;
     cont.appendChild(d);
     while (cont.children.length > CFG.maxChat) cont.removeChild(cont.firstChild);
@@ -1776,6 +1936,45 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     if (p.indexOf('napalm') >= 0 || p.indexOf('fire') >= 0) return 0.78;
     return 0.62;
   }
+
+  /* --- Texto grande sobre el mapa (v4) --- */
+  const COLOR_AG = { rojo: '#ff5a5a', azul: '#58c8ff' };
+  const ultimaFrase = { rojo: '', azul: '' };   /* última frase de chat de cada agente */
+  let ultimoEmoji = null;   /* último invader pintado: evita que dos emojis se pisen */
+  function etiquetaBomba(power) {
+    const p = String(power || '').toLowerCase();
+    if (p.indexOf('czar') >= 0 || p.indexOf('zar') >= 0) return '¡BOMBA DEL ZAR!';
+    if (p.indexOf('napalm') >= 0 || p.indexOf('napa') >= 0 || p.indexOf('fire') >= 0) return '¡NAPA LM!';
+    if (p.indexOf('atomic') >= 0 || p.indexOf('nuclear') >= 0 || p.indexOf('atomi') >= 0) return '¡BOMBA ATÓMICA!';
+    return '¡BOMBA!';
+  }
+  /* Escala de las etiquetas: deben caber entre los paneles (nunca bajo ellos). */
+  function tamEtiqueta(desk) { return ES_MOVIL ? Math.round(desk * 0.42) : Math.round(desk * 0.68); }
+  /* Coordenadas crudas de los eventos (tropas) -> % de la ventana capturada.
+     Los agentes de WorldBox devuelven x/y en coords de mundo 0..1000 sobre la
+     ventana completa; el stream publica SOLO el recorte del mapa, así que se
+     renormaliza con el mismo recorte del stream. Si ya vienen en % (<=100) se
+     toman tal cual y si vienen en px de ventana se dividen por su tamaño. */
+  const CROP_EVENTO = { x0: 0.297, y0: 0.165, x1: 0.764, y1: 0.753 };
+  function puntoDeEvento(xv, yv) {
+    const x = Number(xv), y = Number(yv);
+    if (!isFinite(x) || !isFinite(y) || x <= 0 || y <= 0) return null;
+    if (x <= 100 && y <= 100) return { x: x, y: y };
+    let pf, pg;
+    if (x <= 1000 && y <= 1000) { pf = x / 10; pg = y / 10; }
+    else { pf = x / VENTANA.w * 100; pg = y / VENTANA.h * 100; }
+    const cx = (pf / 100 - CROP_EVENTO.x0) / (CROP_EVENTO.x1 - CROP_EVENTO.x0) * 100;
+    const cy = (pg / 100 - CROP_EVENTO.y0) / (CROP_EVENTO.y1 - CROP_EVENTO.y0) * 100;
+    return { x: clamp(cx, 3, 97), y: clamp(cy, 3, 97) };
+  }
+  /* Punto de la acción en % de pantalla; si no hay, esquina del bando. */
+  function puntoDeAccion(lado, sinEsquina) {
+    if (ultimoPuntoVentana && Number(ultimoPuntoVentana.x) > 0 && Number(ultimoPuntoVentana.y) > 0) {
+      const p = aPantalla(Number(ultimoPuntoVentana.x), Number(ultimoPuntoVentana.y));
+      return { x: clamp(p.x, 12, 88), y: clamp(p.y, 14, 82) };
+    }
+    return sinEsquina ? { x: 50, y: 46 } : { x: lado === 'azul' ? 78 : 22, y: 42 };
+  }
   /* El impacto se pinta donde está el objetivo de cámara en pantalla, no siempre
      en el centro: con zoom, el centro de la pantalla no es el punto bombardeado. */
   function impactoCentral(power, punto) {
@@ -1805,36 +2004,77 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   function procesarEfecto(e, st) {
     const tipo = String(e.tipo || '');
     const ag = String(e.agente || '').toLowerCase();
+    const lado = ag === 'azul' ? 'azul' : 'rojo';
     if (tipo === 'bomba') {
       const cam = e.camara;
-      if (cam && Number(cam.x) > 0 && Number(cam.y) > 0) {
-        ultimoPuntoVentana = { x: Number(cam.x), y: Number(cam.y) };
-        foco(Number(cam.x), Number(cam.y), Number(cam.zoom) || 1.8, Number(cam.ms) || 0, false);
-      }
+      const hayCam = cam && Number(cam.x) > 0 && Number(cam.y) > 0;
+      const punto = hayCam ? { x: Number(cam.x), y: Number(cam.y) }
+                           : (ultimoPuntoVentana ? { x: ultimoPuntoVentana.x, y: ultimoPuntoVentana.y } : null);
+      if (punto) ultimoPuntoVentana = { x: punto.x, y: punto.y };
+      /* objetivo real de la acción: bomba.camara; fallback al último punto conocido */
+      if (hayCam) foco(Number(cam.x), Number(cam.y), Number(cam.zoom) || 1.5, Number(cam.ms) || 0, false);
+      else if (punto) foco(punto.x, punto.y, 1.4, CFG.holdMs, false);
       const poder = poderDe(e.power);
-      impactoCentral(poder, (cam && Number(cam.x) > 0 && Number(cam.y) > 0) ? { x: Number(cam.x), y: Number(cam.y) } : null);
-      sacudirPanel(ag === 'azul' ? 'rojo' : 'azul');
+      impactoCentral(poder, punto);
+      sacudirCamara(poder);
+      /* etiqueta grande cuando la cámara ya va camino del objetivo */
+      const txt = etiquetaBomba(e.power);
+      setTimeout(function () {
+        const base = punto || ultimoPuntoVentana || { x: lado === 'azul' ? 78 : 22, y: 42 };
+        const p = aPantalla(base.x, base.y);
+        FX.label(txt, clamp(p.x, 12, 88), clamp(p.y, 14, 82), {
+          color: COLOR_AG[lado], size: tamEtiqueta(80), ms: 1600, kick: true
+        });
+      }, 780);
+      sacudirPanel(lado === 'azul' ? 'rojo' : 'azul');
       sonido.boom(poder);
     } else if (tipo === 'emoji') {
-      const lado = ag === 'azul' ? 'azul' : 'rojo';
+      /* el emoji sale en el punto de la acción (o esquina del bando), con su frase */
+      let pt = puntoDeAccion(lado);
+      /* dos emojis seguidos en el mismo sitio se pisarían: se abren a su lado */
+      const tEmo = ahora();
+      if (ultimoEmoji && tEmo - ultimoEmoji.t < 3600 &&
+          Math.abs(pt.x - ultimoEmoji.x) < 9 && Math.abs(pt.y - ultimoEmoji.y) < 9) {
+        pt = {
+          x: clamp(pt.x + (lado === 'rojo' ? -13 : 13), 14, 86),
+          y: clamp(pt.y - 6, 16, 80)
+        };
+      }
+      ultimoEmoji = { t: tEmo, x: pt.x, y: pt.y };
       FX.invader(String(e.texto || '😤'), {
         side: lado,
         emotion: emocionDe(e),
-        duration: 3200
+        x: pt.x,
+        y: pt.y,
+        from: lado,
+        text: ultimaFrase[lado] || '',
+        size: ES_MOVIL ? 210 : 330,
+        duration: 3400
       });
     } else if (tipo === 'tropas') {
-      const x = Number(e.x), y = Number(e.y);
-      if (isFinite(x) && isFinite(y) && x > 0 && y > 0) {
-        const p = aPantalla(x / VENTANA.w * 100, y / VENTANA.h * 100);
-        FX.sparks(p.x, p.y, { count: clamp(Math.round((Number(e.count) || 20) / 4), 8, 26) });
+      const punto = puntoDeEvento(e.x, e.y);
+      if (punto) ultimoPuntoVentana = punto;
+      /* si el desembarco cae fuera de la zona visible, se usa el último interés */
+      let base = punto;
+      if (!base || base.x < 4 || base.x > 96 || base.y < 4 || base.y > 96) base = ultimoPuntoVentana || punto;
+      if (base) {
+        const p = aPantalla(base.x, base.y);
+        const n = Math.round(Number(e.count) || 0);
+        FX.sparks(p.x, p.y, { count: clamp(Math.round((n || 20) / 4), 8, 26) });
+        if (lado) {
+          FX.label(n > 0 ? '¡TROPAS! ×' + n : '¡TROPAS!', clamp(p.x, 14, 86), clamp(p.y, 16, 82), {
+            color: COLOR_AG[lado], size: tamEtiqueta(58), ms: 1500, kick: true
+          });
+        }
       }
     } else if (tipo === 'resultado') {
-      const lado = ag === 'azul' ? 'azul' : 'rojo';
       const n = Number(e.bajas) || 0;
       if (n > 0) {
         const base = ultimoPuntoVentana || { x: lado === 'rojo' ? 32 : 68, y: 44 };
         const p = aPantalla(base.x, base.y);
-        FX.damage(n, p.x, p.y, lado);
+        FX.damage(n, p.x, p.y, lado, { size: ES_MOVIL ? 78 : 104 });
+        FX.shake(clamp(0.3 + Math.min(1, n / 900) * 0.5, 0, 0.9));
+        sacudirCamara(clamp(0.4 + Math.min(1, n / 900) * 0.6, 0, 1));
       }
     } else if (tipo === 'ronda') {
       sonido.ding();
@@ -1868,6 +2108,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       if (t - ultimoFocoT > 700) {
         const p = aPantalla(Number(imp.x), Number(imp.y));
         FX.impact(p.x, p.y, { power: clamp(Number(imp.poder) || 0.7, 0.25, 1), emoji: '💥', debris: true });
+        sacudirCamara(clamp(Number(imp.poder) || 0.7, 0.25, 1));
         ultimoPuntoVentana = { x: Number(imp.x), y: Number(imp.y) };
       }
     }
@@ -1959,6 +2200,8 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     if (bf) bf.addEventListener('click', alternarFull);
     const bs = $('#btn-sonido');
     if (bs) bs.addEventListener('click', function () { sonido.alternar(); });
+    const bv = $('#btn-voz');
+    if (bv) bv.addEventListener('click', alternarVoz);
     const br = $('#btn-reset');
     if (br) br.addEventListener('click', function () {
       try { localStorage.removeItem(K_PANEL); } catch (e) {}
@@ -1980,6 +2223,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       else if (k === 'f') alternarFull();
       else if (k === 'r') { try { localStorage.removeItem(K_PANEL); } catch (err) {} location.reload(); }
       else if (k === 'm') sonido.alternar();
+      else if (k === 'v') alternarVoz();
       else if (k === 'escape') cerrarVictoria();
       else return;
       e.preventDefault();
@@ -2002,9 +2246,17 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     aplicarCine(cine);
     aplicarBloqueo(bloqueo);
     actualizarBotonSonido();
+    /* voces: activa con ?voces=1; si el navegador no las soporta, el botón se oculta */
+    if (vozDisponible()) {
+      try { if (window.ViewerVoz.activarSiParam) window.ViewerVoz.activarSiParam(); } catch (e) {}
+      actualizarBotonVoz();
+    } else {
+      const bv0 = $('#btn-voz');
+      if (bv0) bv0.classList.add('oculto');
+    }
     let panelGuardado = null;
     try { panelGuardado = parseFloat(localStorage.getItem(K_PANEL)); } catch (e) {}
-    aplicarPanel(isFinite(panelGuardado) && panelGuardado > 0 ? panelGuardado : 318);
+    aplicarPanel(isFinite(panelGuardado) && panelGuardado > 0 ? panelGuardado : 380);
     iniciarSplitters();
     conectarBotones();
     tickReloj();

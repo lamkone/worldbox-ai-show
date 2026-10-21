@@ -40,6 +40,7 @@ $Destino = [System.IO.Path]::GetFullPath($Destino)
 
 $htmlSrc = Join-Path $Origen 'viewer-live.html'
 $fxSrc = Join-Path $Origen 'viewer-fx.js'
+$vozSrc = Join-Path $Origen 'viewer-voice.js'
 
 foreach ($f in @($htmlSrc, $fxSrc)) {
   if (-not (Test-Path -LiteralPath $f)) { throw "Falta el fichero de origen: $f" }
@@ -119,10 +120,11 @@ if ($html -match '(?is)<body[^>]*>') {
 }
 
 # ---------------------------------------------------------------------------
-# 4) Escribir la pagina y el motor de FX junto a ella (rutas relativas).
+# 4) Escribir la pagina, el motor de FX y el modulo de voz junto a ella (rutas relativas).
 # ---------------------------------------------------------------------------
 $htmlOut = Join-Path $Destino 'index.html'
 $fxOut = Join-Path $Destino 'viewer-fx.js'
+$vozOut = Join-Path $Destino 'viewer-voice.js'
 
 # UTF-8 sin BOM: el HTML del visor ya declara <meta charset="utf-8">.
 $utf8 = [System.Text.UTF8Encoding]::new($false)
@@ -131,8 +133,16 @@ Copy-Item -LiteralPath $fxSrc -Destination $fxOut -Force
 
 $szHtml = (Get-Item -LiteralPath $htmlOut).Length
 $szFx = (Get-Item -LiteralPath $fxOut).Length
-Write-Host ("live/index.html   {0,8:N0} B" -f $szHtml)
-Write-Host ("live/viewer-fx.js {0,8:N0} B" -f $szFx)
+Write-Host ("live/index.html    {0,8:N0} B" -f $szHtml)
+Write-Host ("live/viewer-fx.js  {0,8:N0} B" -f $szFx)
+if (Test-Path -LiteralPath $vozSrc) {
+  Copy-Item -LiteralPath $vozSrc -Destination $vozOut -Force
+  Write-Host ("live/viewer-voice.js {0,6:N0} B" -f (Get-Item -LiteralPath $vozOut).Length)
+} elseif ($html -match 'viewer-voice\.js') {
+  Write-Warning 'viewer-live.html referencia viewer-voice.js pero scripts\viewer-voice.js no existe: /live/ se quedaria sin voz.'
+} else {
+  Write-Host 'live/viewer-voice.js  (no hay modulo de voz todavia)'
+}
 
 # ---------------------------------------------------------------------------
 # 5) Verificacion rapida del resultado: el bloque tiene que estar antes de los

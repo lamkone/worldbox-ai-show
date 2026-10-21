@@ -116,7 +116,7 @@ Una llamada JSON al cerebro. Devuelve el objeto o $null (nunca lanza): el show
 no se para porque el modelo esté saturado.
 #>
 function Invoke-Cerebro {
-  param([string]$Ruta, [hashtable]$Cuerpo, [int]$TimeoutSec = 14)
+  param([string]$Ruta, [hashtable]$Cuerpo, [int]$TimeoutSec = 14, [switch]$DevolverError)
   if (-not $script:DirectorioOn) { return $null }
   if (-not (Test-Cerebro)) { return $null }
   try {
@@ -127,6 +127,10 @@ function Invoke-Cerebro {
     $script:CerebroLlamadas++
     if ($r -and $r.ok) { return $r }
     $script:CerebroFallos++
+    # Con -DevolverError se propaga el motivo (p. ej. "429 ..."): el llamante
+    # puede distinguir "el modelo no dio una frase válida" (merece reintento) de
+    # "la piscina de cuentas está agotada" (reintentar solo gasta peticiones).
+    if ($DevolverError -and $r) { return [pscustomobject]@{ ok = $false; error = [string]$r.error } }
     return $null
   } catch {
     $script:CerebroFallos++
@@ -216,9 +220,20 @@ function Get-Replica {
     contexto    = $Contexto
     ultimoRival = $UltimoRival
     maxTokens   = 120
-  }
+  } -DevolverError
   if ($r -and $r.texto) {
-    return [pscustomobject]@{ texto = [string]$r.texto; tono = $tonoFb; fuente = 'llm' }
+    # La emoción la elige el modelo en la misma respuesta ('TONO: burla'); si no
+    # la manda, se queda el tono de respaldo calculado por el marcador.
+    $emo = if ($r.emocion) { [string]$r.emocion } else { $tonoFb }
+    return [pscustomobject]@{ texto = [string]$r.texto; tono = $tonoFb; emocion = $emo; fuente = 'llm' }
+  }
+
+  # Si el fallo es de CUOTA (piscina agotada, 429, todo en enfriamiento), el
+  # reintento no puede funcionar y solo gastaría otras seis peticiones: la línea
+  # se queda en silencio directamente.
+  if ($r -and -not $r.ok -and $r.error -match '429|6004|cuota|enfriamiento|sin cuentas') {
+    $script:DramaSilencios++
+    return [pscustomobject]@{ texto = ''; tono = $tonoFb; emocion = $tonoFb; fuente = 'silencio-cuota' }
   }
 
   # SIN FRASES PREFIJADAS. El dueño fue claro: cada línea la improvisa el modelo.
@@ -235,11 +250,12 @@ function Get-Replica {
     simple      = $true
   }
   if ($r2 -and $r2.texto) {
-    return [pscustomobject]@{ texto = [string]$r2.texto; tono = $tonoFb; fuente = 'llm-reintento' }
+    $emo2 = if ($r2.emocion) { [string]$r2.emocion } else { $tonoFb }
+    return [pscustomobject]@{ texto = [string]$r2.texto; tono = $tonoFb; emocion = $emo2; fuente = 'llm-reintento' }
   }
 
   $script:DramaSilencios++
-  return [pscustomobject]@{ texto = ''; tono = $tonoFb; fuente = 'silencio' }
+  return [pscustomobject]@{ texto = ''; tono = $tonoFb; emocion = $tonoFb; fuente = 'silencio' }
 }
 
 <# Un emoji suelto, elegido por el modelo cuando puede. Devuelve el carácter. #>

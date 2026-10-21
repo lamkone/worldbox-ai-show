@@ -26,12 +26,49 @@
 (function (global) {
   'use strict';
 
-  var VERSION = '2.2.0';
+  var VERSION = '2.3.0';
   var MAX_TEXTO = 240;
   var MAX_COLA = 6;
   var TIMEOUT_FETCH = 9000;
   var VOLUMEN_DEFECTO = 0.85;    // nivel de las voces del show
   var DUCK_FACTOR = 0.3;         // duck(): baja al 30 % mientras suena otra cosa
+
+  /* Emociones que entiende el motor de voz (voz-engine.py). El cerebro dramático
+     manda el tono en español coloquial ('chuleria', 'rabia', 'llanto'...); aquí
+     se traduce a las cinco que sabe interpretar. Lo que no se reconoce se manda
+     sin emoción (neutral), que es lo mismo que hacía la versión anterior. */
+  var EMOCIONES = ['neutral', 'burla', 'enfadado', 'triste', 'confuso'];
+  /* El cerebro dramático (22-director.ps1 Get-Replica) etiqueta cada réplica con
+     un tono: llanto | burla | chulo | golpe | nervios. Los emojis traen
+     furia/panico/llanto/euforia/burla. Aquí se traduce todo eso a las cinco
+     emociones que sabe interpretar el motor de voz. Lo que no esté en la tabla
+     se manda neutral, que es como sonaba antes de existir esto. */
+  var ALIAS_EMOCION = {
+    // --- burla ---
+    chuleria: 'burla', chulo: 'burla', chulito: 'burla', sarcasmo: 'burla',
+    ironia: 'burla', euforia: 'burla', pique: 'burla', vacile: 'burla',
+    broma: 'burla', triunfo: 'burla', choteo: 'burla',
+    // --- enfadado ---
+    rabia: 'enfadado', furia: 'enfadado', panico: 'enfadado', cabreo: 'enfadado',
+    amenaza: 'enfadado', grito: 'enfadado', cabreado: 'enfadado', enfado: 'enfadado',
+    golpe: 'enfadado', dolor: 'enfadado',
+    // --- triste ---
+    llanto: 'triste', pena: 'triste', derrota: 'triste', drama: 'triste',
+    tristeza: 'triste', lamento: 'triste', resignacion: 'triste',
+    // --- confuso ---
+    duda: 'confuso', sorpresa: 'confuso', desconcierto: 'confuso',
+    confusion: 'confuso', nervios: 'confuso', nervioso: 'confuso'
+  };
+
+  function normalizarEmocion(e) {
+    var s = String(e == null ? '' : e).trim().toLowerCase();
+    if (!s) return '';
+    if (s.indexOf('ó') >= 0 || s.indexOf('á') >= 0 || s.indexOf('í') >= 0) {
+      s = s.replace(/ó/g, 'o').replace(/á/g, 'a').replace(/í/g, 'i').replace(/é/g, 'e').replace(/ú/g, 'u');
+    }
+    if (EMOCIONES.indexOf(s) >= 0) return s;
+    return ALIAS_EMOCION[s] || '';
+  }
 
   var synth = global.speechSynthesis || null;
   var Audio_ = global.Audio || null;
@@ -154,10 +191,13 @@
     return baseTTS;
   }
 
-  function urlTTS(texto, agente) {
+  function urlTTS(texto, agente, emocion) {
     var b = baseResuelta();
     if (!b) return '';
-    return b + '/tts?t=' + encodeURIComponent(texto) + '&v=' + encodeURIComponent(agente || 'sistema');
+    var u = b + '/tts?t=' + encodeURIComponent(texto) + '&v=' + encodeURIComponent(agente || 'sistema');
+    var e = normalizarEmocion(emocion);
+    if (e) u += '&e=' + encodeURIComponent(e);
+    return u;
   }
 
   /* -------------------------------------------------------------------------
@@ -181,7 +221,7 @@
     return pack.base + '/' + archivo;
   }
 
-  function pedirPack(url, texto, agente) {
+  function pedirPack(url, texto, agente, emocion) {
     return fetch(url, { cache: 'force-cache' })
       .then(function (r) {
         if (!r.ok) throw new Error('pack http ' + r.status);
@@ -193,15 +233,15 @@
       })
       .catch(function () {
         log('pack no disponible, tiro de sintesis', url);
-        return pedirAudio(texto, agente).then(function (u) { return { url: u, origen: 'neural' }; });
+        return pedirAudio(texto, agente, emocion).then(function (u) { return { url: u, origen: 'neural' }; });
       });
   }
 
   /* -------------------------------------------------------------------------
    * Motor 1: audio neuronal (fetch + <audio>)
    * ---------------------------------------------------------------------- */
-  function pedirAudio(texto, agente) {
-    var url = urlTTS(texto, agente);
+  function pedirAudio(texto, agente, emocion) {
+    var url = urlTTS(texto, agente, emocion);
     if (!url || motor === 'navegador') return Promise.resolve('');
     var ctrl = (typeof global.AbortController === 'function') ? new global.AbortController() : null;
     var tope = setTimeout(function () { if (ctrl) { try { ctrl.abort(); } catch (e) {} } }, TIMEOUT_FETCH);
@@ -321,23 +361,30 @@
     if (!t) return false;
     if (t.length > MAX_TEXTO) t = t.slice(0, MAX_TEXTO - 1) + '…';
     var a = (agente === 'rojo' || agente === 'azul') ? agente : 'sistema';
+    var emo = normalizarEmocion(opts && opts.emocion);
     while (cola.length >= MAX_COLA) cola.shift();     // tira lo viejo
     var urlP = urlPack(opts && opts.seq);
     var promesa = urlP
-      ? pedirPack(urlP, t, a)
-      : pedirAudio(t, a).then(function (u) { return { url: u, origen: 'neural' }; });
-    cola.push({ texto: t, agente: a, promesa: promesa });
+      ? pedirPack(urlP, t, a, emo)
+      : pedirAudio(t, a, emo).then(function (u) { return { url: u, origen: 'neural' }; });
+    cola.push({ texto: t, agente: a, emocion: emo, promesa: promesa });
     if (!hablando) siguiente();
     return true;
   }
 
-  /* Precalienta la síntesis de una frase sin encolarla (la cachea el servidor). */
-  function precalentar(texto, agente) {
+  /* Precalienta la síntesis de una frase sin encolarla (la cachea el servidor).
+     Usa /precalentar, que solo sintetiza y no devuelve audio: más barato que
+     bajarse el MP3 entero para tirarlo. */
+  function precalentar(texto, agente, emocion) {
     var t = limpiar(texto);
     if (!t) return;
-    pedirAudio(t.slice(0, MAX_TEXTO), agente).then(function (u) {
-      if (u) { try { global.URL.revokeObjectURL(u); } catch (e) {} }
-    });
+    var b = baseResuelta();
+    if (!b) return;
+    var url = b + '/precalentar?t=' + encodeURIComponent(t.slice(0, MAX_TEXTO)) +
+      '&v=' + encodeURIComponent(agente || 'sistema');
+    var e = normalizarEmocion(emocion);
+    if (e) url += '&e=' + encodeURIComponent(e);
+    try { fetch(url, { cache: 'force-cache' }).catch(function () {}); } catch (err) { /* nada */ }
   }
 
   /* -------------------------------------------------------------------------
@@ -429,6 +476,8 @@
     activarSiParam: activarSiParam,
     vocesDisponibles: vocesDisponibles,
     normalizar: limpiar,
+    normalizarEmocion: normalizarEmocion,
+    emociones: EMOCIONES.slice(),
     setVolumen: setVolumen,
     getVolumen: getVolumen,
     duck: duck,

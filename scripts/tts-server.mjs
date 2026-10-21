@@ -83,11 +83,57 @@ let ffmpegBuscado = false;
 const vozEnv = (nombre, porDefecto) => (process.env[nombre] || porDefecto);
 const RATE = process.env.WB_TTS_RATE || '-4%';
 const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
+
+/* ---------------------------------------------------------------------------
+ * MOTOR v9 (decidido con el dueño en reports/voz-casting/v6/)
+ * ---------------------------------------------------------------------------
+ * El casting acabó eligiendo DOS voces y "solo volumen igualado, sin EQ":
+ *   rojo    -> Kokoro em_santa      (onnx local, ~2,5 s por línea, sin red)
+ *   azul    -> edge-tts Salomé      (red, ~1,2 s por línea)
+ *   sistema -> edge-tts Elvira      (avisos del show)
+ * Las dos se clavan a -16,0 LUFS con ganancia lineal + limitador de picos, así
+ * que suenan al mismo volumen cuando hablan entre ellas (medido: ±0,1 LU).
+ *
+ * Además cada línea lleva EMOCIÓN (neutral/burla/enfadado/triste/confuso) y el
+ * motor mueve ritmo, tono y pausas. La emoción la elige el cerebro dramático.
+ *
+ * El trabajo pesado lo hace scripts/voz-engine.py, que se queda vivo como
+ * proceso hijo (cargar Kokoro cuesta 1,3 s y la primera síntesis 6 s: se pagan
+ * UNA vez al arrancar, no en cada frase).
+ *
+ *   WB_TTS_MOTOR=legacy   vuelve al edge-tts de antes (una voz fija por perfil)
+ * ------------------------------------------------------------------------- */
+// v9.1: el motor bajo el techo del limitador de 0,98 a 0,85 (-1,4 dBFS) porque el
+// MP3 decodificado sobrepicaba +0,6 dBFS en las lineas percusivas. Cambia el audio,
+// asi que la version entra en la marca de cache y los MP3 viejos se regeneran solos.
+const MOTOR_VERSION = 'v9.1';
+const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
+const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {
-  rojo: { voz: vozEnv('WB_VOZ_ROJO', 'es-CO-GonzaloNeural'), rate: RATE, pitch: PITCH },
-  azul: { voz: vozEnv('WB_VOZ_AZUL', 'es-CO-SalomeNeural'), rate: RATE, pitch: PITCH },
-  sistema: { voz: vozEnv('WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), rate: RATE, pitch: PITCH },
+  rojo: { voz: vozEnv('WB_VOZ_ROJO', 'em_santa'), motor: 'kokoro', rate: RATE, pitch: PITCH },
+  azul: { voz: vozEnv('WB_VOZ_AZUL', 'es-CO-SalomeNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
+  sistema: { voz: vozEnv('WB_VOZ_SISTEMA', 'es-ES-ElviraNeural'), motor: 'edge', rate: RATE, pitch: PITCH },
 };
+
+/* Emociones que entiende el motor. */
+const EMOCIONES = ['neutral', 'burla', 'enfadado', 'triste', 'confuso'];
+/* Los nombres de tono que ya usa el cerebro dramático (23-drama-llm.mjs) y los
+ * emojis del visor (llanto, furia, euforia...) se traducen a las cinco de voz,
+ * para no tener que cambiar el guion entero. */
+const ALIAS_EMOCION = {
+  neutral: 'neutral', normal: 'neutral', neutro: 'neutral', '': 'neutral',
+  burla: 'burla', chuleria: 'burla', chulería: 'burla', euforia: 'burla', pique: 'burla',
+  sarcasmo: 'burla', ironia: 'burla', ironía: 'burla',
+  enfadado: 'enfadado', enfado: 'enfadado', rabia: 'enfadado', furia: 'enfadado',
+  panico: 'enfadado', pánico: 'enfadado', cabreo: 'enfadado', amenaza: 'enfadado',
+  triste: 'triste', llanto: 'triste', pena: 'triste', derrota: 'triste', drama: 'triste',
+  confuso: 'confuso', duda: 'confuso', sorpresa: 'confuso', desconcierto: 'confuso',
+};
+
+function normalizarEmocion(e) {
+  const clave = String(e || '').trim().toLowerCase();
+  return ALIAS_EMOCION[clave] || 'neutral';
+}
 
 const cache = new Map();       // sha1 -> {estado:'listo'|'error', bytes}
 let cola = [];
@@ -290,15 +336,21 @@ function resolverPerfil(v) {
   for (const [nombre, p] of Object.entries(PERFILES)) {
     if (p.voz.toLowerCase() === clave.toLowerCase()) return { nombre, ...p };
   }
+  // Voz Kokoro suelta (em_santa, em_alex...): motor local.
+  if (/^[a-z]{2}_[a-z]+$/i.test(clave)) {
+    return { nombre: clave, voz: clave, motor: 'kokoro', rate: '+0%', pitch: '+0Hz' };
+  }
   if (/^[a-z]{2,3}-[A-Z]{2}-[A-Za-z]+Neural$/.test(clave)) {
-    return { nombre: clave, voz: clave, rate: '+0%', pitch: '+0Hz' };
+    return { nombre: clave, voz: clave, motor: 'edge', rate: '+0%', pitch: '+0Hz' };
   }
   return { nombre: 'sistema', ...PERFILES.sistema };
 }
 
-function rutaCache(perfil, texto) {
-  const marcaPost = POST ? POST_VERSION : 'sin-post';
-  const h = createHash('sha1').update(`${perfil.voz}|${perfil.rate}|${perfil.pitch}|${marcaPost}|${texto}`).digest('hex');
+function rutaCache(perfil, texto, emocion) {
+  const marca = MOTOR === 'legacy' ? (POST ? POST_VERSION : 'sin-post') : MOTOR_VERSION;
+  const h = createHash('sha1')
+    .update(`${marca}|${perfil.motor}|${perfil.voz}|${emocion || 'neutral'}|${texto}`)
+    .digest('hex');
   return path.join(CACHE, `${h}.mp3`);
 }
 
@@ -321,7 +373,115 @@ function buscarFfmpeg() {
   return ffmpegRuta;
 }
 
-/* Aplica la cadena de post-proceso al MP3 recién sintetizado.
+/* ===========================================================================
+ * CLIENTE DEL MOTOR DE VOZ (scripts/voz-engine.py)
+ * ---------------------------------------------------------------------------
+ * Un único proceso hijo que se queda vivo. Se le manda una petición JSON por
+ * línea y responde otra por línea. Ventajas frente a arrancar `python -m
+ * edge_tts` en cada frase:
+ *   - Kokoro se carga UNA vez (1,3 s) y se calienta UNA vez (6 s de la primera
+ *     síntesis); a partir de ahí cada línea cuesta 1,2-2,5 s.
+ *   - La emoción y el nivel de volumen los aplica el motor, no hay post-proceso
+ *     aparte (ni un ffmpeg extra por frase).
+ * Si el motor se cae o no responde, se marca error y el visor cae a las voces
+ * del navegador, como antes.
+ * ========================================================================= */
+let motor = null;            // { proc, vivo, pendientes:Map, siguienteId, buffer }
+let motorEstado = 'sin arrancar';
+let motorFallos = 0;
+
+function arrancarMotor() {
+  if (motor && motor.vivo) return motor;
+  if (MOTOR === 'legacy') return null;
+  motorEstado = 'arrancando';
+  const proc = spawn(PYTHON, ['-u', ENGINE], {
+    windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+  });
+  const m = { proc, vivo: true, pendientes: new Map(), siguienteId: 1, buffer: '' };
+  motor = m;
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (trozo) => {
+    m.buffer += trozo;
+    let corte;
+    while ((corte = m.buffer.indexOf('\n')) >= 0) {
+      const linea = m.buffer.slice(0, corte).trim();
+      m.buffer = m.buffer.slice(corte + 1);
+      if (!linea) continue;
+      let r;
+      try { r = JSON.parse(linea); } catch (e) { log(`motor: respuesta ilegible: ${linea.slice(0, 120)}`); continue; }
+      const p = m.pendientes.get(r.id);
+      if (p) { m.pendientes.delete(r.id); clearTimeout(p.reloj); p.resolver(r); }
+    }
+  });
+  let err = '';
+  proc.stderr.setEncoding('utf8');
+  proc.stderr.on('data', (d) => {
+    err = (err + d).slice(-600);
+    for (const linea of String(d).split('\n')) {
+      const t = linea.trim();
+      if (t && !/^\s*$/.test(t)) log(`motor: ${t.slice(0, 200)}`);
+    }
+  });
+  proc.on('exit', (code) => {
+    m.vivo = false;
+    motorEstado = `caido (${code})`;
+    log(`motor de voz terminado (codigo ${code})${err ? ': ' + err.trim().split('\n').pop() : ''}`);
+    for (const [, p] of m.pendientes) { clearTimeout(p.reloj); p.resolver({ ok: false, error: 'motor caido' }); }
+    m.pendientes.clear();
+  });
+  proc.on('error', (e) => {
+    m.vivo = false;
+    motorEstado = 'error al arrancar';
+    ultimoError = `motor: ${e.message}`;
+  });
+  motorEstado = 'vivo';
+  log(`motor de voz arrancado (${ENGINE})`);
+  return m;
+}
+
+function pedirMotor(peticion, timeoutMs = TIMEOUT_MS) {
+  const m = arrancarMotor();
+  if (!m || !m.vivo) return Promise.resolve({ ok: false, error: 'motor no disponible' });
+  const id = m.siguienteId++;
+  return new Promise((resolve) => {
+    const reloj = setTimeout(() => {
+      m.pendientes.delete(id);
+      ultimoError = 'timeout del motor de voz';
+      resolve({ ok: false, error: 'timeout del motor' });
+    }, timeoutMs);
+    m.pendientes.set(id, { resolver: resolve, reloj });
+    try {
+      m.proc.stdin.write(JSON.stringify({ id, ...peticion }) + '\n');
+    } catch (e) {
+      clearTimeout(reloj);
+      m.pendientes.delete(id);
+      resolve({ ok: false, error: e.message });
+    }
+  });
+}
+
+/* Síntesis con el motor v9: una sola llamada, que ya devuelve el MP3 con la
+ * emoción aplicada y el volumen igualado. */
+async function sintetizarMotor(perfil, texto, destino, emocion) {
+  const r = await pedirMotor({
+    motor: perfil.motor, voz: perfil.voz, emocion, texto, out: destino,
+  });
+  if (!r || !r.ok) {
+    ultimoError = (r && r.error) || 'motor sin respuesta';
+    return false;
+  }
+  try {
+    if (!fs.existsSync(destino) || fs.statSync(destino).size < 800) {
+      ultimoError = 'audio vacio';
+      return false;
+    }
+  } catch (e) { ultimoError = e.message; return false; }
+  return true;
+}
+
+/* Aplica la cadena de post-proceso al MP3 recién sintetizado (solo camino
+ * legacy; el motor v9 ya entrega el nivel igualado y sin EQ).
  * Escribe a un temporal y solo sustituye el destino si ffmpeg termina bien. */
 function postProcesar(entrada, destino) {
   return new Promise((resolve) => {
@@ -359,7 +519,18 @@ function postProcesar(entrada, destino) {
   });
 }
 
-function sintetizar(perfil, texto, destino) {
+async function sintetizar(perfil, texto, destino, emocion) {
+  if (MOTOR !== 'legacy') {
+    const ok = await sintetizarMotor(perfil, texto, destino, emocion);
+    if (ok) return true;
+    // Si el motor nuevo falla (p. ej. Kokoro no instalado), se intenta el
+    // camino de siempre antes de rendirse: mejor una voz peor que silencio.
+    log(`motor v9 fallo (${ultimoError}); se intenta edge-tts clasico`);
+  }
+  return sintetizarLegacy(perfil, texto, destino);
+}
+
+function sintetizarLegacy(perfil, texto, destino) {
   return new Promise((resolve) => {
     const tmp = `${destino}.part`;
     // OJO: con `--pitch -6Hz` argparse lee "-6Hz" como una opcion y falla.
@@ -421,15 +592,16 @@ function bombear() {
   if (sintetizando || !cola.length) return;
   const tarea = cola.shift();
   sintetizando = true;
-  sintetizar(tarea.perfil, tarea.texto, tarea.destino)
+  sintetizar(tarea.perfil, tarea.texto, tarea.destino, tarea.emocion)
     .then((ok) => {
       sintetizando = false;
       if (ok) {
         sintetizadas++;
+        cache.set(tarea.destino, { estado: 'listo', bytes: 1 });
         tarea.resolver({ ok: true, archivo: tarea.destino });
       } else {
         fallos++;
-        log(`fallo al sintetizar (${tarea.perfil.nombre}): ${ultimoError}`);
+        log(`fallo al sintetizar (${tarea.perfil.nombre}/${tarea.emocion}): ${ultimoError}`);
         tarea.resolver({ ok: false, error: ultimoError });
       }
       setImmediate(bombear);
@@ -442,7 +614,7 @@ function bombear() {
     });
 }
 
-function pedir(perfil, texto, destino) {
+function pedir(perfil, texto, destino, emocion) {
   if (cache.has(destino) && cache.get(destino).estado === 'listo') {
     return Promise.resolve({ ok: true, archivo: destino, cacheado: true });
   }
@@ -459,7 +631,7 @@ function pedir(perfil, texto, destino) {
       const vieja = cola.shift();
       if (vieja) vieja.resolver({ ok: false, error: 'cola llena' });
     }
-    cola.push({ perfil, texto, destino, resolver: resolve });
+    cola.push({ perfil, texto, destino, emocion, resolver: resolve });
     bombear();
   });
 }
@@ -484,14 +656,18 @@ const servidor = http.createServer(async (req, res) => {
 
   if (url.pathname === '/health') {
     return json(res, 200, {
-      ok: true, servicio: 'worldbox-tts', version: '1.2.0',
-      motor: 'edge-tts (voces neuronales Microsoft Edge)',
+      ok: true, servicio: 'worldbox-tts', version: '2.0.0',
+      motor: MOTOR === 'legacy' ? 'edge-tts clasico' : 'v9 (Kokoro rojo + edge azul, volumen igualado)',
+      motorVersion: MOTOR_VERSION,
+      motorEstado,
+      motorFallos,
       puerto: PUERTO, sintetizadas, fallos, pendientes: cola.length,
       sintetizando, ultimoError: ultimoError || null,
       normalizacion: NORMALIZACION,
-      postproceso: POST ? POST_VERSION : 'off',
+      emociones: EMOCIONES,
+      postproceso: MOTOR === 'legacy' && POST ? POST_VERSION : 'off',
       ffmpeg: ffmpegRuta ? path.basename(ffmpegRuta) : (ffmpegBuscado ? 'no disponible' : 'sin probar'),
-      prosodia: Object.fromEntries(Object.entries(PERFILES).map(([k, v]) => [k, { rate: v.rate, pitch: v.pitch }])),
+      prosodia: Object.fromEntries(Object.entries(PERFILES).map(([k, v]) => [k, { motor: v.motor, voz: v.voz }])),
       perfiles: Object.fromEntries(Object.entries(PERFILES).map(([k, v]) => [k, v.voz])),
     });
   }
@@ -515,12 +691,13 @@ const servidor = http.createServer(async (req, res) => {
       texto = texto.slice(0, MAX_NORMALIZADO).replace(/\s+\S*$/, '');
     }
     const perfil = resolverPerfil(url.searchParams.get('v'));
-    const destino = rutaCache(perfil, texto);
-    const r = await pedir(perfil, texto, destino);
+    const emocion = normalizarEmocion(url.searchParams.get('e'));
+    const destino = rutaCache(perfil, texto, emocion);
+    const r = await pedir(perfil, texto, destino, emocion);
     if (!r.ok) {
       return json(res, 503, {
         ok: false, error: r.error || 'no se pudo sintetizar',
-        pista: 'comprueba que edge-tts esta instalado: python -m pip install edge-tts',
+        pista: 'comprueba que el motor de voz arranca: python scripts/voz-engine.py',
       });
     }
     let datos;
@@ -532,9 +709,29 @@ const servidor = http.createServer(async (req, res) => {
       'Content-Type': 'audio/mpeg',
       'Content-Length': datos.length,
       'X-Voz': perfil.voz,
+      'X-Emocion': emocion,
       'X-Cache': r.cacheado ? 'hit' : 'miss',
     });
     return res.end(datos);
+  }
+
+  /* Precalentado: el guion sabe la frase ANTES de que se muestre en pantalla,
+   * así que se sintetiza aquí y cuando el visor la pida ya está en caché (hit
+   * instantáneo). No devuelve audio, solo el estado. */
+  if (url.pathname === '/precalentar' || url.pathname === '/precalentar/') {
+    const bruto = String(url.searchParams.get('t') || '');
+    if (!bruto.trim()) return json(res, 400, { ok: false, error: 'falta el texto (t=)' });
+    let texto = normalizarTexto(bruto.slice(0, MAX_TEXTO));
+    if (texto.length > MAX_NORMALIZADO) texto = texto.slice(0, MAX_NORMALIZADO).replace(/\s+\S*$/, '');
+    if (!texto) return json(res, 400, { ok: false, error: 'texto vacio' });
+    const perfil = resolverPerfil(url.searchParams.get('v'));
+    const emocion = normalizarEmocion(url.searchParams.get('e'));
+    const destino = rutaCache(perfil, texto, emocion);
+    const yaEstaba = cache.has(destino) || (fs.existsSync(destino) && fs.statSync(destino).size >= 800);
+    pedir(perfil, texto, destino, emocion).then((r) => {
+      if (!r.ok) log(`precalentado fallo (${perfil.nombre}/${emocion}): ${r.error}`);
+    });
+    return json(res, 200, { ok: true, yaEstaba, encolado: !yaEstaba, pendientes: cola.length });
   }
 
   return json(res, 404, { ok: false, error: 'ruta desconocida', rutas: ['/health', '/tts?t=&v='] });
@@ -551,16 +748,21 @@ const esPrincipal = (() => {
 
 if (esPrincipal) {
   servidor.listen(PUERTO, '127.0.0.1', () => {
-    log(`escuchando en http://127.0.0.1:${PUERTO}  (motor edge-tts, cache ${CACHE})`);
-    log(`perfiles: rojo=${PERFILES.rojo.voz}  azul=${PERFILES.azul.voz}  sistema=${PERFILES.sistema.voz}`);
-    log(`normalizacion ${NORMALIZACION} activa (numeros, % , km, siglas, emoji, puntuacion)`);
-    log(`prosodia: rate ${RATE}  pitch ${PITCH}`);
-    if (POST) buscarFfmpeg();
+    log(`escuchando en http://127.0.0.1:${PUERTO}  (motor ${MOTOR} ${MOTOR_VERSION}, cache ${CACHE})`);
+    log(`perfiles: rojo=${PERFILES.rojo.voz} (${PERFILES.rojo.motor})  azul=${PERFILES.azul.voz} (${PERFILES.azul.motor})  sistema=${PERFILES.sistema.voz}`);
+    log(`emociones: ${EMOCIONES.join(', ')}  (el visor las pide con &e=)`);
+    if (MOTOR !== 'legacy') arrancarMotor();
+    if (MOTOR === 'legacy' && POST) buscarFfmpeg();
   });
 
   for (const senal of ['SIGINT', 'SIGTERM']) {
-    process.on(senal, () => { log('cerrando'); try { servidor.close(); } catch (e) {} process.exit(0); });
+    process.on(senal, () => {
+      log('cerrando');
+      try { servidor.close(); } catch (e) {}
+      try { if (motor && motor.vivo) motor.proc.kill(); } catch (e) {}
+      process.exit(0);
+    });
   }
 }
 
-export { normalizarTexto, enteroATexto, numeroToken, PERFILES, MAX_TEXTO, MAX_NORMALIZADO };
+export { normalizarTexto, enteroATexto, numeroToken, PERFILES, MAX_TEXTO, MAX_NORMALIZADO, normalizarEmocion, EMOCIONES };

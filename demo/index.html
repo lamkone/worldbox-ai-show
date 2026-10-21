@@ -4133,7 +4133,9 @@ body.cine #cab,body.cine #progreso,body.cine #paneles,body.cine #pie{display:non
         anadirActividad(0.12 + 0.18 * clamp(num(ev.intensidad, 0.5), 0, 1));
         /* Voces: solo con el reproductor en marcha (nunca al hacer seek ni en pausa). */
         if (!sil && S.playing && VOZ && typeof VOZ.activo === 'function' && VOZ.activo()) {
-          try { VOZ.decir(String(ev.texto || ''), lado, { seq: ev.seq }); } catch (e) { }
+          /* v9: la emocion viaja en el evento (campo emocion del cerebro o tono
+             del director) y viewer-voice.js la traduce a la voz del personaje. */
+          try { VOZ.decir(String(ev.texto || ''), lado, { seq: ev.seq, emocion: emocionDeEvento(ev) }); } catch (e) { }
           actualizarBotonVoz();
           /* El duck de la música lo hace ShowAudioUI al envolver ViewerVoz.decir. */
         }

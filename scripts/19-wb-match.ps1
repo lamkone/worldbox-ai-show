@@ -238,6 +238,78 @@ function Ensure-Turn {
   return $false
 }
 
+# ---------------------------------------------------------------- voz del directo
+# Pide al servicio de voz (tts-server.mjs) que sintetice la frase YA, sin devolver
+# audio. No bloquea: lanza la peticion y sigue con la partida.
+#
+# Por que: el visor descubre la frase al sondear feed.json (hasta 1 s despues de
+# que se escriba) y solo entonces pide /tts. Si nadie ha empezado a sintetizar,
+# esos 1-3 s de sintesis se suman al retardo del sondeo y la voz llega tarde.
+# Lanzandolo aqui, cuando el visor pide el audio el trabajo ya esta en marcha (o
+# terminado) y la voz arranca en cuanto se pinta la frase.
+#
+# Se puede apagar con WB_VOZ_PRECALIENTA=0 (por si la maquina va justa de CPU).
+$script:VozBase = if ($env:WB_TTS_URL) { $env:WB_TTS_URL.TrimEnd('/') } else { 'http://127.0.0.1:8771' }
+$script:VozPrecalienta = ($env:WB_VOZ_PRECALIENTA -ne '0')
+$script:VozCliente = $null
+$script:VozMaxTexto = 240
+
+# Réplica exacta de limpiar() de viewer-voice.js. Es imprescindible: el visor
+# manda al servicio de voz el texto YA limpiado, y la caché se indexa por el
+# texto. Si aquí mandáramos el texto crudo, las frases con '...', '—', '!!',
+# emojis o '%' no coincidirían con la clave y el precalentado no serviría de
+# nada (fallaría en silencio). Hay una prueba que compara ambas versiones:
+# reports/qa/v9-limpiar-paridad.mjs.
+function Limpiar-ParaVoz {
+  param([string]$t)
+  if ($null -eq $t) { return '' }
+  $s = [string]$t
+  $s = $s -replace 'https?://\S+', ' enlace '
+  $s = $s -replace 'www\.\S+', ' enlace '
+  $s = $s -replace '[*_`#>|~]+', ' '
+  # emojis: fuera del BMP (pares sustitutos) + bloques del BMP que usa el visor
+  $s = $s -replace '[\uD800-\uDBFF][\uDC00-\uDFFF]', ' '
+  $s = $s -replace '[\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]', ' '
+  $s = $s -replace '[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]', ''
+  $s = $s -replace '\s*%\s*', ' por ciento '
+  $s = $s -replace '(\d)\s*km\b', '$1 kilómetros'
+  $s = $s -replace '\bkm\b', 'kilómetros'
+  $s = $s -replace '(\d)\s*kg\b', '$1 kilos'
+  $s = $s -replace '\bkg\b', 'kilos'
+  $s = $s -replace '\s*&\s*', ' y '
+  $s = $s -replace '\bvs\.?(?=\s|$)', ' contra '
+  # En -replace con scriptblock, el Match llega en $_ (no como parámetro).
+  $s = $s -replace '[!?]{2,}', { if ($_.Value.Contains('?')) { '?' } else { '!' } }
+  $s = $s -replace '¡{2,}', '¡'
+  $s = $s -replace '¿{2,}', '¿'
+  $s = $s -replace '\.{3,}|…', ', '
+  $s = $s -replace '[—–]', ', '
+  $s = $s -replace '\s+', ' '
+  return $s.Trim()
+}
+
+function Precalentar-Voz {
+  param([string]$Texto, [string]$Agente, [string]$Emocion = '')
+  if (-not $script:VozPrecalienta) { return }
+  if ([string]::IsNullOrWhiteSpace($Texto)) { return }
+  # Mismo texto que pedirá el visor: limpiar + truncar a 240 con '…'.
+  $limpio = Limpiar-ParaVoz $Texto
+  if ([string]::IsNullOrWhiteSpace($limpio)) { return }
+  if ($limpio.Length -gt $script:VozMaxTexto) {
+    $limpio = $limpio.Substring(0, $script:VozMaxTexto - 1) + '…'
+  }
+  try {
+    if (-not $script:VozCliente) {
+      $script:VozCliente = [System.Net.Http.HttpClient]::new()
+      $script:VozCliente.Timeout = [TimeSpan]::FromSeconds(8)
+    }
+    $q = 't=' + [uri]::EscapeDataString($limpio) + '&v=' + [uri]::EscapeDataString($Agente)
+    if ($Emocion) { $q += '&e=' + [uri]::EscapeDataString($Emocion) }
+    # GetAsync sin await: la peticion sale, no esperamos la respuesta.
+    $null = $script:VozCliente.GetAsync($script:VozBase + '/precalentar?' + $q)
+  } catch { }
+}
+
 function Send-Chat {
   param([string]$Agente, [string]$A, [string]$Texto, [string]$Tono = 'chulo',
     [string]$Tipo = 'chat', [double]$Intensidad = 0.5, [string]$Emocion = '', [int]$RespuestaA = 0,
@@ -270,6 +342,11 @@ function Send-Chat {
       tono = $Tono; intensidad = $Intensidad; emocion = $(if ($Emocion) { $Emocion } else { $null })
       fuente = $(if ($Fuente) { $Fuente } else { $null })
     } | Out-Null
+    # Voz del directo: encarga la síntesis ahora (ver Precalentar-Voz arriba).
+    # El visor solo reproduce el chat de rojo/azul; los emojis no se hablan.
+    if ($Tipo -eq 'chat' -and ($Agente -eq 'rojo' -or $Agente -eq 'azul')) {
+      Precalentar-Voz -Texto $Texto -Agente $Agente -Emocion $(if ($Emocion) { $Emocion } else { $Tono })
+    }
   }
   return $r.ok
 }
@@ -403,6 +480,7 @@ function New-Plan {
   } else {
     $rep = Get-Replica -Agente $Agente -Tipo $tipoBeat -Contexto $ctx -UltimoRival $ultimoRival -Ratio $ratio
     $plan += [pscustomobject]@{ accion = 'chat'; to = $destino; texto = $rep.texto; tono = $rep.tono
+      emocion = $rep.emocion
       intensidad = [math]::Round([math]::Max(0.15, [math]::Min(1.0, [math]::Abs($ratio - 1.0) + 0.3)), 2)
       fuente = $rep.fuente }
   }
@@ -676,10 +754,10 @@ Add-Feed -Agente 'sistema' -Tipo 'info' -Texto ('Comienza la partida: ROJO (' + 
 $script:Beat = 'apertura'
 $ctxIni = Get-ContextoDrama -Agente 'rojo' -Obs $null
 $apR = Get-Replica -Agente 'rojo' -Tipo 'apertura' -Contexto $ctxIni
-$null = Send-Chat -Agente 'rojo' -A '*' -Texto $apR.texto -Tono 'chulo' -Intensidad 0.8 -Fuente $apR.fuente
+$null = Send-Chat -Agente 'rojo' -A '*' -Texto $apR.texto -Tono 'chulo' -Emocion $apR.emocion -Intensidad 0.8 -Fuente $apR.fuente
 $ctxIniA = Get-ContextoDrama -Agente 'azul' -Obs $null
 $apA = Get-Replica -Agente 'azul' -Tipo 'apertura' -Contexto $ctxIniA -UltimoRival $apR.texto
-$null = Send-Chat -Agente 'azul' -A '*' -Texto $apA.texto -Tono 'chulo' -Intensidad 0.8 -Fuente $apA.fuente
+$null = Send-Chat -Agente 'azul' -A '*' -Texto $apA.texto -Tono 'chulo' -Emocion $apA.emocion -Intensidad 0.8 -Fuente $apA.fuente
 
 $null = Save-Frame
 $null = Write-Estado
@@ -857,7 +935,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
           }
         }
         'chat' {
-          $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono $p.tono -Fuente $p.fuente `
+          $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono $p.tono -Emocion $p.emocion -Fuente $p.fuente `
             -Intensidad $(if ($p.PSObject.Properties['intensidad']) { [double]$p.intensidad } else { 0.5 })
         }
         'emoji' {
@@ -890,7 +968,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
         $tipoR = if ($ratioR -lt 0.55) { 'nervios' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'contra' }
         $repR = Get-Replica -Agente $agente -Tipo $tipoR -Contexto $ctxR -UltimoRival $textoRival -Ratio $ratioR
         $tonoR = if ($ratioR -lt 0.55) { 'nervios' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'chulo' }
-        $null = Send-Chat -Agente $agente -A $rival -Texto $repR.texto -Tono $tonoR -Fuente $repR.fuente `
+        $null = Send-Chat -Agente $agente -A $rival -Texto $repR.texto -Tono $tonoR -Emocion $repR.emocion -Fuente $repR.fuente `
           -Intensidad ([math]::Round([math]::Min(1.0, [math]::Max(0.2, $script:Tension / 100 + 0.2)), 2)) `
           -RespuestaA $seqRival
         if ($textoRival) { $script:UltimoMensajeRival[$agente] = $textoRival }
@@ -958,7 +1036,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
         $null = Send-Chat -Agente $victima -A '*' -Texto $em -Tono 'emoji' -Tipo 'emoji' -Intensidad ([math]::Max(0.5, $intens)) -Emocion (Get-EmocionDeEmoji $em)
       } else {
         $repV = Get-Replica -Agente $victima -Tipo 'golpe' -Contexto $ctxV -UltimoRival $ultimaNota
-        $null = Send-Chat -Agente $victima -A $agente -Texto $repV.texto -Tono 'golpe' -Intensidad ([math]::Max(0.4, $intens)) -Fuente $repV.fuente
+        $null = Send-Chat -Agente $victima -A $agente -Texto $repV.texto -Tono 'golpe' -Emocion $repV.emocion -Intensidad ([math]::Max(0.4, $intens)) -Fuente $repV.fuente
       }
     }
 
@@ -1029,7 +1107,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $ratioRB = if ($uA -gt 0) { [double]$uR / [double]$uA } else { 2.0 }
     $rbRojo = Get-Replica -Agente 'rojo' -Tipo $tipoRB -Contexto $ctxRB -UltimoRival '' -Ratio $ratioRB
     if ($rbRojo -and $rbRojo.texto) {
-      $null = Send-Chat -Agente 'rojo' -A 'azul' -Texto $rbRojo.texto -Tono $rbRojo.tono -Intensidad 0.85 -Fuente $rbRojo.fuente
+      $null = Send-Chat -Agente 'rojo' -A 'azul' -Texto $rbRojo.texto -Tono $rbRojo.tono -Emocion $rbRojo.emocion -Intensidad 0.85 -Fuente $rbRojo.fuente
     }
     $ctxRB2 = Get-ContextoDrama -Agente 'azul' -Obs $null -BajasTurno $bA -PerdidasTurno $bR
     $ctxRB2['ronda'] = $idxRonda
@@ -1037,7 +1115,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $ultimoRB = if ($rbRojo) { [string]$rbRojo.texto } else { '' }
     $rbAzul = Get-Replica -Agente 'azul' -Tipo $tipoRB -Contexto $ctxRB2 -UltimoRival $ultimoRB -Ratio $ratioRB2
     if ($rbAzul -and $rbAzul.texto) {
-      $null = Send-Chat -Agente 'azul' -A 'rojo' -Texto $rbAzul.texto -Tono $rbAzul.tono -Intensidad 0.85 -Fuente $rbAzul.fuente
+      $null = Send-Chat -Agente 'azul' -A 'rojo' -Texto $rbAzul.texto -Tono $rbAzul.tono -Emocion $rbAzul.emocion -Intensidad 0.85 -Fuente $rbAzul.fuente
     }
     # emoji de cierre: el que va perdiendo la ronda suelta su emoción
     $perdedor = if ($dominio -eq 'rojo') { 'azul' } elseif ($dominio -eq 'azul') { 'rojo' } else { '' }
@@ -1099,7 +1177,7 @@ if ($ganador -ne 'EMPATE') {
   $ctxPer = Get-ContextoDrama -Agente $perdedor -Obs $null
   $ctxPer['esFinal'] = $true
   $repPer = Get-Replica -Agente $perdedor -Tipo 'final' -Contexto $ctxPer
-  $null = Send-Chat -Agente $perdedor -A '*' -Texto $repPer.texto -Tono 'llanto' -Intensidad 0.9 -Fuente $repPer.fuente
+  $null = Send-Chat -Agente $perdedor -A '*' -Texto $repPer.texto -Tono 'llanto' -Emocion $repPer.emocion -Intensidad 0.9 -Fuente $repPer.fuente
 }
 # (el resumen final ya se publica como entrada 'ronda'; no duplicamos aviso)
 # entrada de feed con el resumen final (tipo 'ronda', como los cierres de ronda)
@@ -1161,3 +1239,4 @@ $informe -join "`n" | Set-Content -Path (Join-Path $OutDir 'informe.md') -Encodi
 
 Write-Output ('visor: http://localhost:' + $PuertoVisor + '/')
 Write-Output ('informe: ' + (Join-Path $OutDir 'informe.md'))
+

@@ -1584,8 +1584,15 @@ html.modo-lite .tension.alta .tbar{animation:none!important}
     d.textContent = texto;
     if (!soloEmoji) {
       ultimaFrase[lado] = texto;
-      /* voces: cada línea nueva del chat se lee (si el módulo está activo) */
-      if (animar && window.ViewerVoz) { try { window.ViewerVoz.decir(texto, lado); } catch (err) {} }
+      /* voces: cada línea nueva del chat se lee (si el módulo está activo).
+         La emoción viene del cerebro dramático: e.emocion es lo que elige la IA
+         ('burla', 'enfadado', 'triste', 'confuso'...); si solo trae el tono
+         coloquial (e.tono: 'chuleria', 'rabia', 'llanto'), ViewerVoz lo traduce. */
+      if (animar && window.ViewerVoz) {
+        try {
+          window.ViewerVoz.decir(texto, lado, { emocion: e.emocion || e.tono || '' });
+        } catch (err) {}
+      }
     }
     const pegado = (cont.scrollHeight - cont.scrollTop - cont.clientHeight) < 90;
     cont.appendChild(d);

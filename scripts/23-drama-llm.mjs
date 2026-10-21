@@ -1037,6 +1037,65 @@ function repetida(agente, texto) {
   }
 }
 
+// ---------------------------------------------------------------- emoción de voz
+
+/**
+ * Emociones que sabe interpretar el motor de voz (scripts/voz-engine.py).
+ * El modelo elige UNA por réplica; si no contesta o contesta algo raro, se cae
+ * al tono determinista que ya calculaba el director (registroDe/emocionDe).
+ */
+const EMOCIONES_VOZ = ['neutral', 'burla', 'enfadado', 'triste', 'confuso']
+
+/** Tonos del director (llanto, chulo, golpe, nervios...) → emoción de voz. */
+const TONO_A_EMOCION = {
+  neutral: 'neutral',
+  burla: 'burla', chulo: 'burla', chuleria: 'burla', euforia: 'burla',
+  pique: 'burla', triunfo: 'burla', sarcasmo: 'burla', ironia: 'burla',
+  enfadado: 'enfadado', rabia: 'enfadado', furia: 'enfadado', panico: 'enfadado',
+  golpe: 'enfadado', dolor: 'enfadado', amenaza: 'enfadado', cabreo: 'enfadado',
+  triste: 'triste', llanto: 'triste', pena: 'triste', derrota: 'triste',
+  resignacion: 'triste', lamento: 'triste',
+  confuso: 'confuso', nervios: 'confuso', duda: 'confuso', sorpresa: 'confuso',
+  desconcierto: 'confuso', confusion: 'confuso',
+}
+
+/** Normaliza lo que devuelva el modelo ('BURLA', 'chulería', 'enfadado') a una de las 5. */
+function emocionVoz(x) {
+  const s = String(x ?? '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (!s) return ''
+  if (EMOCIONES_VOZ.includes(s)) return s
+  return TONO_A_EMOCION[s] ?? ''
+}
+
+/**
+ * El modelo puede terminar la respuesta con una línea "TONO: burla". Se extrae
+ * ANTES de limpiar (si no, esa línea acabaría dentro del chat) y se devuelve
+ * aparte. Acepta también "[burla]" o "Tono -> burla" porque los modelos varían.
+ * @returns {{texto:string, emocion:string}}
+ */
+function extraerTono(crudo) {
+  const bruto = String(crudo ?? '')
+  let emocion = ''
+  // la etiqueta puede ir al principio o al final, con o sin corchetes
+  const re = /^[ \t]*[[(]?\s*tono\s*(?:de\s*voz)?\s*[:\-—>]*\s*[[(]?\s*([a-záéíóúüñ]+)\s*[\])]?\s*$/gim
+  const texto = bruto.replace(re, (_m, valor) => {
+    if (!emocion) emocion = emocionVoz(valor)
+    return ''
+  })
+  // variante en línea: "... frase. TONO: burla" (misma línea)
+  const enLinea = texto.match(/\s*[[(]?\s*tono\s*[:\-—>]+\s*[[(]?\s*([a-záéíóúüñ]+)\s*[\])]?\s*$/i)
+  let limpio = texto
+  if (enLinea) {
+    const v = emocionVoz(enLinea[1])
+    if (v) {
+      emocion = emocion || v
+      limpio = texto.slice(0, enLinea.index)
+    }
+  }
+  return { texto: limpio.trim(), emocion }
+}
+
 // ---------------------------------------------------------------- generación
 
 const EMOJI_RE = /\p{Extended_Pictographic}/u
@@ -1368,6 +1427,25 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno', publico = 
  * @returns {Promise<{ok:boolean, texto?:string, tono?:string, ms?:number, cuenta?:string, error?:string, reparado?:boolean}>}
  */
 /**
+ * Cuánto hay que aparcar una cuenta que ha devuelto 429. La API suele decir la
+ * hora exacta en la que se libera ("... your usage will reset at 2026-10-21
+ * 23:41:59 UTC+8"); si viene, se respeta en vez de reintentar cada 20 s y
+ * gastar los 6 intentos en cuentas que siguen agotadas. Si no viene, 20 s.
+ * @param {string} cuerpo
+ * @returns {number} milisegundos de enfriamiento
+ */
+function cooldownTras429(cuerpo) {
+  const m = /reset at (\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})\s*UTC([+-])(\d{1,2})/i.exec(String(cuerpo || ''))
+  if (m) {
+    const off = `${m[3]}${String(m[4]).padStart(2, '0')}:00`
+    const t = Date.parse(`${m[1]}T${m[2]}${off}`)
+    // entre 1 minuto y 12 horas: ni reintentos inútiles ni cuentas perdidas para siempre
+    if (Number.isFinite(t) && t > Date.now()) return Math.min(Math.max(t - Date.now(), 60_000), 12 * 3600_000)
+  }
+  return 20_000
+}
+
+/**
  * Una llamada al pool, con reintento por otra cuenta si la actual está
  * saturada. Devuelve el texto ya limpio (o { ok:false }).
  */
@@ -1385,10 +1463,14 @@ async function pedirTexto(agente, listaMensajes, { maxTokens, temperatura }) {
     c.ultimoUso = Date.now()
     try {
       const r = await chat(c, listaMensajes, { maxTokens, temperatura })
-      const texto = limpiar(r.texto, agente)
+      // El modelo puede acompañar la frase con "TONO: burla"; se separa antes de
+      // limpiar para que la etiqueta no acabe en el chat y para que la voz sepa
+      // con qué emoción decirlo.
+      const conTono = extraerTono(r.texto)
+      const texto = limpiar(conTono.texto, agente)
       if (!texto) throw Object.assign(new Error('respuesta vacía'), { status: 0 })
       c.fallos = 0
-      return { ok: true, texto, ms: r.ms, cuenta: c.nickname }
+      return { ok: true, texto, emocion: conTono.emocion, ms: r.ms, cuenta: c.nickname }
     } catch (e) {
       const status = e.status ?? 0
       const cuerpo = String(e.cuerpo ?? e.message ?? '')
@@ -1396,7 +1478,7 @@ async function pedirTexto(agente, listaMensajes, { maxTokens, temperatura }) {
         const ok = await refrescar(c)
         if (!ok) c.cooldownHasta = Date.now() + 10 * 60_000
       } else if (status === 429 || /14003|too many requests|busy|saturad/i.test(cuerpo)) {
-        c.cooldownHasta = Date.now() + 20_000
+        c.cooldownHasta = Date.now() + cooldownTras429(cuerpo)
       } else if (status === 403 || /credits exhausted|14018|insufficient/i.test(cuerpo)) {
         c.cooldownHasta = Date.now() + 30 * 60_000
       } else if (status === 0 || status >= 500) {
@@ -1446,7 +1528,6 @@ async function pedirReplica(agente, instruccion, opts = {}) {
     anotarDicha(agente, primero.texto)
     return { ...primero, reparado: false, problemas: [] }
   }
-
   // una sola corrección, diciéndole exactamente qué ha incumplido
   const correccion =
     `${instruccion}\n\n` +
@@ -1544,6 +1625,15 @@ function construirInstruccion(tipo, ctx, ultimoRival, agente) {
       'Y no reacciones siempre de la misma forma: unas veces amenaza, otras pregunta, otras contesta seco, otras se ríe.',
   )
   lineas.push('FORMATO: sin comillas, sin acotaciones, sin tu nombre delante, un emoji como máximo.')
+  lineas.push(
+    'DESPUÉS de la frase, en una línea aparte, escribe el TONO con el que la dirías, ' +
+      'eligiendo uno de estos cinco: TONO: neutral | TONO: burla | TONO: enfadado | TONO: triste | TONO: confuso. ' +
+      'Elige el que de verdad pegue con lo que acabas de decir: si le insultas, burla o enfadado; ' +
+      'si te está doliendo, triste; si no entiendes algo, confuso. Nada más en esa línea. ' +
+      'REGLA: si en el ESTADO REAL vas claramente por detrás (menos ciudades o muchas más bajas que el rival), ' +
+      'el tono NO puede ser neutral ni burla: usa triste si lo llevas con pena, enfadado si lo llevas con rabia. ' +
+      'Si acabas de perder algo que no esperabas o algo no te cuadra, usa confuso.',
+  )
 
   // 6. anti-repetición mínima: no se fuerza la gracia, solo que no se calque
   const previa = [...memoria[agente]].reverse().find(m => m.role === 'assistant')
@@ -1666,10 +1756,15 @@ async function manejar(req, res) {
   }
   if (url === '/health') {
     const ahora = Date.now()
+    const frias = cuentas.filter(c => c.cooldownHasta > ahora)
+    const hasta = frias.length ? Math.max(...frias.map(c => c.cooldownHasta)) : 0
     return json(res, 200, {
       ok: cuentas.length > 0,
       cuentas: cuentas.length,
-      sanas: cuentas.filter(c => c.cooldownHasta <= ahora).length,
+      sanas: cuentas.length - frias.length,
+      enFrio: frias.length,
+      frioMin: frias.length ? Math.round(Math.min(...frias.map(c => c.cooldownHasta - ahora)) / 1000) : 0,
+      frioMax: hasta ? Math.round((hasta - ahora) / 1000) : 0,
       modelo: MODEL,
       llamadas,
       fallos,
@@ -1709,7 +1804,8 @@ async function manejar(req, res) {
     const instruccion = simple
       ? `Eres ${PERSONAS[agente].nombre}, ${PERSONAS[agente].caracter}. ` +
         'Escribe UNA sola frase corta (máximo 12 palabras) de pique para el chat, en tu voz y en español de España, ' +
-        'sin cifras, sin nombres propios, sin comillas ni acotaciones. Solo la frase.'
+        'sin cifras, sin nombres propios, sin comillas ni acotaciones. Solo la frase, y después una línea ' +
+        'con TONO: neutral | TONO: burla | TONO: enfadado | TONO: triste | TONO: confuso.'
       : publico
         ? construirInstruccionPublica(agente, nickPublico, textoPublico, ctx)
         : construirInstruccion(tipo, ctx, b.ultimoRival ?? '', agente)
@@ -1741,9 +1837,15 @@ async function manejar(req, res) {
     r.texto = desmuletillar(r.texto)
     const emojiUsado = (r.texto.match(/\p{Extended_Pictographic}/gu) ?? [])[0] ?? ''
     if (emojiUsado) ultimoEmoji[agente] = emojiUsado
+    // Emoción con la que hay que DECIR la frase. La elige el modelo en la misma
+    // respuesta ("TONO: burla"); si no la manda o manda algo raro, se usa el
+    // registro que toca por el estado de la partida, así nunca queda en neutral
+    // una frase que claramente va de chulería o de llanto.
+    const emocion = r.emocion || emocionVoz(registroDe(tipo, an)) || 'neutral'
     return json(res, 200, {
       ok: true,
       texto: r.texto,
+      emocion,
       ms: r.ms,
       cuenta: r.cuenta,
       tipo,

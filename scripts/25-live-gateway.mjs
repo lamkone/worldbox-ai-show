@@ -48,7 +48,7 @@ const TTS = { nombre: 'tts', host: '127.0.0.1', puerto: Number(process.env.WB_TT
 const RUTAS_STREAM = new Set(['/stream.mjpg', '/stream', '/frame.jpg', '/stats']);
 const RUTAS_CEREBRO = new Set(['/line', '/headline', '/emoji', '/health']);
 // /tts?t=<texto>&v=rojo|azul|sistema -> audio/mpeg con voces neuronales (tts-server.mjs)
-const RUTAS_TTS = new Set(['/tts']);
+const RUTAS_TTS = new Set(['/tts', '/precalentar']);
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -629,3 +629,4 @@ servidor.listen(PUERTO, '127.0.0.1', () => {
   console.log('chat persistido en ' + ARCHIVO_CHAT);
   console.log('tuneliza este puerto y el visor funcionara igual que en localhost.');
 });
+

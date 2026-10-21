@@ -127,7 +127,15 @@ const PITCH = process.env.WB_TTS_PITCH || '+0Hz';
 // 0,89 en edge). La emocion se queda en ritmo y pausas, que no toca el timbre.
 // Cambia el audio, asi que la version entra en la marca de cache y el pack se
 // regenera solo.
-const MOTOR_VERSION = 'v9.4';
+// v9.5: el AZUL (edge) vuelve a sintetizar FRASE A FRASE con la prosodia del
+// casting v8 que el dueño aprobo (exclamacion sube +8%/+5Hz, pregunta +3%/+6Hz,
+// cierre -12%/-6Hz, pausa de coma 140 ms) y se recorta el silencio de cabeza/cola
+// que edge deja en cada peticion (30/80 ms). Sin ese recorte cada frase arrastraba
+// ~0,9 s de cola y las pausas internas se iban a 1,3 s (defecto del v8 original,
+// no del diseno). v9.2 habia pasado a linea completa para quitar el "mas robotico"
+// y con ello se perdio la actuacion; el dueño dijo despues que las frases del
+// casting sonaban mas naturales. Kokoro NO se toca: ya coincide con el v8.
+const MOTOR_VERSION = 'v9.5';
 const MOTOR = (process.env.WB_TTS_MOTOR || 'v9').toLowerCase();
 const ENGINE = path.join(AQUI, 'voz-engine.py');
 const PERFILES = {

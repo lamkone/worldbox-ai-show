@@ -436,9 +436,41 @@ def kokoro_linea(texto, emo, voz=None):
 # --------------------------------------------------------------------------
 # Motor B: edge-tts (azul)
 # --------------------------------------------------------------------------
+# v9.5: edge trocea SIEMPRE por frase, como el casting v8 que aprobó el dueño.
+# v9.2 lo troceaba solo por encima de LIMITE_LINEA y por eso se perdió la
+# actuación frase a frase (el azul sonaba plano). Cada petición de edge arrastra
+# ~0,9 s de silencio de cola; sin recortarlo las pausas internas se van a 1,3 s.
+RECORTE_CABEZA_MS = 30
+RECORTE_COLA_MS = 80
+UMBRAL_RECORTE_DB = -45.0
+
+
+def _recortar_extremos(pcm, sr, cabeza_ms=None, cola_ms=None, umbral_db=None):
+    """Quita el silencio de cabeza y cola de un trozo ya sintetizado."""
+    import numpy as np
+    cabeza_ms = RECORTE_CABEZA_MS if cabeza_ms is None else cabeza_ms
+    cola_ms = RECORTE_COLA_MS if cola_ms is None else cola_ms
+    umbral_db = UMBRAL_RECORTE_DB if umbral_db is None else umbral_db
+    x = np.asarray(pcm, dtype="float32")
+    if x.ndim > 1:
+        x = x.mean(axis=1)
+    if len(x) == 0:
+        return x
+    umbral = 10.0 ** (umbral_db / 20.0)
+    fuerte = np.flatnonzero(np.abs(x) > umbral)
+    if len(fuerte) == 0:
+        return x
+    a = max(0, int(fuerte[0]) - int(sr * cabeza_ms / 1000.0))
+    b = min(len(x), int(fuerte[-1]) + 1 + int(sr * cola_ms / 1000.0))
+    return x[a:b]
+
+
 def edge_linea(texto, emo, voz=None):
-    """Una sola petición con la línea entera: edge-tts ya entona la frase completa
-    y respeta la puntuación. Solo se trocea si pasa de LIMITE_LINEA caracteres."""
+    """Frase a frase con prosodia por frase (receta del casting v8 aprobado).
+
+    Cada frase va en su propia petición a edge para que la entonación se rehaga
+    frase a frase (exclamación sube, cierre baja y se ralentiza) y luego se
+    recorta el silencio que edge añade a cada petición."""
     import numpy as np
     import soundfile as sf
     import edge_tts
@@ -461,13 +493,9 @@ def edge_linea(texto, emo, voz=None):
                 pass
 
     async def todas():
-        frases = trozos_linea(texto)
-        if len(frases) == 1:
-            a, sr = await una(frases[0][0], fmt_rate(emo["rate"]),
-                              fmt_pitch(emo["pitch"]), fmt_vol(emo["vol"]))
-            return np.concatenate([a, np.zeros(int(sr * 0.06), dtype="float32")]), sr
+        frases = partir_frases(texto)
         tareas = []
-        for i, (f, pausa) in enumerate(frases):
+        for i, (f, _pausa) in enumerate(frases):
             rate, pitch, _semi = prosodia_frase(f, i, len(frases), emo)
             tareas.append(una(f, fmt_rate(rate), fmt_pitch(pitch), fmt_vol(emo["vol"])))
         resultados = await asyncio.gather(*tareas)
@@ -475,7 +503,7 @@ def edge_linea(texto, emo, voz=None):
         sr = SR
         for (a, s), (f, pausa) in zip(resultados, frases):
             sr = s
-            trozos.append(a)
+            trozos.append(_recortar_extremos(a, s))
             trozos.append(np.zeros(int(sr * (pausa * emo["pausa"]) / 1000.0), dtype="float32"))
         trozos.append(np.zeros(int(sr * 0.06), dtype="float32"))
         return (np.concatenate(trozos) if trozos else np.zeros(1, dtype="float32")), sr

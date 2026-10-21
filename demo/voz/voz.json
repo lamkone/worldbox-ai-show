@@ -1,12 +1,12 @@
 {
   "version": 3,
-  "motor": "v9.4",
+  "motor": "v9.5",
   "voces": {
     "rojo": "em_santa",
     "azul": "es-CO-SalomeNeural",
     "sistema": "es-ES-ElviraNeural"
   },
-  "generado": "2026-10-21T14:39:26.2901302+02:00",
+  "generado": "2026-10-21T18:57:59.9267921+02:00",
   "origen": "show.json",
   "tipos": [
     "chat"
@@ -17,281 +17,281 @@
       "bytes": 37772,
       "agente": "rojo",
       "emocion": "chulo",
-      "ms": 978
+      "ms": 10
     },
     "2": {
       "archivo": "2.mp3",
-      "bytes": 58796,
+      "bytes": 56780,
       "agente": "azul",
       "emocion": "chulo",
-      "ms": 1351
+      "ms": 2
     },
     "5": {
       "archivo": "5.mp3",
       "bytes": 36908,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 975
+      "ms": 895
     },
     "6": {
       "archivo": "6.mp3",
       "bytes": 39788,
       "agente": "rojo",
       "emocion": "chulo",
-      "ms": 1043
+      "ms": 951
     },
     "12": {
       "archivo": "12.mp3",
-      "bytes": 49004,
+      "bytes": 46124,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1120
+      "ms": 981
     },
     "16": {
       "archivo": "16.mp3",
       "bytes": 33164,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 846
+      "ms": 793
     },
     "17": {
       "archivo": "17.mp3",
-      "bytes": 51020,
+      "bytes": 48716,
       "agente": "azul",
       "emocion": "burla",
-      "ms": 1230
+      "ms": 2
     },
     "22": {
       "archivo": "22.mp3",
       "bytes": 41804,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 1030
+      "ms": 1002
     },
     "23": {
       "archivo": "23.mp3",
       "bytes": 34604,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 885
+      "ms": 835
     },
     "25": {
       "archivo": "25.mp3",
       "bytes": 65420,
       "agente": "azul",
       "emocion": "golpe",
-      "ms": 1194
+      "ms": 982
     },
     "29": {
       "archivo": "29.mp3",
-      "bytes": 53612,
+      "bytes": 51596,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1181
+      "ms": 1053
     },
     "30": {
       "archivo": "30.mp3",
-      "bytes": 43532,
+      "bytes": 40364,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1170
+      "ms": 994
     },
     "34": {
       "archivo": "34.mp3",
       "bytes": 44684,
       "agente": "rojo",
       "emocion": "nervios",
-      "ms": 1184
+      "ms": 1069
     },
     "35": {
       "archivo": "35.mp3",
-      "bytes": 56492,
+      "bytes": 54188,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1198
+      "ms": 1128
     },
     "40": {
       "archivo": "40.mp3",
       "bytes": 48716,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 1106
+      "ms": 1245
     },
     "41": {
       "archivo": "41.mp3",
       "bytes": 36332,
       "agente": "rojo",
       "emocion": "chulo",
-      "ms": 870
+      "ms": 859
     },
     "43": {
       "archivo": "43.mp3",
-      "bytes": 62252,
+      "bytes": 61388,
       "agente": "azul",
       "emocion": "golpe",
-      "ms": 1215
+      "ms": 1100
     },
     "47": {
       "archivo": "47.mp3",
-      "bytes": 58508,
+      "bytes": 56492,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1183
+      "ms": 997
     },
     "48": {
       "archivo": "48.mp3",
-      "bytes": 44108,
+      "bytes": 40364,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1112
+      "ms": 1035
     },
     "53": {
       "archivo": "53.mp3",
       "bytes": 39788,
       "agente": "rojo",
       "emocion": "nervios",
-      "ms": 922
+      "ms": 716
     },
     "54": {
       "archivo": "54.mp3",
-      "bytes": 83852,
+      "bytes": 75788,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1263
+      "ms": 1051
     },
     "60": {
       "archivo": "60.mp3",
       "bytes": 44972,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 1117
+      "ms": 958
     },
     "61": {
       "archivo": "61.mp3",
       "bytes": 36908,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 899
+      "ms": 666
     },
     "67": {
       "archivo": "67.mp3",
-      "bytes": 76364,
+      "bytes": 61388,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1245
+      "ms": 1082
     },
     "68": {
       "archivo": "68.mp3",
-      "bytes": 67724,
+      "bytes": 56492,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1162
+      "ms": 946
     },
     "72": {
       "archivo": "72.mp3",
       "bytes": 39500,
       "agente": "rojo",
       "emocion": "nervios",
-      "ms": 913
+      "ms": 726
     },
     "73": {
       "archivo": "73.mp3",
-      "bytes": 68300,
+      "bytes": 68588,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1161
+      "ms": 1233
     },
     "79": {
       "archivo": "79.mp3",
       "bytes": 34892,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 800
+      "ms": 779
     },
     "80": {
       "archivo": "80.mp3",
       "bytes": 30860,
       "agente": "rojo",
       "emocion": "burla",
-      "ms": 727
+      "ms": 597
     },
     "85": {
       "archivo": "85.mp3",
-      "bytes": 48428,
+      "bytes": 44684,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1142
+      "ms": 1089
     },
     "86": {
       "archivo": "86.mp3",
-      "bytes": 73196,
+      "bytes": 62828,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1171
+      "ms": 996
     },
     "90": {
       "archivo": "90.mp3",
       "bytes": 42092,
       "agente": "rojo",
       "emocion": "nervios",
-      "ms": 967
+      "ms": 828
     },
     "91": {
       "archivo": "91.mp3",
-      "bytes": 46700,
+      "bytes": 42668,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1103
+      "ms": 1028
     },
     "98": {
       "archivo": "98.mp3",
       "bytes": 49004,
       "agente": "rojo",
       "emocion": "chulo",
-      "ms": 1135
+      "ms": 1000
     },
     "103": {
       "archivo": "103.mp3",
-      "bytes": 49868,
+      "bytes": 46700,
       "agente": "azul",
       "emocion": "burla",
-      "ms": 1344
+      "ms": 939
     },
     "104": {
       "archivo": "104.mp3",
-      "bytes": 55052,
+      "bytes": 52460,
       "agente": "azul",
       "emocion": "chulo",
-      "ms": 1218
+      "ms": 1093
     },
     "108": {
       "archivo": "108.mp3",
       "bytes": 26540,
       "agente": "rojo",
       "emocion": "nervios",
-      "ms": 696
+      "ms": 630
     },
     "109": {
       "archivo": "109.mp3",
-      "bytes": 52460,
+      "bytes": 49580,
       "agente": "azul",
       "emocion": "nervios",
-      "ms": 1192
+      "ms": 1126
     },
     "111": {
       "archivo": "111.mp3",
-      "bytes": 86156,
+      "bytes": 86732,
       "agente": "azul",
       "emocion": "burla",
-      "ms": 1241
+      "ms": 1310
     },
     "112": {
       "archivo": "112.mp3",
       "bytes": 53612,
       "agente": "rojo",
       "emocion": "llanto",
-      "ms": 1306
+      "ms": 916
     }
   },
-  "firma": "motor=v9.4|rojo=em_santa;azul=es-CO-SalomeNeural;sistema=es-ES-ElviraNeural|emo=neutral,burla,enfadado,triste,confuso|post=off|norm=v1"
+  "firma": "motor=v9.5|rojo=em_santa;azul=es-CO-SalomeNeural;sistema=es-ES-ElviraNeural|emo=neutral,burla,enfadado,triste,confuso|post=off|norm=v1"
 }

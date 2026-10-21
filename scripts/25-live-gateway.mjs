@@ -25,6 +25,7 @@
  *   WB_CHAT_FILE   ruta alternativa del JSON del chat
  *   WB_STATE_URL   URL alternativa de /state.json
  *   WB_FEED_URL    URL alternativa de /feed.json
+ *   WB_TTS_PORT    puerto del servicio de voz (por defecto 8771)
  *   WB_BRAIN_URL   URL alternativa de /line
  */
 import http from 'node:http';
@@ -42,9 +43,12 @@ const PUERTO = Number(arg('--port', process.env.PORT || 8770));
 const VISOR = { nombre: 'visor', host: '127.0.0.1', puerto: 8765 };
 const STREAM = { nombre: 'stream', host: '127.0.0.1', puerto: 8767 };
 const CEREBRO = { nombre: 'cerebro', host: '127.0.0.1', puerto: 8766 };
+const TTS = { nombre: 'tts', host: '127.0.0.1', puerto: Number(process.env.WB_TTS_PORT || 8771) };
 
 const RUTAS_STREAM = new Set(['/stream.mjpg', '/stream', '/frame.jpg', '/stats']);
 const RUTAS_CEREBRO = new Set(['/line', '/headline', '/emoji', '/health']);
+// /tts?t=<texto>&v=rojo|azul|sistema -> audio/mpeg con voces neuronales (tts-server.mjs)
+const RUTAS_TTS = new Set(['/tts']);
 
 const CORS = {
   'access-control-allow-origin': '*',
@@ -527,6 +531,7 @@ function destino(url) {
   const ruta = String(url || '/').split('?')[0];
   if (RUTAS_STREAM.has(ruta)) return STREAM;
   if (RUTAS_CEREBRO.has(ruta)) return CEREBRO;
+  if (RUTAS_TTS.has(ruta)) return TTS;
   return VISOR;
 }
 
@@ -618,6 +623,7 @@ servidor.listen(PUERTO, '127.0.0.1', () => {
   console.log('pasarela del directo en http://127.0.0.1:' + PUERTO);
   console.log('  /stream.mjpg /frame.jpg /stats      -> 127.0.0.1:8767');
   console.log('  /line /headline /emoji /health      -> 127.0.0.1:8766');
+  console.log('  /tts?t=&v=                          -> 127.0.0.1:' + TTS.puerto + ' (voces neuronales)');
   console.log('  /api/chat (GET/POST)                -> hub de chat local');
   console.log('  resto                               -> 127.0.0.1:8765');
   console.log('chat persistido en ' + ARCHIVO_CHAT);

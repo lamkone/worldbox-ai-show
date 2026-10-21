@@ -240,7 +240,11 @@ function Ensure-Turn {
 
 function Send-Chat {
   param([string]$Agente, [string]$A, [string]$Texto, [string]$Tono = 'chulo',
-    [string]$Tipo = 'chat', [double]$Intensidad = 0.5, [string]$Emocion = '', [int]$RespuestaA = 0)
+    [string]$Tipo = 'chat', [double]$Intensidad = 0.5, [string]$Emocion = '', [int]$RespuestaA = 0,
+    [string]$Fuente = '')
+  # Si el cerebro no dio una frase válida, la línea va vacía: no se envía nada.
+  # (Antes esto acababa en el generador de plantillas de 21-drama.ps1; ya no.)
+  if ([string]::IsNullOrWhiteSpace($Texto)) { return $false }
   # no repetir frases: ventana deslizante por IA + no calcar lo que dijo el rival
   $norm = ''
   if ($Texto) { $norm = (($Texto -replace '[^\p{L}\p{N} ]', '') -replace '\s+', ' ').Trim().ToLowerInvariant() }
@@ -260,9 +264,11 @@ function Send-Chat {
     $extra = @{ para = $A; tono = $Tono; intensidad = $Intensidad }
     if ($Emocion) { $extra['emocion'] = $Emocion }
     if ($RespuestaA -gt 0) { $extra['respuesta_a'] = $RespuestaA }
+    if ($Fuente) { $extra['fuente'] = $Fuente }
     Add-Feed -Agente $Agente -Tipo $Tipo -Texto $Texto -Extra $extra
     Add-ShowEvent -Tipo $Tipo -Agente $Agente -Texto $Texto -Extra @{
       tono = $Tono; intensidad = $Intensidad; emocion = $(if ($Emocion) { $Emocion } else { $null })
+      fuente = $(if ($Fuente) { $Fuente } else { $null })
     } | Out-Null
   }
   return $r.ok
@@ -325,7 +331,9 @@ function New-Plan {
   $propio = if ($gruposPropios.Count -gt 0) { $gruposPropios[0] } else { $null }
 
   if (-not $objetivo) {
-    return @([pscustomobject]@{ accion = 'chat'; to = '*'; texto = 'No encuentro al enemigo. Qué mapa más raro.' })
+    # Sin enemigo a la vista no hay línea de chat: antes había una frase fija
+    # ("No encuentro al enemigo...") y el dueño no quiere frases prefijadas.
+    return @()
   }
 
   # 1) si estoy muy tocado respecto al inicio, refuerzo tropas
@@ -382,7 +390,7 @@ function New-Plan {
   }
   # cada tanto, en vez de frase, la IA lanza una emoción suelta (emoji solo)
   if ((Get-Random -Maximum 100) -lt 45) {
-    $emoji = Get-EmojiDrama -Agente $Agente -Contexto $ctx -ConModelo:([bool]($script:Tension -gt 45))
+    $emoji = Get-EmojiDrama -Agente $Agente -Contexto $ctx -ConModelo:$false
     if (-not $emoji) { $emoji = if ($Agente -eq 'rojo') { '😤' } else { '🙄' } }
     # emoción real: es lo que usa el visor para elegir el efecto (llanto, furia...)
     # OJO: estos nombres los usa el visor como clase CSS de animación
@@ -668,10 +676,10 @@ Add-Feed -Agente 'sistema' -Tipo 'info' -Texto ('Comienza la partida: ROJO (' + 
 $script:Beat = 'apertura'
 $ctxIni = Get-ContextoDrama -Agente 'rojo' -Obs $null
 $apR = Get-Replica -Agente 'rojo' -Tipo 'apertura' -Contexto $ctxIni
-$null = Send-Chat -Agente 'rojo' -A '*' -Texto $apR.texto -Tono 'chulo' -Intensidad 0.8
+$null = Send-Chat -Agente 'rojo' -A '*' -Texto $apR.texto -Tono 'chulo' -Intensidad 0.8 -Fuente $apR.fuente
 $ctxIniA = Get-ContextoDrama -Agente 'azul' -Obs $null
 $apA = Get-Replica -Agente 'azul' -Tipo 'apertura' -Contexto $ctxIniA -UltimoRival $apR.texto
-$null = Send-Chat -Agente 'azul' -A '*' -Texto $apA.texto -Tono 'chulo' -Intensidad 0.8
+$null = Send-Chat -Agente 'azul' -A '*' -Texto $apA.texto -Tono 'chulo' -Intensidad 0.8 -Fuente $apA.fuente
 
 $null = Save-Frame
 $null = Write-Estado
@@ -849,7 +857,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
           }
         }
         'chat' {
-          $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono $p.tono `
+          $null = Send-Chat -Agente $agente -A $p.to -Texto $p.texto -Tono $p.tono -Fuente $p.fuente `
             -Intensidad $(if ($p.PSObject.Properties['intensidad']) { [double]$p.intensidad } else { 0.5 })
         }
         'emoji' {
@@ -882,7 +890,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
         $tipoR = if ($ratioR -lt 0.55) { 'nervios' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'contra' }
         $repR = Get-Replica -Agente $agente -Tipo $tipoR -Contexto $ctxR -UltimoRival $textoRival -Ratio $ratioR
         $tonoR = if ($ratioR -lt 0.55) { 'nervios' } elseif ($ratioR -gt 1.9) { 'burla' } else { 'chulo' }
-        $null = Send-Chat -Agente $agente -A $rival -Texto $repR.texto -Tono $tonoR `
+        $null = Send-Chat -Agente $agente -A $rival -Texto $repR.texto -Tono $tonoR -Fuente $repR.fuente `
           -Intensidad ([math]::Round([math]::Min(1.0, [math]::Max(0.2, $script:Tension / 100 + 0.2)), 2)) `
           -RespuestaA $seqRival
         if ($textoRival) { $script:UltimoMensajeRival[$agente] = $textoRival }
@@ -946,11 +954,11 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
       }
       $ctxV = Get-ContextoDrama -Agente $victima -Obs $obsV -BajasTurno $perdidas -PerdidasTurno $bajas -GolpeRival $ultimaNota
       if ((Get-Random -Maximum 100) -lt 55) {
-        $em = Get-EmojiDrama -Agente $victima -Contexto $ctxV -ConModelo:([bool]($intens -gt 0.6))
+        $em = Get-EmojiDrama -Agente $victima -Contexto $ctxV -ConModelo:$false
         $null = Send-Chat -Agente $victima -A '*' -Texto $em -Tono 'emoji' -Tipo 'emoji' -Intensidad ([math]::Max(0.5, $intens)) -Emocion (Get-EmocionDeEmoji $em)
       } else {
         $repV = Get-Replica -Agente $victima -Tipo 'golpe' -Contexto $ctxV -UltimoRival $ultimaNota
-        $null = Send-Chat -Agente $victima -A $agente -Texto $repV.texto -Tono 'golpe' -Intensidad ([math]::Max(0.4, $intens))
+        $null = Send-Chat -Agente $victima -A $agente -Texto $repV.texto -Tono 'golpe' -Intensidad ([math]::Max(0.4, $intens)) -Fuente $repV.fuente
       }
     }
 
@@ -1021,7 +1029,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $ratioRB = if ($uA -gt 0) { [double]$uR / [double]$uA } else { 2.0 }
     $rbRojo = Get-Replica -Agente 'rojo' -Tipo $tipoRB -Contexto $ctxRB -UltimoRival '' -Ratio $ratioRB
     if ($rbRojo -and $rbRojo.texto) {
-      $null = Send-Chat -Agente 'rojo' -A 'azul' -Texto $rbRojo.texto -Tono $rbRojo.tono -Intensidad 0.85
+      $null = Send-Chat -Agente 'rojo' -A 'azul' -Texto $rbRojo.texto -Tono $rbRojo.tono -Intensidad 0.85 -Fuente $rbRojo.fuente
     }
     $ctxRB2 = Get-ContextoDrama -Agente 'azul' -Obs $null -BajasTurno $bA -PerdidasTurno $bR
     $ctxRB2['ronda'] = $idxRonda
@@ -1029,7 +1037,7 @@ for ($idxRonda = 1; $idxRonda -le $Rondas; $idxRonda++) {
     $ultimoRB = if ($rbRojo) { [string]$rbRojo.texto } else { '' }
     $rbAzul = Get-Replica -Agente 'azul' -Tipo $tipoRB -Contexto $ctxRB2 -UltimoRival $ultimoRB -Ratio $ratioRB2
     if ($rbAzul -and $rbAzul.texto) {
-      $null = Send-Chat -Agente 'azul' -A 'rojo' -Texto $rbAzul.texto -Tono $rbAzul.tono -Intensidad 0.85
+      $null = Send-Chat -Agente 'azul' -A 'rojo' -Texto $rbAzul.texto -Tono $rbAzul.tono -Intensidad 0.85 -Fuente $rbAzul.fuente
     }
     # emoji de cierre: el que va perdiendo la ronda suelta su emoción
     $perdedor = if ($dominio -eq 'rojo') { 'azul' } elseif ($dominio -eq 'azul') { 'rojo' } else { '' }
@@ -1082,14 +1090,16 @@ if ($ganador -ne 'EMPATE') {
   $clave = $ganador.ToLower()
   $ctxFin = Get-ContextoDrama -Agente $clave -Obs $null
   $ver = Get-Veredicto -Agente $clave -Contexto $ctxFin -Ganador $ganador
-  if (-not $ver) { $ver = $script:Personas[$clave].victoria }
-  $null = Send-Chat -Agente $clave -A '*' -Texto $ver -Tono 'burla' -Intensidad 1.0
+  # Sin veredicto del modelo, el ganador se calla: NADA de frases prefijadas.
+  if ($ver) {
+    $null = Send-Chat -Agente $clave -A '*' -Texto $ver -Tono 'burla' -Intensidad 1.0 -Fuente 'llm'
+  }
   # el perdedor también tiene su última palabra
   $perdedor = if ($clave -eq 'rojo') { 'azul' } else { 'rojo' }
   $ctxPer = Get-ContextoDrama -Agente $perdedor -Obs $null
   $ctxPer['esFinal'] = $true
   $repPer = Get-Replica -Agente $perdedor -Tipo 'final' -Contexto $ctxPer
-  $null = Send-Chat -Agente $perdedor -A '*' -Texto $repPer.texto -Tono 'llanto' -Intensidad 0.9
+  $null = Send-Chat -Agente $perdedor -A '*' -Texto $repPer.texto -Tono 'llanto' -Intensidad 0.9 -Fuente $repPer.fuente
 }
 # (el resumen final ya se publica como entrada 'ronda'; no duplicamos aviso)
 # entrada de feed con el resumen final (tipo 'ronda', como los cierres de ronda)

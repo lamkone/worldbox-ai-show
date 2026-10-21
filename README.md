@@ -61,7 +61,10 @@ Qué te vas a encontrar:
 |---|---|
 | **Cabecera broadcast** | Marca, ronda, reloj de partida, marcador de bajas y chip EN DIRECTO (o FINAL / REPETICIÓN). |
 | **Dos paneles, solo lectura** | Un panel por IA con nombre, unidades, moral, stats de bajas/ciudades y su chat. Sin cajas de texto, sin apodos, sin visitantes: aquí solo hablan las dos IAs. |
-| **Mapa a pantalla completa** | El mundo ocupa el escenario; la cámara hace paneo y zoom con cada bomba (ida → 2,8 s de hold → vuelta). |
+| **Mapa a pantalla completa** | El mundo ocupa el escenario. La cámara **v5** solo se mueve cuando pasa algo: va al punto real del impacto (`easeOutQuint` con overshoot +0,12), aguanta 2,8 s con deriva de cámara en mano y vuelve en 900 ms a un punto de reposo cercano, **nunca al centro**. Entre planos hay 2,6 s de cooldown y los focos a menos de 4 % se descartan: se acabaron los zooms aleatorios. |
+| **Rótulo y daño sobre el mapa** | Cada bomba escribe su nombre en el punto del golpe (`¡BOMBA ATÓMICA!`, `¡BOMBA DEL ZAR!`, `¡NAPALM!`) y, al caer el resultado, el número de bajas (`−250`) en grande. Rótulo y número se colocan midiendo el recorrido real de la animación: no se pisan nunca, ni en escritorio ni en móvil. |
+| **Sonido de verdad** | Música procedural que sube con la tensión de la partida, efectos de impacto y **voces neuronales** para las dos IAs (es-CO Gonzalo y Salomé, con respaldo de las voces del navegador). Botón 🔊 con sliders de voz, música y efectos. |
+| **Calidad de vídeo** | El stream publica solo la isla (recorte del mapa, con auto-recorte opcional) y el visor no amplía más de 1,55× (escritorio) / 1,35× (móvil): la imagen llega nítida en vez de pixelada. |
 | **Emojis que invaden la pantalla** | Cada emoji suelto se hace gigante y tiene animación propia según la emoción (furia, llanto, burla, euforia, pánico). No es decoración: es el golpe emocional del turno. |
 | **Impactos y sacudida** | Onda expansiva, escombros, chispas, flash y temblor de pantalla en el punto exacto del golpe. |
 | **Pista de guerra** | Ticker continuo con lo que lanzan los dos bandos, fuera del chat. |
@@ -69,6 +72,39 @@ Qué te vas a encontrar:
 | **Splash de ronda y barra de tensión** | Transición grande al empezar cada ronda y dos números que resumen cómo va la velada: tensión y moral. |
 | **Pantalla de victoria** | Ganador, unidades finales, bajas, mayor golpe, racha y duración, con lluvia de confeti. |
 | **Modo cine** | Se queda solo la cabecera y el mapa, para ver el mundo sin distracciones. |
+
+## La calidad del vídeo
+
+El visor no puede inventar píxeles: lo que llega del juego es lo que hay. La cadena es
+`24-wb-stream.ps1` (PrintWindow → JPEG → MJPEG) y la palanca de calidad es **cuántos píxeles
+reales ocupa la isla en la ventana del juego**.
+
+1. **Recorte del mapa.** El stream publica solo el mapa, no la ventana entera: por defecto con
+   el recorte fijo `-CropX0 0.297 -CropY0 0.165 -CropX1 0.764 -CropY1 0.753` (sin fondo azul
+   ni HUD). Con `-AutoCrop` detecta la isla solo (la componente conexa más grande que no toca
+   el borde) y se adapta si mueves la cámara del juego; se recalcula cada ~0,7 s y, si falla,
+   cae al recorte fijo.
+2. **Acercar la cámara DEL JUEGO.** Es la palanca de verdad. `wb-zoom.ps1` mueve la rueda
+   sobre la ventana de WorldBox:
+
+   ```powershell
+   pwsh -File scripts\wb-zoom.ps1 -Pasos 5 -Real     # acercar 5 muescas
+   pwsh -File scripts\wb-zoom.ps1 -Pasos -2 -Real    # alejar
+   pwsh -File scripts\wb-zoom.ps1 -Stats             # ver la ventana detectada
+   ```
+
+   Objetivo: que la isla ocupe ~900-1100 px en el fotograma. Se comprueba con
+   `curl.exe -s -o frame.jpg http://localhost:8767/frame.jpg` y
+   `python reports\qa\medir-isla.py frame.jpg` (bbox de la isla + ampliación necesaria).
+3. **Ajustes del stream.** `-MaxWidth 900 -Quality 82 -Fps 18` con el recorte fijo es el punto
+   recomendado (la isla sale ~1:1). Si quieres más resolución, `-MaxWidth 1600 -Quality 86
+   -Fps 18`, pero el techo real lo pone el bridge: cada captura tarda 42-128 ms, así que el
+   mapa se refresca a 9-18 fps. El indicador **SEÑAL** de la cabecera muestra los fps reales;
+   si baja de ~12, vuelve a 900/82/20.
+4. **El visor no amplía de más.** El zoom de cámara está topado en 1,55× (escritorio) y 1,35×
+   (móvil) justo para no reventar la nitidez del JPEG.
+
+Regla de oro: si ves la isla blanda, no toques el visor; acerca la cámara del juego.
 
 ## Arquitectura
 
@@ -113,6 +149,13 @@ Qué te vas a encontrar:
 | `scripts/18-wb-multi.ps1` | Cliente del bridge: tokens, `Invoke-WbAgent` y utilidades. |
 | `scripts/20-wb-viewer-server.ps1` | Servidor local (`HttpListener`) que sirve la página y los JSON en `http://localhost:8765/`. |
 | `scripts/viewer-live.html` | La plantilla del visor. El motor la copia a la carpeta de salida como `viewer.html`. |
+| `scripts/viewer-fx.js` | Motor de efectos `window.ViewerFX` v3: etiquetas, daño gigante, emojis posicionables, impactos, chispas y confeti. |
+| `scripts/viewer-voice.js` | Voces del show (`window.ViewerVoz`): neuronal por `tts-server.mjs` y respaldo Web Speech. |
+| `scripts/show-music.js` | Música procedural WebAudio (`window.ShowMusic`) que sigue la tensión de la partida. |
+| `scripts/show-audio-ui.js` | Panel de audio (`window.ShowAudioUI`): sliders de voz, música y efectos, mute y auto-duck. |
+| `scripts/tts-server.mjs` | Servicio de voz neuronal local (`:8771`) con caché en `reports/tts-cache`. |
+| `scripts/build-voice-pack.ps1` | Empaqueta las voces de la repetición (`demo/voz/*.mp3`) para que suene sin servidor. |
+| `scripts/wb-zoom.ps1` | Acerca/aleja la cámara de WorldBox para subir la calidad real del vídeo. |
 | `demo/index.html` | La repetición autónoma: reproduce un `show.json` sin WorldBox ni PowerShell. |
 
 Los detalles técnicos (flujo por turno, contrato de datos, cómo se genera el diálogo)
@@ -313,6 +356,7 @@ Visor en vivo:
 | `C` | Modo cine: solo cabecera y mapa. |
 | `F` | Pantalla completa. |
 | `M` | Sonido on/off. |
+| `V` | Voces on/off (alterna las voces neuronales de las dos IAs). |
 | `R` | Restablece el layout y recarga. |
 | `Esc` | Cierra la pantalla de victoria. |
 
@@ -341,10 +385,14 @@ worldbox-ai-show/
 │   └── MONTAJE-WORLDBOX.md    ← BepInEx, mod, tokens, guardado, 401
 ├── demo/
 │   ├── index.html             ← reproductor de repeticiones
-│   └── show.json              ← última partida real publicada
+│   ├── show.json              ← última partida real publicada
+│   └── voz/                   ← pack de voces neuronales de la repetición (mp3 + voz.json)
 ├── live/
 │   ├── index.html             ← visor del directo (generado por build-live-page.ps1)
-│   └── viewer-fx.js           ← motor de efectos v2
+│   ├── viewer-fx.js           ← motor de efectos v3
+│   ├── viewer-voice.js        ← voces del show
+│   ├── show-music.js          ← música procedural
+│   └── show-audio-ui.js       ← panel de audio
 ├── scripts/
 │   ├── 18-wb-multi.ps1        ← cliente del bridge (tokens, Invoke-WbAgent)
 │   ├── 19-wb-match.ps1        ← el motor
@@ -357,6 +405,12 @@ worldbox-ai-show/
 │   ├── 26-live-publish.ps1    ← abre/cierra el túnel y escribe live.json
 │   ├── viewer-live.html       ← plantilla del visor
 │   ├── viewer-fx.js           ← motor de efectos (fuente)
+│   ├── viewer-voice.js        ← voces del show (fuente)
+│   ├── show-music.js          ← música procedural (fuente)
+│   ├── show-audio-ui.js       ← panel de audio (fuente)
+│   ├── tts-server.mjs         ← voz neuronal local (:8771)
+│   ├── build-voice-pack.ps1   ← empaqueta voces de la repetición
+│   ├── wb-zoom.ps1            ← zoom de la cámara del juego (calidad de vídeo)
 │   ├── build-live-page.ps1    ← genera live/ desde la plantilla
 │   ├── publish-show.ps1       ← publica todo (sync, build, túnel, push, verifica)
 │   └── agents.example.json    ← plantilla de tokens

@@ -49,6 +49,10 @@ $servido = Join-Path $raiz 'reports\wb-match'
 New-Item -ItemType Directory -Force -Path $servido | Out-Null
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'viewer-live.html') -Destination (Join-Path $servido 'viewer.html') -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'viewer-fx.js') -Destination (Join-Path $servido 'viewer-fx.js') -Force
+foreach ($extra in @('viewer-voice.js', 'show-music.js', 'show-audio-ui.js')) {
+  $srcExtra = Join-Path $PSScriptRoot $extra
+  if (Test-Path -LiteralPath $srcExtra) { Copy-Item -LiteralPath $srcExtra -Destination (Join-Path $servido $extra) -Force }
+}
 Write-Host '  visor local actualizado en reports\wb-match'
 
 # La repeticion publica reproduce la ultima partida real: su show.json viaja con el demo.
@@ -59,6 +63,26 @@ if ((Test-Path -LiteralPath $showReal) -and (Test-Path -LiteralPath $demoDir)) {
   Write-Host ('  repeticion: show.json real copiado a demo\ ({0:N0} B)' -f (Get-Item -LiteralPath $showReal).Length)
 } else {
   Write-Host '  repeticion: sin show.json real; el demo usara su dataset embebido'
+}
+
+# Pack de voces neuronales de la repeticion: sintetiza las frases del show a MP3
+# (voz\<seq>.mp3 + voz\voz.json) para que GitHub Pages suene natural sin servidor.
+# Si el servicio de voz no esta arrancado se avisa y se publica sin pack (el demo
+# cae a las voces del navegador, pero no se rompe).
+$vozDir = Join-Path $demoDir 'voz'
+$vozOk = $false
+try {
+  $saludVoz = Invoke-RestMethod 'http://127.0.0.1:8771/health' -TimeoutSec 3
+  if ($saludVoz.ok) {
+    & (Join-Path $PSScriptRoot 'build-voice-pack.ps1') -ShowJson $showReal -OutDir $vozDir -Servicio 'http://127.0.0.1:8771'
+    $vozOk = ($LASTEXITCODE -eq 0 -or $null -eq $LASTEXITCODE)
+    Write-Host ('  voces: pack generado en demo\voz ({0} MP3)' -f (Get-ChildItem -LiteralPath $vozDir -Filter '*.mp3' -File -ErrorAction SilentlyContinue).Count)
+  }
+} catch {
+  Write-Host ('  AVISO: servicio de voz no disponible; la repeticion usara voces del navegador: ' + $_.Exception.Message) -ForegroundColor Yellow
+}
+if (-not $vozOk -and -not (Test-Path -LiteralPath (Join-Path $vozDir 'voz.json'))) {
+  Write-Host '  voces: sin pack (demo\voz\voz.json no existe)' -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------------------

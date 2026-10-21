@@ -677,7 +677,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     <span class="chip-live" id="c-live"><i></i>EN DIRECTO</span>
     <button class="btn" id="btn-cine" title="Modo cine (C)" aria-label="Modo cine">🎬</button>
     <button class="btn" id="btn-full" title="Pantalla completa (F)" aria-label="Pantalla completa">⛶</button>
-    <button class="btn" id="btn-sonido" title="Sonido (M)" aria-label="Sonido">🔇</button>
+    <button class="btn" id="btn-audio" title="Audio (M)" aria-label="Audio"><span data-wb-audio-icon>🔊</span></button>
     <button class="btn" id="btn-voz" title="Voces (V)" aria-label="Voces">🔇</button>
     <button class="btn" id="btn-theme" title="Tema claro/oscuro (T)" aria-label="Cambiar tema">🌙</button>
     <button class="btn" id="btn-reset" title="Restablecer layout (R)" aria-label="Restablecer">↺</button>
@@ -761,6 +761,8 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   </div>
 </div>
 
+<script src="show-music.js"></script>
+<script src="show-audio-ui.js"></script>
 <script src="viewer-fx.js"></script>
 <script src="viewer-voice.js"></script>
 <script>
@@ -812,6 +814,10 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     idaMs: 900,
     vueltaMs: 900,
     holdMs: 2800,
+    /* cooldown entre planos de cámara: evita zooms encadenados a sitios sin acción */
+    cooldownFoco: 2600,
+    /* desplazamiento mínimo (% de ventana) para considerar un foco distinto */
+    minSaltoFoco: 4,
     maxEfectos: 24,
     qa: (function () {
       try { return new URLSearchParams(location.search).get('qa') === '1'; } catch (e) { return false; }
@@ -942,81 +948,24 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   }
 
   /* ------------------------------------------------------------
-     Sonido (WebAudio sintetizado, opcional y silenciado por defecto)
+     Audio: música procedural + efectos (show-music.js) y panel de
+     volumen (show-audio-ui.js). Todo opcional y defensivo.
      ------------------------------------------------------------ */
-  const sonido = (function () {
-    let ctx = null;
-    let activo = false;
-    try { activo = localStorage.getItem(K_SONIDO) === '1'; } catch (e) {}
-    function ac() {
-      if (!activo) return null;
-      try {
-        if (!ctx) {
-          const C = window.AudioContext || window.webkitAudioContext;
-          if (!C) return null;
-          ctx = new C();
-        }
-        if (ctx.state === 'suspended') ctx.resume();
-        return ctx;
-      } catch (e) { return null; }
-    }
-    function ruido(c, dur, vol, corte) {
-      const n = Math.max(1, Math.floor(c.sampleRate * dur));
-      const buf = c.createBuffer(1, n, c.sampleRate);
-      const d = buf.getChannelData(0);
-      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.1);
-      const src = c.createBufferSource(); src.buffer = buf;
-      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = corte || 900;
-      const g = c.createGain(); g.gain.value = vol;
-      src.connect(f); f.connect(g); g.connect(c.destination);
-      src.start();
-    }
-    function nota(c, f0, t, dur, tipo, vol, f1) {
-      const o = c.createOscillator(); const g = c.createGain();
-      o.type = tipo || 'sine';
-      o.frequency.setValueAtTime(f0, t);
-      if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(g); g.connect(c.destination);
-      o.start(t); o.stop(t + dur + 0.02);
-    }
-    return {
-      get activo() { return activo; },
-      alternar() {
-        activo = !activo;
-        try { localStorage.setItem(K_SONIDO, activo ? '1' : '0'); } catch (e) {}
-        if (activo) ac();
-        actualizarBotonSonido();
-        return activo;
-      },
-      boom(power) {
-        const c = ac(); if (!c) return;
-        const t = c.currentTime; const p = clamp(power || 0.7, 0.3, 1);
-        nota(c, 130, t, 0.55, 'sine', 0.35 * p, 38);
-        ruido(c, 0.5, 0.3 * p, 1000);
-      },
-      ding() {
-        const c = ac(); if (!c) return;
-        const t = c.currentTime;
-        nota(c, 880, t, 0.16, 'triangle', 0.18);
-        nota(c, 1320, t + 0.09, 0.2, 'triangle', 0.14);
-      },
-      fanfarria() {
-        const c = ac(); if (!c) return;
-        const t = c.currentTime;
-        [523, 659, 784, 1047].forEach((f, i) => {
-          nota(c, f, t + i * 0.13, 0.32, 'triangle', 0.16);
-          nota(c, f * 2, t + i * 0.13, 0.22, 'sine', 0.07);
-        });
+  function audioEfecto(nombre) {
+    try { if (window.ShowMusic && window.ShowMusic.efecto) window.ShowMusic.efecto(nombre); } catch (e) {}
+  }
+  function alternarMusica() {
+    try {
+      if (window.ShowMusic) {
+        window.ShowMusic.desbloquear();
+        window.ShowMusic.toggle();
       }
-    };
-  })();
-
-  function actualizarBotonSonido() {
-    const b = $('#btn-sonido');
-    if (b) { b.textContent = sonido.activo ? '🔊' : '🔇'; b.classList.toggle('on', sonido.activo); }
+    } catch (e) {}
+  }
+  function arrancarAudio() {
+    try {
+      if (window.ShowMusic) { window.ShowMusic.desbloquear(); window.ShowMusic.start(); }
+    } catch (e) {}
   }
 
   /* ------------------------------------------------------------
@@ -1174,9 +1123,13 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     tx = clamp(tx, 0.06, 0.94);
     ty = clamp(ty, 0.06, 0.94);
     const t = ahora();
-    /* anti-jitter: mismo punto (<3 %) y <700 ms -> no re-dispara el plano */
-    if (!forzar && t - ultimoFocoT < 700 &&
-        Math.abs(tx - ultimoFoco.x) < 0.03 && Math.abs(ty - ultimoFoco.y) < 0.03) return false;
+    /* v5: cooldown entre planos (2,6 s) y descarte de focos casi idénticos (<4 %):
+       solo eventos reales mueven la cámara, nunca el centroide del stream. */
+    if (!forzar) {
+      if (t - ultimoFocoT < CFG.cooldownFoco) return false;
+      if (Math.abs(tx - ultimoFoco.x) * 100 < CFG.minSaltoFoco &&
+          Math.abs(ty - ultimoFoco.y) * 100 < CFG.minSaltoFoco) return false;
+    }
     ultimoFocoT = t;
     ultimoFoco = { x: tx, y: ty };
     const zTecho = zMaxCamara();
@@ -1240,7 +1193,17 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       CAM.x = lerp(CAM.fx, CAM.vueltaA.x, e);
       CAM.y = lerp(CAM.fy, CAM.vueltaA.y, e);
       CAM.z = lerp(CAM.fz, 1, e);
-      if (k >= 1) CAM.fase = 'neutro';
+      if (k >= 1) {
+        /* Continuidad al entrar en reposo: el destino de la vuelta se calculó con
+           la deriva del instante de salida; si el reposo usara la deriva actual
+           habría un salto de hasta ~2 % al terminar la vuelta. Se recoloca el
+           centro de la deriva para que el primer tick neutro caiga exactamente
+           donde acabó la vuelta y a partir de ahí derive suave. */
+        const d = deriva(t);
+        CAM.reposo.x = clamp(CAM.vueltaA.x - d.x, 0.02, 0.98);
+        CAM.reposo.y = clamp(CAM.vueltaA.y - d.y, 0.02, 0.98);
+        CAM.fase = 'neutro';
+      }
     } else {
       /* reposo: deriva suave alrededor del último interés (nunca al centro) */
       if (PREFIERE_MENOS) {
@@ -1451,20 +1414,9 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       if (r.ok) {
         const s = await r.json();
         if (s && typeof s.fps === 'number') { statsStream.fps = s.fps; actualizarSenal(); }
-        /* fallback de cámara: centroide de explosión de /stats (0..10000).
-           Solo si de verdad hay un pico nuevo y con enfriamiento largo para no dejar el zoom pegado. */
-        const lspike = Number(s && s.lspike);
-        if (s && Number(s.power) > 1200 && Number(s.cx) > 0 && Number(s.cy) > 0 &&
-            (!isFinite(lspike) || lspike >= 55)) {
-          const t = ahora();
-          if (t - ultimoFocoT > 7000 && CAM.fase === 'neutro') {
-            const px = Number(s.cx) / 100, py = Number(s.cy) / 100;
-            ultimoPuntoVentana = { x: px, y: py };
-            foco(px, py, 1.45, CFG.holdMs, true);
-            sacudirCamara(clamp(Number(s.power) / 2600, 0.3, 0.85));
-            impactoCentral(clamp(Number(s.power) / 2600, 0.25, 0.85), { x: px, y: py });
-          }
-        }
+        /* v5: el centroide de /stats (cx/cy) ya NO mueve la cámara ni pinta impactos.
+           Era la causa de los "zooms a sitios random": la cámara solo se mueve con
+           eventos reales del feed (bomba con camara, tropas con posición) o drama.impacto. */
       }
     } catch (e) { /* el stream puede no estar levantado */ }
     setTimeout(pollStats, CFG.statsMs);
@@ -1536,6 +1488,8 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     const cajaT = $('#tension');
     if (tbar) tbar.style.width = tension + '%';
     if (tval) tval.textContent = Math.round(tension) + '%';
+    /* música: la intensidad sigue a la tensión dramática */
+    try { if (window.ShowMusic && window.ShowMusic.setIntensidad) window.ShowMusic.setIntensidad(tension / 100); } catch (e) {}
     if (cajaT) {
       cajaT.classList.toggle('alta', tension >= 70);
       cajaT.classList.toggle('media', tension >= 40 && tension < 70);
@@ -1785,7 +1739,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       const primera = (ultimaRonda === null);
       ultimaRonda = r;
       if (!(primera && (CFG.qa || st.terminada))) splashRonda(r);
-      if (!primera) sonido.ding();
+      if (!primera) audioEfecto('ding');
     }
   }
 
@@ -1827,7 +1781,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       FX.flash(lado === 'rojo' ? '#ff4757' : '#3d9bff', { opacity: 0.22, duration: 900 });
     }
     if (!confeti) lluviaEmojis();
-    sonido.fanfarria();
+    audioEfecto('fanfarria');
   }
 
   function lluviaEmojis() {
@@ -1944,7 +1898,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
   function etiquetaBomba(power) {
     const p = String(power || '').toLowerCase();
     if (p.indexOf('czar') >= 0 || p.indexOf('zar') >= 0) return '¡BOMBA DEL ZAR!';
-    if (p.indexOf('napalm') >= 0 || p.indexOf('napa') >= 0 || p.indexOf('fire') >= 0) return '¡NAPA LM!';
+    if (p.indexOf('napalm') >= 0 || p.indexOf('napa') >= 0 || p.indexOf('fire') >= 0) return '¡NAPALM!';
     if (p.indexOf('atomic') >= 0 || p.indexOf('nuclear') >= 0 || p.indexOf('atomi') >= 0) return '¡BOMBA ATÓMICA!';
     return '¡BOMBA!';
   }
@@ -1967,10 +1921,10 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     const cy = (pg / 100 - CROP_EVENTO.y0) / (CROP_EVENTO.y1 - CROP_EVENTO.y0) * 100;
     return { x: clamp(cx, 3, 97), y: clamp(cy, 3, 97) };
   }
-  /* Punto de la acción en % de pantalla; si no hay, esquina del bando. */
+  /* Punto de la acción en % del MAPA (espacio de FX); si no hay, esquina del bando. */
   function puntoDeAccion(lado, sinEsquina) {
     if (ultimoPuntoVentana && Number(ultimoPuntoVentana.x) > 0 && Number(ultimoPuntoVentana.y) > 0) {
-      const p = aPantalla(Number(ultimoPuntoVentana.x), Number(ultimoPuntoVentana.y));
+      const p = aMapaPct(Number(ultimoPuntoVentana.x), Number(ultimoPuntoVentana.y));
       return { x: clamp(p.x, 12, 88), y: clamp(p.y, 14, 82) };
     }
     return sinEsquina ? { x: 50, y: 46 } : { x: lado === 'azul' ? 78 : 22, y: 42 };
@@ -1982,7 +1936,7 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       const p = clamp(Number(power) || 0.7, 0.3, 1);
       let pt = { x: 50, y: 50 };
       if (punto && Number(punto.x) > 0 && Number(punto.y) > 0) {
-        pt = aPantalla(Number(punto.x), Number(punto.y));
+        pt = aMapaPct(Number(punto.x), Number(punto.y));
       }
       FX.impact(pt.x, pt.y, {
         power: p,
@@ -2001,6 +1955,173 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     p.classList.add('sacudida');
     setTimeout(function () { p.classList.remove('sacudida'); }, 500);
   }
+
+  /* ------------------------------------------------------------
+     Anti-colisión de rótulos y números de daño (v5.2)
+
+     El problema no era el tamaño: era el MOVIMIENTO. viewer-fx.js anima el
+     número de daño subiendo de -50 % a -130 % de su propio alto, y el rótulo da
+     un "kick" de escala 1.16. Reservar la caja estática no servía de nada: el
+     número acababa rozando el rótulo por abajo (queja del dueño). Ahora se
+     planifica el RECORRIDO COMPLETO de cada pieza y se comprueba que los dos
+     recorridos no se cruzan en ningún instante.
+
+     Además, las coordenadas que recibe FX son % del rectángulo del MAPA
+     (#escenario), que en móvil NO es el viewport (lleva cabecera y paneles).
+     Todo se mide con mapaRect() para que escritorio y móvil coincidan.
+     ------------------------------------------------------------ */
+  const ETIQ_PINTADAS = [];   /* cajas de recorrido en % del mapa: {x0,x1,y0,y1,hasta} */
+  const bombasPend = [];      /* bombas esperando el número de daño de su resultado */
+
+  function mapaRect() {
+    const el = $('#escenario');
+    const r = el ? el.getBoundingClientRect() : null;
+    if (r && r.width > 8 && r.height > 8) {
+      return { left: r.left, top: r.top, width: r.width, height: r.height };
+    }
+    return {
+      left: 0, top: 0,
+      width: Math.max(1, window.innerWidth || 1440),
+      height: Math.max(1, window.innerHeight || 900)
+    };
+  }
+
+  /* Punto en % de la VENTANA capturada -> % del MAPA (espacio de FX). */
+  function aMapaPct(xPctVentana, yPctVentana) {
+    const p = aPantalla(xPctVentana, yPctVentana);   /* ya lleva cámara + RECORTE */
+    const r = mapaRect();
+    const vw = Math.max(1, window.innerWidth || 1440);
+    const vh = Math.max(1, window.innerHeight || 900);
+    return {
+      x: clamp(((p.x / 100 * vw) - r.left) / Math.max(1, r.width) * 100, -25, 125),
+      y: clamp(((p.y / 100 * vh) - r.top) / Math.max(1, r.height) * 100, -25, 125)
+    };
+  }
+
+  /* Recorrido de cada animación, en múltiplos de su propio tamaño (ver los
+     @keyframes de viewer-fx.js). Se va con holgura: de sobra es seguro, de
+     menos el número vuelve a pisar el rótulo.
+       .vfx2-label  scale .5 -> 1.16, rotate ±4º, y -16 px al final
+       .vfx2-dmg    -50 % -> -130 % del alto, scale 1.22, arco ±36 px */
+  const REC_ROTULO = { arriba: 0.78, abajo: 0.78, extraArriba: 16, ancho: 1.30 };
+  const REC_NUMERO = { arriba: 1.45, abajo: 0.80, ancho: 1.30, arco: 72 };
+
+  /* Caja que barre una pieza durante toda su animación, en % del mapa. */
+  function cajaRecorrido(xPct, yPct, wPx, hPx, tipo) {
+    const r = mapaRect();
+    const W = Math.max(1, r.width), H = Math.max(1, r.height);
+    const a = tipo === 'numero' ? REC_NUMERO : REC_ROTULO;
+    const cx = Number(xPct) / 100 * W;
+    const cy = Number(yPct) / 100 * H;
+    const medioAncho = (a.ancho * wPx + (a.arco || 0)) / W * 50;
+    const arriba = (a.arriba * hPx + (a.extraArriba || 0)) / H * 100;
+    const abajo = (a.abajo * hPx) / H * 100;
+    return {
+      x0: cx / W * 100 - medioAncho,
+      x1: cx / W * 100 + medioAncho,
+      y0: cy / H * 100 - arriba,
+      y1: cy / H * 100 + abajo
+    };
+  }
+  function limpiarEtiquetas() {
+    const t = ahora();
+    for (let i = ETIQ_PINTADAS.length - 1; i >= 0; i--) {
+      if (t >= ETIQ_PINTADAS[i].hasta) ETIQ_PINTADAS.splice(i, 1);
+    }
+  }
+  function chocaCaja(c) {
+    limpiarEtiquetas();
+    const M = 0.6;   /* margen en % del mapa */
+    for (let i = 0; i < ETIQ_PINTADAS.length; i++) {
+      const o = ETIQ_PINTADAS[i];
+      if (c.x0 - M < o.x1 && c.x1 + M > o.x0 && c.y0 - M < o.y1 && c.y1 + M > o.y0) return true;
+    }
+    return false;
+  }
+  function registrarEtiqueta(c, ms) {
+    c.hasta = ahora() + Math.max(300, Number(ms) || 1600);
+    ETIQ_PINTADAS.push(c);
+    if (ETIQ_PINTADAS.length > 30) ETIQ_PINTADAS.shift();
+  }
+
+  /* Coloca un rótulo ya creado (aún invisible) apartándolo de lo que ya hay
+     pintado en pantalla. Devuelve su caja de recorrido. */
+  function colocarRotulo(el, pMapa, wPx, hPx) {
+    if (!el) return null;
+    const r = mapaRect();
+    const H = Math.max(1, r.height);
+    const arriba = REC_ROTULO.arriba * hPx + REC_ROTULO.extraArriba;
+    const abajo = REC_ROTULO.abajo * hPx;
+    const altoPct = (arriba + abajo) / H * 100;
+    const yMin = (arriba + 4) / H * 100;
+    const yMax = 100 - (abajo + 4) / H * 100;
+    const pasos = [0, -1, 1, -2, 2, -3, 3, -4, 4, -5, 5];
+    let y = clamp(pMapa.y, yMin, yMax);
+    let caja = cajaRecorrido(pMapa.x, y, wPx, hPx, 'rotulo');
+    for (let i = 0; i < pasos.length; i++) {
+      const yy = clamp(pMapa.y + pasos[i] * altoPct * 1.08, yMin, yMax);
+      const c = cajaRecorrido(pMapa.x, yy, wPx, hPx, 'rotulo');
+      if (!chocaCaja(c)) { y = yy; caja = c; break; }
+    }
+    el.style.top = Math.round(y / 100 * H) + 'px';
+    registrarEtiqueta(caja, 1700);
+    return caja;
+  }
+
+  /* Rótulo + número de una bomba, planificados JUNTOS y ya con la cámara
+     asentada (780 ms: la ida de cámara va al 99,5 % a los 2/3 del recorrido).
+     Así el rótulo cae sobre el punto real del impacto y el número no puede
+     cruzarse con él. */
+  function pintarParBomba(b) {
+    if (!b || b.pintado) return;
+    b.pintado = true;
+    const p = aMapaPct(b.base.x, b.base.y);
+    const r = mapaRect();
+    const W = Math.max(1, r.width), H = Math.max(1, r.height);
+    const fsEtq = ES_MOVIL ? 30 : 62;
+    const fsNum = ES_MOVIL ? 78 : 104;
+    const hN = fsNum + 8;
+    /* 1) rótulo provisional: la animación arranca en opacidad 0, así que da
+          tiempo a medirlo de verdad y recolocarlo sin que se vea el salto. */
+    const el = FX.label(b.txt, clamp(p.x, 8, 92), clamp(p.y, 16, 84),
+      { color: COLOR_AG[b.lado], size: fsEtq, ms: 1600, kick: true });
+    if (!el) return;
+    const wL = (el.offsetWidth || Math.round(b.txt.length * fsEtq * 0.62)) + 12;
+    const hL = (el.offsetHeight || fsEtq) + 12;
+    const cy = p.y / 100 * H;
+    const M = 12;   /* separación mínima entre recorridos, en px */
+    const arrL = REC_ROTULO.arriba * hL + REC_ROTULO.extraArriba;
+    const abjL = REC_ROTULO.abajo * hL;
+    const arrN = REC_NUMERO.arriba * hN;
+    const abjN = REC_NUMERO.abajo * hN;
+    /* FX recorta la Y de la etiqueta a [15 %, 87 %] (móvil [20 %, 84 %]): hay
+       que respetarlo o el rótulo se movería después de calcular el hueco. */
+    const yLo = (ES_MOVIL ? 0.20 : 0.15) * H;
+    const yHi = (ES_MOVIL ? 0.84 : 0.87) * H;
+    function reparto(arriba) {
+      let etqT = arriba ? (cy - M - abjL) : (cy + M + arrL);
+      etqT = clamp(etqT, yLo, yHi);
+      const numT = arriba ? (etqT + abjL + M + arrN) : (etqT - arrL - M - abjN);
+      return { etqT: etqT, numT: numT };
+    }
+    function cabe(o) { return o.numT + abjN <= H - 4 && o.numT - arrN >= 4; }
+    const A = reparto(true), B = reparto(false);
+    const sel = cabe(A) ? A : (cabe(B) ? B : (Math.abs(A.numT - cy) <= Math.abs(B.numT - cy) ? A : B));
+    const numT = clamp(sel.numT, arrN + 4, H - abjN - 4);
+    el.style.top = Math.round(sel.etqT) + 'px';
+    const xPx = parseFloat(el.style.left);
+    const xPct = (isFinite(xPx) ? xPx : p.x / 100 * W) / W * 100;
+    b.slot = { x: xPct, y: numT / H * 100, hasta: ahora() + 3200 };
+    registrarEtiqueta(cajaRecorrido(xPct, sel.etqT / H * 100, wL, hL, 'rotulo'), 2000);
+    registrarEtiqueta(cajaRecorrido(xPct, b.slot.y, 5 * fsNum * 0.62, hN, 'numero'), 3200);
+    if (b.bajas != null) setTimeout(function () { pintarDanoBomba(b); }, 240);
+  }
+  function pintarDanoBomba(b) {
+    if (!b || b.danoPintado || b.bajas == null || !b.slot) return;
+    b.danoPintado = true;
+    FX.damage(b.bajas, b.slot.x, b.slot.y, b.lado, { size: ES_MOVIL ? 78 : 104 });
+  }
+
   function procesarEfecto(e, st) {
     const tipo = String(e.tipo || '');
     const ag = String(e.agente || '').toLowerCase();
@@ -2017,17 +2138,20 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       const poder = poderDe(e.power);
       impactoCentral(poder, punto);
       sacudirCamara(poder);
-      /* etiqueta grande cuando la cámara ya va camino del objetivo */
-      const txt = etiquetaBomba(e.power);
-      setTimeout(function () {
-        const base = punto || ultimoPuntoVentana || { x: lado === 'azul' ? 78 : 22, y: 42 };
-        const p = aPantalla(base.x, base.y);
-        FX.label(txt, clamp(p.x, 12, 88), clamp(p.y, 14, 82), {
-          color: COLOR_AG[lado], size: tamEtiqueta(80), ms: 1600, kick: true
-        });
-      }, 780);
+      /* v5.2: el rótulo y su número se pintan juntos, con la cámara ya asentada,
+         para que no se pisen aunque el plano esté moviéndose. */
+      const base = punto || ultimoPuntoVentana || { x: lado === 'azul' ? 78 : 22, y: 42 };
+      const b = {
+        txt: etiquetaBomba(e.power), lado: lado, base: base,
+        bajas: null, pintado: false, danoPintado: false, slot: null, t: ahora()
+      };
+      bombasPend.push(b);
+      for (let i = bombasPend.length - 1; i >= 0; i--) {
+        if (bombasPend.length > 4 || ahora() - bombasPend[i].t > 8000) bombasPend.splice(i, 1);
+      }
+      setTimeout(function () { pintarParBomba(b); }, 780);
       sacudirPanel(lado === 'azul' ? 'rojo' : 'azul');
-      sonido.boom(poder);
+      audioEfecto('boom');
     } else if (tipo === 'emoji') {
       /* el emoji sale en el punto de la acción (o esquina del bando), con su frase */
       let pt = puntoDeAccion(lado);
@@ -2058,26 +2182,61 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       let base = punto;
       if (!base || base.x < 4 || base.x > 96 || base.y < 4 || base.y > 96) base = ultimoPuntoVentana || punto;
       if (base) {
-        const p = aPantalla(base.x, base.y);
+        const p = aMapaPct(base.x, base.y);
         const n = Math.round(Number(e.count) || 0);
+        const esBando = ag === 'rojo' || ag === 'azul';
+        /* v5: el desembarco también marca plano (evento real con posición) */
+        if (esBando) foco(base.x, base.y, 1.28, 2200, false);
         FX.sparks(p.x, p.y, { count: clamp(Math.round((n || 20) / 4), 8, 26) });
-        if (lado) {
-          FX.label(n > 0 ? '¡TROPAS! ×' + n : '¡TROPAS!', clamp(p.x, 14, 86), clamp(p.y, 16, 82), {
-            color: COLOR_AG[lado], size: tamEtiqueta(58), ms: 1500, kick: true
-          });
+        if (esBando) {
+          const txt = n > 0 ? '¡TROPAS! ×' + n : '¡TROPAS!';
+          const fs = tamEtiqueta(58);
+          const el = FX.label(txt, clamp(p.x, 8, 92), clamp(p.y, 16, 84),
+            { color: COLOR_AG[lado], size: fs, ms: 1500, kick: true });
+          if (el) colocarRotulo(el, p, (el.offsetWidth || 220) + 12, (el.offsetHeight || fs) + 12);
         }
       }
     } else if (tipo === 'resultado') {
       const n = Number(e.bajas) || 0;
       if (n > 0) {
-        const base = ultimoPuntoVentana || { x: lado === 'rojo' ? 32 : 68, y: 44 };
-        const p = aPantalla(base.x, base.y);
-        FX.damage(n, p.x, p.y, lado, { size: ES_MOVIL ? 78 : 104 });
+        const fs = ES_MOVIL ? 78 : 104;
+        /* v5.2: si viene de una bomba recién procesada, usa el hueco que ya se
+           reservó para su número (así rótulo y número nunca se pisan aunque la
+           cámara esté moviéndose). Si no, se busca un hueco libre. */
+        let b = null;
+        for (let i = 0; i < bombasPend.length; i++) {
+          const c = bombasPend[i];
+          if (!c.danoPintado && ahora() - c.t < 4000) { b = c; break; }
+        }
+        if (b) {
+          b.bajas = n;
+          if (b.pintado) setTimeout(function () { pintarDanoBomba(b); }, 190);
+        } else {
+          setTimeout(function () {
+            const base = ultimoPuntoVentana || { x: lado === 'rojo' ? 32 : 68, y: 44 };
+            const p = aMapaPct(base.x, base.y);
+            const r = mapaRect();
+            const H = Math.max(1, r.height);
+            const hN = fs + 8;
+            const wN = String(Math.round(n)).length * fs * 0.62 + 12;
+            const altoPct = (REC_NUMERO.arriba + REC_NUMERO.abajo) * hN / H * 100;
+            const yMin = (REC_NUMERO.arriba * hN + 4) / H * 100;
+            const yMax = 100 - (REC_NUMERO.abajo * hN + 4) / H * 100;
+            const pasos = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5];
+            let y = clamp(p.y, yMin, yMax);
+            for (let i = 0; i < pasos.length; i++) {
+              const yy = clamp(p.y + pasos[i] * altoPct * 1.05, yMin, yMax);
+              if (!chocaCaja(cajaRecorrido(p.x, yy, wN, hN, 'numero'))) { y = yy; break; }
+            }
+            FX.damage(n, p.x, y, lado, { size: fs });
+            registrarEtiqueta(cajaRecorrido(p.x, y, wN, hN, 'numero'), 2200);
+          }, 190);
+        }
         FX.shake(clamp(0.3 + Math.min(1, n / 900) * 0.5, 0, 0.9));
         sacudirCamara(clamp(0.4 + Math.min(1, n / 900) * 0.6, 0, 1));
       }
     } else if (tipo === 'ronda') {
-      sonido.ding();
+      audioEfecto('ding');
     }
   }
 
@@ -2094,23 +2253,20 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       return;
     }
     const cam = d.camara;
-    if (cam && Number(cam.tick) > ultimoCamTick && Number(cam.x) > 0 && Number(cam.y) > 0) {
+    if (cam && Number(cam.tick) > ultimoCamTick) {
       ultimoCamTick = Number(cam.tick);
-      const t = ahora();
-      if (t - ultimoFocoT > 700) {
-        foco(Number(cam.x), Number(cam.y), Number(cam.zoom) || 1.8, Number(cam.ms) || 0, false);
-      }
+      /* v5: la cámara del drama YA NO mueve el plano ni alimenta el "último punto":
+         era una de las fuentes de los "zooms a sitios random" (el dueño lo notó).
+         El plano lo marcan solo eventos reales del feed (bomba.camara, tropas). */
     }
     const imp = d.impacto;
     if (imp && Number(imp.tick) > ultimoImpTick && Number(imp.x) > 0 && Number(imp.y) > 0) {
       ultimoImpTick = Number(imp.tick);
-      const t = ahora();
-      if (t - ultimoFocoT > 700) {
-        const p = aPantalla(Number(imp.x), Number(imp.y));
-        FX.impact(p.x, p.y, { power: clamp(Number(imp.poder) || 0.7, 0.25, 1), emoji: '💥', debris: true });
-        sacudirCamara(clamp(Number(imp.poder) || 0.7, 0.25, 1));
-        ultimoPuntoVentana = { x: Number(imp.x), y: Number(imp.y) };
-      }
+      /* impacto visual del drama: se pinta donde dice el estado, sin mover la cámara */
+      const p = aMapaPct(Number(imp.x), Number(imp.y));
+      FX.impact(p.x, p.y, { power: clamp(Number(imp.poder) || 0.7, 0.25, 1), emoji: '💥', debris: true });
+      sacudirCamara(clamp(Number(imp.poder) || 0.7, 0.25, 1));
+      ultimoPuntoVentana = { x: Number(imp.x), y: Number(imp.y) };
     }
   }
 
@@ -2198,8 +2354,6 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     });
     const bf = $('#btn-full');
     if (bf) bf.addEventListener('click', alternarFull);
-    const bs = $('#btn-sonido');
-    if (bs) bs.addEventListener('click', function () { sonido.alternar(); });
     const bv = $('#btn-voz');
     if (bv) bv.addEventListener('click', alternarVoz);
     const br = $('#btn-reset');
@@ -2222,12 +2376,42 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
       else if (k === 'c') aplicarCine(!document.body.classList.contains('cine'));
       else if (k === 'f') alternarFull();
       else if (k === 'r') { try { localStorage.removeItem(K_PANEL); } catch (err) {} location.reload(); }
-      else if (k === 'm') sonido.alternar();
+      else if (k === 'm') alternarMusica();
       else if (k === 'v') alternarVoz();
       else if (k === 'escape') cerrarVictoria();
       else return;
       e.preventDefault();
     });
+  }
+
+  /* Hook de QA (solo ?qa=1): estado de cámara, foco y etiquetas para depurar encuadres. */
+  if (CFG.qa) {
+    window.__WB_DEBUG__ = function () {
+      return {
+        cam: { x: CAM.x, y: CAM.y, z: CAM.z, cx: CAM.cx, cy: CAM.cy, vx: CAM.vx, vy: CAM.vy, fase: CAM.fase },
+        punto: ultimoPuntoVentana ? { x: ultimoPuntoVentana.x, y: ultimoPuntoVentana.y } : null,
+        foco: { x: ultimoFoco.x, y: ultimoFoco.y, t: Math.round(ultimoFocoT) },
+        etiq: ETIQ_PINTADAS.map(function (e) {
+          return { x: Math.round(e.x), y: Math.round(e.y), w: Math.round(e.w), h: Math.round(e.h) };
+        }),
+        fx: (function () {
+          const host = document.getElementById('fx-host');
+          if (!host) return [];
+          const els = host.querySelectorAll('[class*="vfx2"]');
+          return Array.prototype.slice.call(els).slice(-8).map(function (el) {
+            const r = el.getBoundingClientRect();
+            return {
+              c: String(el.className || '').slice(0, 22),
+              t: String(el.textContent || '').slice(0, 16),
+              x: Math.round(r.left + r.width / 2),
+              y: Math.round(r.top + r.height / 2),
+              w: Math.round(r.width),
+              h: Math.round(r.height)
+            };
+          });
+        })()
+      };
+    };
   }
 
   (async function arrancar() {
@@ -2245,7 +2429,11 @@ window.__WB_ENDPOINTS_READY__ = (async function () {
     aplicarTema(temaClaro);
     aplicarCine(cine);
     aplicarBloqueo(bloqueo);
-    actualizarBotonSonido();
+    /* audio: panel de volumen + música en el primer gesto del usuario */
+    try {
+      if (window.ShowAudioUI && window.ShowAudioUI.montar) window.ShowAudioUI.montar({ boton: '#btn-audio' });
+    } catch (e) {}
+    document.addEventListener('pointerdown', arrancarAudio, { once: true });
     /* voces: activa con ?voces=1; si el navegador no las soporta, el botón se oculta */
     if (vozDisponible()) {
       try { if (window.ViewerVoz.activarSiParam) window.ViewerVoz.activarSiParam(); } catch (e) {}

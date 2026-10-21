@@ -24,7 +24,10 @@ param(
     [double]$CropX0 = 0,
     [double]$CropY0 = 0,
     [double]$CropX1 = 1,
-    [double]$CropY1 = 1
+    [double]$CropY1 = 1,
+    # Auto-recorte: detecta la isla (lo que no es oceano) y publica solo eso.
+    # Se recalcula cada ~0,7 s; si la deteccion falla, usa el recorte manual.
+    [switch]$AutoCrop
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationCore -ErrorAction Stop
@@ -97,6 +100,11 @@ public static class WbStream
     // Recorte normalizado del frame antes de publicarlo (0..1). El visor recibe SOLO
     // la zona del mapa; las coordenadas cx/cy se renormalizan a este recorte.
     static double _cx0 = 0, _cy0 = 0, _cx1 = 1, _cy1 = 1;
+    // Auto-recorte: detecta la isla (todo lo que no es oceano) y publica solo eso.
+    // Evita depender de un zoom/posicion de camara concretos del juego.
+    static bool _autoCrop = false;
+    static double _ax0 = 0, _ay0 = 0, _ax1 = 0, _ay1 = 0;   // isla detectada (0..1), invalida si _ax1<=_ax0
+    static int _aFrame = 0;
     static Thread _capThread, _srvThread;
     static TcpListener _listener;
     static volatile int _hwndFound;
@@ -104,7 +112,7 @@ public static class WbStream
     static readonly object _frameLock = new object();
 
     public static string Start(int port, int maxW, int quality, int fps, string procName,
-                               double cx0, double cy0, double cx1, double cy1)
+                               double cx0, double cy0, double cx1, double cy1, bool autoCrop)
     {
         if (_run) return "already-running";
         _port = port; _maxW = maxW; _quality = quality; _targetFps = Math.Max(1, fps); _procName = procName;
@@ -113,6 +121,8 @@ public static class WbStream
         _cy0 = Math.Max(0, Math.Min(0.95, cy0));
         _cx1 = Math.Max(_cx0 + 0.05, Math.Min(1, cx1));
         _cy1 = Math.Max(_cy0 + 0.05, Math.Min(1, cy1));
+        _autoCrop = autoCrop;
+        _ax0 = 0; _ay0 = 0; _ax1 = 0; _ay1 = 0; _aFrame = 0;
         _run = true;
 
         _listener = new TcpListener(IPAddress.Loopback, _port);
@@ -130,8 +140,8 @@ public static class WbStream
         _srvThread.Start();
 
         return "started port=" + _port + " maxW=" + _maxW + " q=" + _quality + " fps=" + _targetFps +
-               " crop=" + _cx0.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy0.ToString("0.###", CultureInfo.InvariantCulture) +
-               "," + _cx1.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy1.ToString("0.###", CultureInfo.InvariantCulture);
+               " crop=" + (autoCrop ? "auto" : (_cx0.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy0.ToString("0.###", CultureInfo.InvariantCulture) +
+               "," + _cx1.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy1.ToString("0.###", CultureInfo.InvariantCulture)));
     }
 
     public static void Stop()
@@ -158,9 +168,16 @@ public static class WbStream
 
     public static string Stats()
     {
+        string crop = _autoCrop
+            ? ("auto:" + (_ax1 > _ax0
+                ? _ax0.ToString("0.###", CultureInfo.InvariantCulture) + "," + _ay0.ToString("0.###", CultureInfo.InvariantCulture) + "," +
+                  _ax1.ToString("0.###", CultureInfo.InvariantCulture) + "," + _ay1.ToString("0.###", CultureInfo.InvariantCulture)
+                : "buscando"))
+            : (_cx0.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy0.ToString("0.###", CultureInfo.InvariantCulture) + "," +
+               _cx1.ToString("0.###", CultureInfo.InvariantCulture) + "," + _cy1.ToString("0.###", CultureInfo.InvariantCulture));
         string s = string.Format(CultureInfo.InvariantCulture,
-            "{{\"fps\":{0:F1},\"seq\":{1},\"cx\":{2},\"cy\":{3},\"power\":{4},\"base\":{5},\"spike\":{6},\"scx\":{7},\"scy\":{8},\"stick\":{9},\"bytes\":{10},\"target\":{11},\"hwnd\":{12},\"err\":\"{13}\",\"lspike\":{14},\"lcx\":{15},\"lcy\":{16}}}",
-            _fps, _seq, _cx, _cy, _power, _base, _spike, _scx, _scy, _spikeUnixMs, _latest.Length, _targetFps, _hwndFound, Esc(_err), _lspike, _lcx, _lcy);
+            "{{\"fps\":{0:F1},\"seq\":{1},\"cx\":{2},\"cy\":{3},\"power\":{4},\"base\":{5},\"spike\":{6},\"scx\":{7},\"scy\":{8},\"stick\":{9},\"bytes\":{10},\"target\":{11},\"hwnd\":{12},\"err\":\"{13}\",\"lspike\":{14},\"lcx\":{15},\"lcy\":{16},\"crop\":\"{17}\"}}",
+            _fps, _seq, _cx, _cy, _power, _base, _spike, _scx, _scy, _spikeUnixMs, _latest.Length, _targetFps, _hwndFound, Esc(_err), _lspike, _lcx, _lcy, Esc(crop));
         return s;
     }
 
@@ -177,6 +194,103 @@ public static class WbStream
         }
         catch { }
         return IntPtr.Zero;
+    }
+
+    // Detecta la isla por componentes conexas: reduce el frame a una rejilla 96x78,
+    // marca las celdas que NO son oceano y se queda con el mayor "islote" que no
+    // toca el borde (asi se ignora el HUD del juego). El bbox se suaviza contra el
+    // anterior para que la camara no tiemble. Corre 1 de cada N frames.
+    static byte[] _islaBuf;
+    static readonly int ISLA_GW = 96;
+    static readonly int ISLA_GH = 78;
+    static void DetectIsla(IntPtr bits, int w, int h)
+    {
+        int stride = w * 4;
+        int need = stride * h;
+        if (_islaBuf == null || _islaBuf.Length < need) _islaBuf = new byte[need];
+        Marshal.Copy(bits, _islaBuf, 0, need);
+
+        int gw = ISLA_GW, gh = ISLA_GH;
+        bool[] land = new bool[gw * gh];
+        int sx = Math.Max(1, w / gw / 3), sy = Math.Max(1, h / gh / 3);
+        for (int gy = 0; gy < gh; gy++)
+        {
+            int y0 = (int)((gy + 0.5) * h / gh);
+            for (int gx = 0; gx < gw; gx++)
+            {
+                int x0 = (int)((gx + 0.5) * w / gw);
+                long sr = 0, sg = 0, sb = 0; int ns = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    int y = y0 + dy * sy;
+                    if (y < 0 || y >= h) continue;
+                    int row = y * stride;
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int x = x0 + dx * sx;
+                        if (x < 0 || x >= w) continue;
+                        int i = row + x * 4;
+                        sb += _islaBuf[i]; sg += _islaBuf[i + 1]; sr += _islaBuf[i + 2]; ns++;
+                    }
+                }
+                if (ns == 0) continue;
+                int rr = (int)(sr / ns), gg = (int)(sg / ns), bb = (int)(sb / ns);
+                bool oceano = (bb > rr + 18) && (bb >= gg + 6) && (bb > 40);
+                land[gy * gw + gx] = !oceano;
+            }
+        }
+
+        bool[] seen = new bool[gw * gh];
+        int[] cola = new int[gw * gh];
+        int bestLen = 0, bx0 = 0, by0 = 0, bx1 = 0, by1 = 0;
+        for (int start = 0; start < land.Length; start++)
+        {
+            if (!land[start] || seen[start]) continue;
+            int head = 0, tail = 0;
+            cola[tail++] = start; seen[start] = true;
+            bool toca = false;
+            int minX = gw, maxX = -1, minY = gh, maxY = -1, len = 0;
+            while (head < tail)
+            {
+                int idx = cola[head++];
+                int cx = idx % gw, cy = idx / gw;
+                len++;
+                if (cx <= 1 || cy <= 1 || cx >= gw - 2 || cy >= gh - 2) toca = true;
+                if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+                if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if (dx == 0 && dy == 0) continue;
+                        int nx = cx + dx, ny = cy + dy;
+                        if (nx < 0 || ny < 0 || nx >= gw || ny >= gh) continue;
+                        int ni = ny * gw + nx;
+                        if (land[ni] && !seen[ni]) { seen[ni] = true; cola[tail++] = ni; }
+                    }
+                }
+            }
+            if (toca) continue;
+            if (len > bestLen) { bestLen = len; bx0 = minX; by0 = minY; bx1 = maxX + 1; by1 = maxY + 1; }
+        }
+        if (bestLen < 25) return;
+
+        double nx0 = (double)bx0 / gw, ny0 = (double)by0 / gh;
+        double nx1 = (double)bx1 / gw, ny1 = (double)by1 / gh;
+        // 8% de margen para que se vea algo de oceano alrededor de la isla.
+        double mx = (nx1 - nx0) * 0.08, my = (ny1 - ny0) * 0.08;
+        nx0 = Math.Max(0, nx0 - mx); ny0 = Math.Max(0, ny0 - my);
+        nx1 = Math.Min(1, nx1 + mx); ny1 = Math.Min(1, ny1 + my);
+        if (nx1 - nx0 < 0.10 || ny1 - ny0 < 0.10) return;
+
+        if (_ax1 <= _ax0) { _ax0 = nx0; _ay0 = ny0; _ax1 = nx1; _ay1 = ny1; }
+        else
+        {
+            _ax0 = _ax0 * 0.80 + nx0 * 0.20;
+            _ay0 = _ay0 * 0.80 + ny0 * 0.20;
+            _ax1 = _ax1 * 0.80 + nx1 * 0.20;
+            _ay1 = _ay1 * 0.80 + ny1 * 0.20;
+        }
     }
 
     static void CaptureLoop()
@@ -220,23 +334,30 @@ public static class WbStream
 
                 DetectExplosion(bits, w, h);
 
+                // Auto-recorte: recalcula la isla cada 12 frames (~0,7 s) y la suaviza.
+                if (_autoCrop && (_aFrame++ % 12) == 0) DetectIsla(bits, w, h);
+
+                // Recorte efectivo: auto si ya hay isla valida; si no, el manual.
+                double ex0 = _cx0, ey0 = _cy0, ex1 = _cx1, ey1 = _cy1;
+                if (_autoCrop && _ax1 > _ax0) { ex0 = _ax0; ey0 = _ay0; ex1 = _ax1; ey1 = _ay1; }
+
                 // Renormaliza los centroides (0..10000 del frame completo) al recorte
                 // que se publica: si no, el visor apuntaria a otro sitio.
-                if (_cx0 > 0 || _cy0 > 0 || _cx1 < 1 || _cy1 < 1)
+                if (ex0 > 0 || ey0 > 0 || ex1 < 1 || ey1 < 1)
                 {
-                    _cx = Renorm(_cx, _cx0, _cx1);
-                    _cy = Renorm(_cy, _cy0, _cy1);
-                    _scx = Renorm(_scx, _cx0, _cx1);
-                    _scy = Renorm(_scy, _cy0, _cy1);
-                    _lcx = Renorm(_lcx, _cx0, _cx1);
-                    _lcy = Renorm(_lcy, _cy0, _cy1);
+                    _cx = Renorm(_cx, ex0, ex1);
+                    _cy = Renorm(_cy, ey0, ey1);
+                    _scx = Renorm(_scx, ex0, ex1);
+                    _scy = Renorm(_scy, ey0, ey1);
+                    _lcx = Renorm(_lcx, ex0, ex1);
+                    _lcy = Renorm(_lcy, ey0, ey1);
                 }
 
                 BitmapSource src = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, bits, w * h * 4, w * 4);
-                if (_cx0 > 0 || _cy0 > 0 || _cx1 < 1 || _cy1 < 1)
+                if (ex0 > 0 || ey0 > 0 || ex1 < 1 || ey1 < 1)
                 {
-                    int rx = (int)Math.Round(_cx0 * w), ry = (int)Math.Round(_cy0 * h);
-                    int rw = (int)Math.Round((_cx1 - _cx0) * w), rh = (int)Math.Round((_cy1 - _cy0) * h);
+                    int rx = (int)Math.Round(ex0 * w), ry = (int)Math.Round(ey0 * h);
+                    int rw = (int)Math.Round((ex1 - ex0) * w), rh = (int)Math.Round((ey1 - ey0) * h);
                     if (rx < 0) rx = 0; if (ry < 0) ry = 0;
                     if (rx + rw > w) rw = w - rx; if (ry + rh > h) rh = h - ry;
                     if (rw > 0 && rh > 0)
@@ -556,7 +677,7 @@ $refs = $refs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
 Add-Type -TypeDefinition $cs -Language CSharp -ReferencedAssemblies $refs -ErrorAction Stop
 
-Write-Host ([WbStream]::Start($Port, $MaxWidth, $Quality, $Fps, $ProcessName, $CropX0, $CropY0, $CropX1, $CropY1))
+Write-Host ([WbStream]::Start($Port, $MaxWidth, $Quality, $Fps, $ProcessName, $CropX0, $CropY0, $CropX1, $CropY1, [bool]$AutoCrop))
 Write-Host ("stream: http://localhost:{0}/stream.mjpg" -f $Port)
 Write-Host ("stats:  http://localhost:{0}/stats" -f $Port)
 

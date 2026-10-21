@@ -1,0 +1,257 @@
+{
+  "version": 2,
+  "motor": "edge-tts",
+  "voces": {
+    "rojo": "es-CO-GonzaloNeural",
+    "azul": "es-CO-SalomeNeural",
+    "sistema": "es-ES-ElviraNeural"
+  },
+  "generado": "2026-10-21T06:21:32.9646719+02:00",
+  "origen": "show.json",
+  "tipos": [
+    "chat"
+  ],
+  "eventos": {
+    "1": {
+      "archivo": "1.mp3",
+      "bytes": 40556,
+      "agente": "rojo",
+      "ms": 3169
+    },
+    "2": {
+      "archivo": "2.mp3",
+      "bytes": 40172,
+      "agente": "azul",
+      "ms": 2774
+    },
+    "5": {
+      "archivo": "5.mp3",
+      "bytes": 30380,
+      "agente": "rojo",
+      "ms": 1875
+    },
+    "6": {
+      "archivo": "6.mp3",
+      "bytes": 33068,
+      "agente": "rojo",
+      "ms": 2190
+    },
+    "12": {
+      "archivo": "12.mp3",
+      "bytes": 33452,
+      "agente": "azul",
+      "ms": 1953
+    },
+    "16": {
+      "archivo": "16.mp3",
+      "bytes": 31916,
+      "agente": "rojo",
+      "ms": 1920
+    },
+    "17": {
+      "archivo": "17.mp3",
+      "bytes": 36908,
+      "agente": "azul",
+      "ms": 2429
+    },
+    "22": {
+      "archivo": "22.mp3",
+      "bytes": 33644,
+      "agente": "rojo",
+      "ms": 2608
+    },
+    "23": {
+      "archivo": "23.mp3",
+      "bytes": 29612,
+      "agente": "rojo",
+      "ms": 2301
+    },
+    "25": {
+      "archivo": "25.mp3",
+      "bytes": 44780,
+      "agente": "azul",
+      "ms": 2076
+    },
+    "29": {
+      "archivo": "29.mp3",
+      "bytes": 36716,
+      "agente": "azul",
+      "ms": 2019
+    },
+    "30": {
+      "archivo": "30.mp3",
+      "bytes": 29612,
+      "agente": "azul",
+      "ms": 2099
+    },
+    "34": {
+      "archivo": "34.mp3",
+      "bytes": 37100,
+      "agente": "rojo",
+      "ms": 2207
+    },
+    "35": {
+      "archivo": "35.mp3",
+      "bytes": 38636,
+      "agente": "azul",
+      "ms": 2028
+    },
+    "40": {
+      "archivo": "40.mp3",
+      "bytes": 38060,
+      "agente": "rojo",
+      "ms": 2312
+    },
+    "41": {
+      "archivo": "41.mp3",
+      "bytes": 31340,
+      "agente": "rojo",
+      "ms": 2474
+    },
+    "43": {
+      "archivo": "43.mp3",
+      "bytes": 42668,
+      "agente": "azul",
+      "ms": 2214
+    },
+    "47": {
+      "archivo": "47.mp3",
+      "bytes": 39980,
+      "agente": "azul",
+      "ms": 2559
+    },
+    "48": {
+      "archivo": "48.mp3",
+      "bytes": 29996,
+      "agente": "azul",
+      "ms": 1928
+    },
+    "53": {
+      "archivo": "53.mp3",
+      "bytes": 41132,
+      "agente": "rojo",
+      "ms": 2406
+    },
+    "54": {
+      "archivo": "54.mp3",
+      "bytes": 57644,
+      "agente": "azul",
+      "ms": 3520
+    },
+    "60": {
+      "archivo": "60.mp3",
+      "bytes": 43628,
+      "agente": "rojo",
+      "ms": 2074
+    },
+    "61": {
+      "archivo": "61.mp3",
+      "bytes": 30380,
+      "agente": "rojo",
+      "ms": 2164
+    },
+    "67": {
+      "archivo": "67.mp3",
+      "bytes": 52268,
+      "agente": "azul",
+      "ms": 2658
+    },
+    "68": {
+      "archivo": "68.mp3",
+      "bytes": 46508,
+      "agente": "azul",
+      "ms": 2603
+    },
+    "72": {
+      "archivo": "72.mp3",
+      "bytes": 39020,
+      "agente": "rojo",
+      "ms": 1938
+    },
+    "73": {
+      "archivo": "73.mp3",
+      "bytes": 46892,
+      "agente": "azul",
+      "ms": 2333
+    },
+    "79": {
+      "archivo": "79.mp3",
+      "bytes": 29420,
+      "agente": "rojo",
+      "ms": 1930
+    },
+    "80": {
+      "archivo": "80.mp3",
+      "bytes": 28460,
+      "agente": "rojo",
+      "ms": 2127
+    },
+    "85": {
+      "archivo": "85.mp3",
+      "bytes": 33068,
+      "agente": "azul",
+      "ms": 1876
+    },
+    "86": {
+      "archivo": "86.mp3",
+      "bytes": 50348,
+      "agente": "azul",
+      "ms": 2388
+    },
+    "90": {
+      "archivo": "90.mp3",
+      "bytes": 37484,
+      "agente": "rojo",
+      "ms": 2082
+    },
+    "91": {
+      "archivo": "91.mp3",
+      "bytes": 31724,
+      "agente": "azul",
+      "ms": 2468
+    },
+    "98": {
+      "archivo": "98.mp3",
+      "bytes": 40748,
+      "agente": "rojo",
+      "ms": 1887
+    },
+    "103": {
+      "archivo": "103.mp3",
+      "bytes": 35948,
+      "agente": "azul",
+      "ms": 2017
+    },
+    "104": {
+      "archivo": "104.mp3",
+      "bytes": 37676,
+      "agente": "azul",
+      "ms": 2783
+    },
+    "108": {
+      "archivo": "108.mp3",
+      "bytes": 32300,
+      "agente": "rojo",
+      "ms": 1938
+    },
+    "109": {
+      "archivo": "109.mp3",
+      "bytes": 35756,
+      "agente": "azul",
+      "ms": 2714
+    },
+    "111": {
+      "archivo": "111.mp3",
+      "bytes": 62636,
+      "agente": "azul",
+      "ms": 3022
+    },
+    "112": {
+      "archivo": "112.mp3",
+      "bytes": 38252,
+      "agente": "rojo",
+      "ms": 2003
+    }
+  },
+  "firma": "rojo=es-CO-GonzaloNeural/-4%/+0Hz;azul=es-CO-SalomeNeural/-4%/+0Hz;sistema=es-ES-ElviraNeural/-4%/+0Hz|post=post-v2|norm=v1"
+}

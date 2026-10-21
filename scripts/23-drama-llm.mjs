@@ -62,6 +62,16 @@ const MODEL = argOf('--model', process.env.DRAMA_MODEL ?? 'deepseek-v4.1-flash')
 const SELFTEST = args.includes('--selftest')
 const TIMEOUT_MS = Number(argOf('--timeout', 20000))
 
+/**
+ * Registro de fallos del cerebro: cada vez que una réplica no se puede improvisar
+ * se apunta aquí (JSON por línea) para poder diagnosticar por qué. Es la prueba
+ * de que NO se tira de frases prefijadas: si falla, la línea se queda en silencio.
+ */
+const REGISTRO_FALLOS = new URL('../reports/drama-fallos.log', import.meta.url)
+function anotarFallo(obj) {
+  try { fs.appendFileSync(REGISTRO_FALLOS, JSON.stringify(obj) + '\n') } catch { /* sin registro */ }
+}
+
 // ---------------------------------------------------------------- credenciales
 
 /** Lee el pool de cuentas del vault de DSH. */
@@ -236,20 +246,21 @@ const REGLAS_DURAS = `REGLAS BÁSICAS:
 - Cero groserías gruesas.`
 
 /**
- * Las dos voces del show. Cada una con su registro cerrado, sus ejemplos
- * literales de tono y sus anti-ejemplos.
+ * Las dos voces del show.
  *
- * OJO con los ejemplos: el modelo los copia. Por eso `ejemplosDe()` NO se los
- * enseña todos en cada llamada: rota 4 de 8, y siempre con el aviso de que son
- * calibración de tono, no material para pegar.
+ * OJO: aquí NO hay listas de palabras ni frases de ejemplo. El dueño pilló que el
+ * modelo repetía siempre los mismos insultos ("flipao", "cuentista", "fantasma",
+ * "postureo") y venían de estas listas del prompt: el modelo las copiaba. La voz
+ * se describe con carácter y sintaxis; las palabras las elige el modelo en cada
+ * réplica, que es justo lo que se pide (improvisar).
  */
 const PERSONAS = {
   rojo: {
     nombre: 'ROJO',
     reino: 'los Rojos',
     caracter: 'macarra de barrio: chulo, bocazas, cero cultura',
-    forma: 'frase corta y seca, insulto de calle (flipao, fantasma, cuentista, postureo, espabila), cero palabras cultas',
-    system: `Eres ROJO, rey de los Rojos, en un show de peleas de WorldBox contra AZUL. Macarra de barrio: chulo, bocazas, cero cultura. Hablas como se pica la gente en un grupo de WhatsApp, en español de España de 2026. Frase corta y seca, insulto de calle, cero palabras cultas. Nada de tebeo.
+    forma: 'frase corta y seca, chulería de barrio, cero palabras cultas',
+    system: `Eres ROJO, rey de los Rojos, en un show de peleas de WorldBox contra AZUL. Macarra de barrio: chulo, bocazas, cero cultura. Hablas como se pica la gente en un grupo de WhatsApp, en español de España de 2026. Frase corta y seca, chulería de barrio, cero palabras cultas. Nada de tebeo. No uses siempre los mismos insultos: cada frase, la tuya.
 
 ${REGLAS_DURAS}`,
   },
@@ -257,18 +268,15 @@ ${REGLAS_DURAS}`,
     nombre: 'AZUL',
     reino: 'los Azules',
     caracter: 'cuñao listillo moderno: condescendiente y sarcástico',
-    forma: 'ironía seca (cuéntame más, mucho texto, eso es humo, te lo has creído), cero vocabulario académico',
-    system: `Eres AZUL, rey de los Azules, en un show de peleas de WorldBox contra ROJO. Cuñao listillo moderno: condescendiente, sarcástico, se cree más listo que nadie. Escribes como el que corrige a todo el mundo en Twitter, en español de España de 2026. Ironía seca, frase corta. NO eres un profesor.
+    forma: 'ironía seca y condescendencia de cuñao, cero vocabulario académico',
+    system: `Eres AZUL, rey de los Azules, en un show de peleas de WorldBox contra ROJO. Cuñao listillo moderno: condescendiente, sarcástico, se cree más listo que nadie. Escribes como el que corrige a todo el mundo en Twitter, en español de España de 2026. Ironía seca, frase corta. NO eres un profesor. No repitas las mismas muletillas: cada frase, la tuya.
 
 ${REGLAS_DURAS}`,
   },
 }
 
-/** Ejemplos literales del tono objetivo. Son calibración, NO material para copiar. */
-const EJEMPLOS = {
-  rojo: ['Mucho postureo y luego nada, espabila.', 'Te falta calle y se te nota.'],
-  azul: ['Cuéntame más, que me interesa muchísimo.', 'Mucho texto para decir que no tienes ni idea.'],
-}
+/** Ya no se inyectan frases de ejemplo: el modelo copiaba el vocabulario. */
+const EJEMPLOS = { rojo: [], azul: [] }
 
 /** Lo que NO vale. Se enseñan siempre: son la prohibición explícita. */
 const ANTIEJEMPLOS = [
@@ -1365,7 +1373,7 @@ function validar(texto, an, agente, ultimoRival = '', tipo = 'turno', publico = 
  */
 async function pedirTexto(agente, listaMensajes, { maxTokens, temperatura }) {
   let ultimoError = 'sin cuentas disponibles'
-  for (let intento = 0; intento < 4; intento++) {
+  for (let intento = 0; intento < 6; intento++) {
     const c = elegirCuenta()
     if (!c) {
       // todas en enfriamiento: esperamos lo justo para no bloquear el show
@@ -1694,9 +1702,17 @@ async function manejar(req, res) {
 
     // el contador se incrementa ANTES de construir la instrucción
     contador[agente] = (contador[agente] ?? 0) + 1
-    const instruccion = publico
-      ? construirInstruccionPublica(agente, nickPublico, textoPublico, ctx)
-      : construirInstruccion(tipo, ctx, b.ultimoRival ?? '', agente)
+    // Modo "suelta": petición mínima para cuando la réplica normal no pasó la
+    // validación. Menos exigencias = más probabilidad de una frase válida. Es el
+    // reintento del director; si esto también falla, la línea va en silencio.
+    const simple = b.simple === true
+    const instruccion = simple
+      ? `Eres ${PERSONAS[agente].nombre}, ${PERSONAS[agente].caracter}. ` +
+        'Escribe UNA sola frase corta (máximo 12 palabras) de pique para el chat, en tu voz y en español de España, ' +
+        'sin cifras, sin nombres propios, sin comillas ni acotaciones. Solo la frase.'
+      : publico
+        ? construirInstruccionPublica(agente, nickPublico, textoPublico, ctx)
+        : construirInstruccion(tipo, ctx, b.ultimoRival ?? '', agente)
     llamadas++
     const r = await pedirReplica(agente, instruccion, {
       maxTokens: Number(b.maxTokens ?? 120),
@@ -1705,9 +1721,14 @@ async function manejar(req, res) {
       ultimoRival: publico ? '' : (b.ultimoRival ?? ''),
       tipo,
       publico,
+      validarSalida: !simple,
     })
     if (!r.ok) {
       fallos++
+      anotarFallo({
+        ts: new Date().toISOString(), agente, tipo, simple, publico,
+        error: r.error, problemas: r.problemas ?? [],
+      })
       return json(res, 200, {
         ok: false,
         error: r.error,

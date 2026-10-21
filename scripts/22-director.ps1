@@ -29,6 +29,9 @@ $script:CerebroFichero = Join-Path $PSScriptRoot '23-drama-llm.mjs'
 $script:CerebroProceso = $null
 $script:CerebroLlamadas = 0
 $script:CerebroFallos = 0
+# Veces que una línea de diálogo se quedó en silencio porque el modelo no dio una
+# frase válida. Sirve para vigilar que el show NO tira de frases prefijadas.
+$script:DramaSilencios = 0
 $script:DirectorioOn = $true         # -SinDrama lo apaga
 
 # moral y tensión: el pulso del show
@@ -217,9 +220,26 @@ function Get-Replica {
   if ($r -and $r.texto) {
     return [pscustomobject]@{ texto = [string]$r.texto; tono = $tonoFb; fuente = 'llm' }
   }
-  # fallback: el generador de siempre, que ya conoce a los personajes
-  $texto = New-Drama -Agente $Agente -Ratio $Ratio -Ronda $script:Ronda -Turno $script:TurnoN -UltimoRival $UltimoRival
-  return [pscustomobject]@{ texto = $texto; tono = $tonoFb; fuente = 'procedural' }
+
+  # SIN FRASES PREFIJADAS. El dueño fue claro: cada línea la improvisa el modelo.
+  # Si la primera petición no pasa la validación, se reintenta UNA vez con una
+  # instrucción más simple (menos exigencias = más probable que salga); si tampoco
+  # hay suerte, esta línea se queda en silencio: nunca se tira del generador de
+  # plantillas de 21-drama.ps1 (que es de donde salían las frases repetidas).
+  $r2 = Invoke-Cerebro -Ruta '/line' -Cuerpo @{
+    agente      = $Agente
+    tipo        = 'suelta'
+    contexto    = $Contexto
+    ultimoRival = ''
+    maxTokens   = 90
+    simple      = $true
+  }
+  if ($r2 -and $r2.texto) {
+    return [pscustomobject]@{ texto = [string]$r2.texto; tono = $tonoFb; fuente = 'llm-reintento' }
+  }
+
+  $script:DramaSilencios++
+  return [pscustomobject]@{ texto = ''; tono = $tonoFb; fuente = 'silencio' }
 }
 
 <# Un emoji suelto, elegido por el modelo cuando puede. Devuelve el carácter. #>

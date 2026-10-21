@@ -1371,6 +1371,35 @@
     el.style.setProperty('--d', ms + 'ms');
     dom.appendChild(el);
     track(el);
+
+    /* Auto-ajuste: una etiqueta larga a tamaño grande se salía del mapa y se
+       cortaba por los dos lados. Se mide ya pintada y, si no cabe, se reduce
+       la fuente; después se recoloca en horizontal para que no se corte.
+       El ancho máximo por defecto es la franja central (los paneles laterales
+       se comen ~1/4 del ancho cada uno); se puede forzar con opts.maxW. */
+    try {
+      var stW = (stage && stage.clientWidth) || global.innerWidth || 1440;
+      var margen = 12;
+      var tope = num(o.maxW, 0);
+      var maxW = tope > 0 ? tope : stW * (narrow ? 0.90 : 0.50);
+      maxW = Math.max(140, Math.min(maxW, stW - margen * 2));
+      var ancho = el.offsetWidth || 0;
+      if (ancho > maxW) {
+        fs = Math.max(18, Math.floor(fs * maxW / ancho));
+        el.style.setProperty('--fs', Math.round(fs) + 'px');
+        el.style.setProperty('--stroke', Math.max(3, Math.round(fs * 0.085)) + 'px');
+        ancho = el.offsetWidth || 0;
+      }
+      if (ancho > 0 && stW > 0) {
+        var medio = ancho / 2;
+        var minX = margen + medio, maxX = stW - margen - medio;
+        if (maxX >= minX) {
+          var nx = Math.min(Math.max(sp.x, minX), maxX);
+          if (nx !== sp.x) el.style.left = Math.round(nx) + 'px';
+        }
+      }
+    } catch (e) { /* si no se puede medir, se queda como estaba */ }
+
     later(function () { removeEl(el); }, ms + 120);
     return el;
   }

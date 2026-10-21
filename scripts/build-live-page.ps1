@@ -41,6 +41,8 @@ $Destino = [System.IO.Path]::GetFullPath($Destino)
 $htmlSrc = Join-Path $Origen 'viewer-live.html'
 $fxSrc = Join-Path $Origen 'viewer-fx.js'
 $vozSrc = Join-Path $Origen 'viewer-voice.js'
+$musSrc = Join-Path $Origen 'show-music.js'
+$uiSrc = Join-Path $Origen 'show-audio-ui.js'
 
 foreach ($f in @($htmlSrc, $fxSrc)) {
   if (-not (Test-Path -LiteralPath $f)) { throw "Falta el fichero de origen: $f" }
@@ -142,6 +144,18 @@ if (Test-Path -LiteralPath $vozSrc) {
   Write-Warning 'viewer-live.html referencia viewer-voice.js pero scripts\viewer-voice.js no existe: /live/ se quedaria sin voz.'
 } else {
   Write-Host 'live/viewer-voice.js  (no hay modulo de voz todavia)'
+}
+
+# Modulos de audio (musica procedural + panel de volumen). Opcionales: si el visor
+# aun no los referencia se copian igual, para que la publicacion no dependa de ello.
+foreach ($par in @(@{ Src = $musSrc; Nom = 'show-music.js' }, @{ Src = $uiSrc; Nom = 'show-audio-ui.js' })) {
+  if (Test-Path -LiteralPath $par.Src) {
+    $dst = Join-Path $Destino $par.Nom
+    Copy-Item -LiteralPath $par.Src -Destination $dst -Force
+    Write-Host ("live/{0} {1,8:N0} B" -f $par.Nom, (Get-Item -LiteralPath $dst).Length)
+  } elseif ($html -match [regex]::Escape($par.Nom)) {
+    Write-Warning ("viewer-live.html referencia {0} pero scripts\{0} no existe." -f $par.Nom)
+  }
 }
 
 # ---------------------------------------------------------------------------
